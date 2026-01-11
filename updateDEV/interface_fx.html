@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bio:gram FX Rack</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #000000;
+            --fg-color: #FFFFFF;
+            --grid-color: #333333;
+        }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--fg-color);
+            font-family: 'Space Mono', monospace;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Grid Utilities */
+        .b-t { border-top: 1px solid var(--fg-color); }
+        .b-b { border-bottom: 1px solid var(--fg-color); }
+        .b-l { border-left: 1px solid var(--fg-color); }
+        .b-r { border-right: 1px solid var(--fg-color); }
+        .b-all { border: 1px solid var(--fg-color); }
+        
+        /* XY Pad Background */
+        .xy-grid {
+            background-image: 
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        /* Custom Toggle Switch (Rectangular) */
+        .toggle-rect {
+            appearance: none;
+            width: 40px;
+            height: 20px;
+            border: 1px solid var(--fg-color);
+            position: relative;
+            cursor: pointer;
+            outline: none;
+        }
+        .toggle-rect::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            background-color: var(--fg-color);
+            transition: transform 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+        }
+        .toggle-rect:checked::after {
+            transform: translateX(20px);
+        }
+
+        /* Bitcrusher Steps */
+        .bit-step {
+            height: 100%;
+            flex-grow: 1;
+            border-right: 1px solid #333;
+            position: relative;
+            cursor: pointer;
+            transition: background-color 0.1s;
+        }
+        .bit-step:last-child { border-right: none; }
+        .bit-step.active { background-color: var(--fg-color); }
+        .bit-step:hover { background-color: #333; }
+
+        /* Knob (SVG Ring) */
+        .knob-svg circle {
+            transition: stroke-dashoffset 0.1s;
+        }
+        
+        /* Crosshair for XY Pad */
+        .crosshair-x {
+            position: absolute;
+            top: 0; bottom: 0; width: 1px; background-color: var(--fg-color);
+            pointer-events: none;
+        }
+        .crosshair-y {
+            position: absolute;
+            left: 0; right: 0; height: 1px; background-color: var(--fg-color);
+            pointer-events: none;
+        }
+        .crosshair-point {
+            position: absolute;
+            width: 8px; height: 8px;
+            border: 1px solid var(--fg-color);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .text-xxs { font-size: 0.6rem; line-height: 1rem; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col p-2 sm:p-4 gap-4">
+
+    <!-- HEADER: FX Navigation -->
+    <header class="flex justify-between items-end border-b border-white pb-2">
+        <div class="flex flex-col">
+            <h1 class="text-xl font-bold tracking-tighter">FX_RACK<span class="text-xs font-normal align-top ml-1">v2.0</span></h1>
+            <div class="text-xxs opacity-60">SIGNAL_FLOW: SERIES // DSP_LOAD: 34%</div>
+        </div>
+        <!-- View Switcher -->
+        <div class="flex border border-white text-xs">
+            <button class="px-3 py-1 hover:bg-white hover:text-black transition-colors border-r border-white opacity-50">MAIN</button>
+            <button class="px-3 py-1 bg-white text-black font-bold">FX</button>
+            <button class="px-3 py-1 hover:bg-white hover:text-black transition-colors border-l border-white opacity-50">LIB</button>
+        </div>
+    </header>
+
+    <!-- MAIN RACK GRID -->
+    <main class="flex-grow grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 min-h-0 overflow-y-auto pb-20">
+        
+        <!-- MODULE 01: FILTER (XY PAD) -->
+        <div class="border border-white p-2 flex flex-col h-64 sm:h-auto relative group">
+            <div class="flex justify-between text-xxs mb-2 border-b border-white/20 pb-1">
+                <span class="font-bold">MOD_01 // FILTER_XY</span>
+                <input type="checkbox" class="toggle-rect" checked>
+            </div>
+            
+            <!-- XY Pad Area -->
+            <div class="flex-grow relative xy-grid cursor-crosshair border border-white/30" id="xy-pad">
+                <div class="crosshair-x" style="left: 65%;"></div>
+                <div class="crosshair-y" style="top: 40%;"></div>
+                <div class="crosshair-point bg-white" style="left: 65%; top: 40%;"></div>
+                
+                <span class="absolute top-1 left-1 text-xxs opacity-50">HPF_RES</span>
+                <span class="absolute bottom-1 right-1 text-xxs opacity-50">LPF_FREQ</span>
+            </div>
+            
+            <div class="mt-2 flex justify-between text-xxs">
+                <span>X: 2.4kHz</span>
+                <span>Y: 0.8Q</span>
+            </div>
+        </div>
+
+        <!-- MODULE 02: DECIMATOR (Bitcrusher) -->
+        <div class="border border-white p-2 flex flex-col h-64 sm:h-auto">
+            <div class="flex justify-between text-xxs mb-2 border-b border-white/20 pb-1">
+                <span class="font-bold">MOD_02 // DECIMATOR</span>
+                <input type="checkbox" class="toggle-rect">
+            </div>
+
+            <div class="flex-grow flex flex-col gap-4 justify-center">
+                <!-- Sample Rate Selector -->
+                <div class="flex flex-col gap-1">
+                    <span class="text-xxs opacity-50">SAMPLE_RATE (Hz)</span>
+                    <div class="h-8 border border-white flex text-center text-xs">
+                        <div class="flex-1 flex items-center justify-center border-r border-white bg-white text-black cursor-pointer">44.1k</div>
+                        <div class="flex-1 flex items-center justify-center border-r border-white hover:bg-white/10 cursor-pointer">22k</div>
+                        <div class="flex-1 flex items-center justify-center border-r border-white hover:bg-white/10 cursor-pointer">11k</div>
+                        <div class="flex-1 flex items-center justify-center hover:bg-white/10 cursor-pointer">4k</div>
+                    </div>
+                </div>
+
+                <!-- Bit Depth Barcode -->
+                <div class="flex flex-col gap-1">
+                    <span class="text-xxs opacity-50">BIT_DEPTH</span>
+                    <div class="h-12 border border-white flex" id="bit-depth-control">
+                        <!-- Generated by JS -->
+                    </div>
+                    <div class="flex justify-between text-xxs opacity-50">
+                        <span>32bit</span>
+                        <span>4bit</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODULE 03: BLOOM REVERB -->
+        <div class="border border-white p-2 flex flex-col h-64 sm:h-auto">
+            <div class="flex justify-between text-xxs mb-2 border-b border-white/20 pb-1">
+                <span class="font-bold">MOD_03 // BLOOM_VERB</span>
+                <input type="checkbox" class="toggle-rect" checked>
+            </div>
+
+            <div class="flex-grow grid grid-cols-2 gap-4 items-center">
+                <!-- Knob 1 -->
+                <div class="flex flex-col items-center gap-2">
+                    <div class="relative w-20 h-20 flex items-center justify-center">
+                        <svg class="w-full h-full transform -rotate-90 knob-svg">
+                            <circle cx="40" cy="40" r="36" stroke="#333" stroke-width="4" fill="none" />
+                            <circle cx="40" cy="40" r="36" stroke="#FFF" stroke-width="4" fill="none" stroke-dasharray="226" stroke-dashoffset="100" />
+                        </svg>
+                        <span class="absolute text-xs">SIZE</span>
+                    </div>
+                    <span class="text-xxs font-bold">LARGE</span>
+                </div>
+
+                <!-- Knob 2 -->
+                <div class="flex flex-col items-center gap-2">
+                    <div class="relative w-20 h-20 flex items-center justify-center">
+                        <svg class="w-full h-full transform -rotate-90 knob-svg">
+                            <circle cx="40" cy="40" r="36" stroke="#333" stroke-width="4" fill="none" />
+                            <circle cx="40" cy="40" r="36" stroke="#FFF" stroke-width="4" fill="none" stroke-dasharray="226" stroke-dashoffset="40" />
+                        </svg>
+                        <span class="absolute text-xs">SHIMMER</span>
+                    </div>
+                    <span class="text-xxs font-bold">85%</span>
+                </div>
+            </div>
+            
+            <!-- Wet/Dry Slider (Horizontal Bar) -->
+            <div class="mt-2">
+                <div class="text-xxs mb-1 opacity-50">MIX</div>
+                <div class="w-full h-2 bg-[#333] relative">
+                    <div class="absolute left-0 top-0 h-full bg-white w-3/4"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODULE 04: TAPE DELAY -->
+        <div class="border border-white p-2 flex flex-col h-64 sm:h-auto">
+            <div class="flex justify-between text-xxs mb-2 border-b border-white/20 pb-1">
+                <span class="font-bold">MOD_04 // TAPE_ECHO</span>
+                <input type="checkbox" class="toggle-rect" checked>
+            </div>
+
+            <div class="flex-grow flex flex-col justify-around">
+                <!-- Time Selection -->
+                <div class="grid grid-cols-4 gap-1 text-xxs text-center">
+                    <div class="border border-white py-2 bg-white text-black">1/16</div>
+                    <div class="border border-white py-2 opacity-50">1/8</div>
+                    <div class="border border-white py-2 opacity-50">1/4</div>
+                    <div class="border border-white py-2 opacity-50">1/2</div>
+                </div>
+                
+                <!-- Feedback Slider -->
+                <div class="flex flex-col gap-1">
+                    <div class="flex justify-between text-xxs">
+                        <span>FEEDBACK</span>
+                        <span>!!!</span>
+                    </div>
+                    <div class="w-full h-6 border border-white relative overflow-hidden group cursor-ew-resize">
+                        <!-- Striped filling -->
+                        <div class="absolute left-0 top-0 h-full bg-white w-[90%]" style="background: repeating-linear-gradient(45deg, #FFF, #FFF 2px, #000 2px, #000 4px);"></div>
+                    </div>
+                </div>
+
+                <!-- Quality Toggle -->
+                 <div class="flex items-center justify-between border-t border-white/20 pt-2">
+                    <span class="text-xxs opacity-50">TAPE_HISS</span>
+                    <div class="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODULE 05: SPECTRAL GATE -->
+        <div class="border border-white p-2 flex flex-col h-64 sm:h-auto">
+            <div class="flex justify-between text-xxs mb-2 border-b border-white/20 pb-1">
+                <span class="font-bold">MOD_05 // SPEC_GATE</span>
+                <input type="checkbox" class="toggle-rect">
+            </div>
+            
+            <div class="flex-grow flex items-end gap-1 px-2 border-b border-white/30 mb-2 relative">
+                <!-- Threshold Line -->
+                <div class="absolute w-full h-[1px] bg-white top-[40%] left-0 border-t border-dashed border-white opacity-50"></div>
+                
+                <!-- Bars (Gate Visualizer) -->
+                <div class="w-1/6 h-[20%] bg-white/20"></div>
+                <div class="w-1/6 h-[60%] bg-white"></div>
+                <div class="w-1/6 h-[10%] bg-white/20"></div>
+                <div class="w-1/6 h-[80%] bg-white"></div>
+                <div class="w-1/6 h-[30%] bg-white/20"></div>
+                <div class="w-1/6 h-[50%] bg-white"></div>
+            </div>
+
+            <div class="flex justify-between text-xxs">
+                <span class="opacity-50">THRESHOLD</span>
+                <span>-12dB</span>
+            </div>
+            <input type="range" class="w-full h-1 bg-[#333] appearance-none cursor-pointer mt-1" style="background-image: linear-gradient(#FFF, #FFF); background-size: 60% 100%; background-repeat: no-repeat;">
+        </div>
+
+         <!-- MODULE 06: MASTER COMPRESSOR -->
+         <div class="border border-white p-2 flex flex-col h-64 sm:h-auto">
+            <div class="flex justify-between text-xxs mb-2 border-b border-white/20 pb-1">
+                <span class="font-bold">MOD_06 // LIMITER</span>
+                <span class="text-red-500 bg-white px-1 text-black font-bold">CLIP</span>
+            </div>
+
+            <div class="flex-grow flex gap-4">
+                <!-- Reduction Meter (Vertical) -->
+                <div class="w-4 h-full border border-white relative bg-[#333]">
+                    <div class="absolute top-0 w-full bg-white h-[20%] transition-all duration-75"></div>
+                    <span class="absolute -right-6 top-0 text-[8px] opacity-50">-20</span>
+                    <span class="absolute -right-6 bottom-0 text-[8px] opacity-50">0</span>
+                </div>
+
+                <!-- Info -->
+                <div class="flex-grow flex flex-col justify-center gap-2">
+                    <div class="text-xxs">
+                        <div class="opacity-50">RATIO</div>
+                        <div class="text-xl font-bold">INF:1</div>
+                    </div>
+                    <div class="text-xxs">
+                        <div class="opacity-50">GAIN</div>
+                        <div class="text-xl font-bold">+6dB</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // Bitcrusher Barcode Generator
+        const bitContainer = document.getElementById('bit-depth-control');
+        const totalSteps = 16;
+        for(let i=0; i<totalSteps; i++) {
+            const div = document.createElement('div');
+            div.className = 'bit-step ' + (i < 12 ? 'active' : ''); // Default active steps
+            div.onclick = () => {
+                // Toggle steps logic mock
+                const isActive = div.classList.contains('active');
+                if(isActive) div.classList.remove('active');
+                else div.classList.add('active');
+            };
+            bitContainer.appendChild(div);
+        }
+
+        // XY Pad Interaction Mock
+        const pad = document.getElementById('xy-pad');
+        const cx = pad.querySelector('.crosshair-x');
+        const cy = pad.querySelector('.crosshair-y');
+        const pt = pad.querySelector('.crosshair-point');
+        let isDragging = false;
+
+        pad.addEventListener('mousedown', () => isDragging = true);
+        window.addEventListener('mouseup', () => isDragging = false);
+        pad.addEventListener('mousemove', (e) => {
+            if(!isDragging) return;
+            const rect = pad.getBoundingClientRect();
+            const x = Math.min(Math.max(0, e.clientX - rect.left), rect.width);
+            const y = Math.min(Math.max(0, e.clientY - rect.top), rect.height);
+            
+            const pctX = (x / rect.width) * 100;
+            const pctY = (y / rect.height) * 100;
+
+            cx.style.left = pctX + '%';
+            cy.style.top = pctY + '%';
+            pt.style.left = pctX + '%';
+            pt.style.top = pctY + '%';
+            
+            // Text Update Mock
+            pad.nextElementSibling.children[0].innerText = `X: ${(pctX * 20 + 20).toFixed(0)}Hz`;
+            pad.nextElementSibling.children[1].innerText = `Y: ${(pctY / 10).toFixed(1)}Q`;
+        });
+    </script>
+</body>
+</html>
