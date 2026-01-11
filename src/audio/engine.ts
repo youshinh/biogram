@@ -76,7 +76,8 @@ export class AudioEngine {
 
       // Wire up Analyser for Visualization
       this.analyser = this.context.createAnalyser();
-      this.analyser.fftSize = 256;
+      this.analyser.fftSize = 2048; // Increased resolution
+      this.analyser.smoothingTimeConstant = 0.85;
       this.workletNode.connect(this.analyser);
       this.analyser.connect(this.context.destination);
 

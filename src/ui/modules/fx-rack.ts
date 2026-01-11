@@ -111,12 +111,12 @@ export class FxRack extends LitElement {
   @property({ type: Number }) filterY = 0.5;
   @property({ type: Number }) filterQ = 0.5;
 
-  @property({ type: Boolean }) activeFilter = true;
-  @property({ type: Boolean }) activeDecimator = true;
-  @property({ type: Boolean }) activeReverb = true;
-  @property({ type: Boolean }) activeTape = true;
-  @property({ type: Boolean }) activeGate = true;
-  @property({ type: Boolean }) activeLimiter = true;
+  @property({ type: Boolean }) activeFilter = false;
+  @property({ type: Boolean }) activeDecimator = false;
+  @property({ type: Boolean }) activeReverb = false;
+  @property({ type: Boolean }) activeTape = false;
+  @property({ type: Boolean }) activeGate = false;
+  @property({ type: Boolean }) activeLimiter = false;
 
   @property({ type: Number }) sr = 1.0;
   @property({ type: Number }) bits = 16;

@@ -38,6 +38,9 @@ class SvfFilter {
     private a2: number = 0.0;
     private a3: number = 0.0;
 
+    private cutoff: number = 1000;
+    private q: number = 0.7;
+
     constructor(sampleRate: number) {
         this.sampleRate = sampleRate;
         this.calcCoeffs();

@@ -122,7 +122,8 @@ export class HydraVisualizer extends LitElement {
       
       // Map pixel delta to Speed. 
       // Right = Forward, Left = Backward.
-      const speed = deltaX * 0.15; 
+      // User Request: Invert direction (Pulling right = Rewind?)
+      const speed = deltaX * -0.15; 
       
       const engine = (window as any).engine;
       if(engine) engine.updateDspParam('SPEED', speed);
@@ -165,10 +166,18 @@ export class HydraVisualizer extends LitElement {
     const spectrum = engine.getSpectrum(); // Uint8Array(128)
     const audioData = engine.getAudioData(); // Float32Array (SAB)
     const headPos = engine.getReadPointer(); // Int index
-    
+    const velocity = engine.getTapeSpeed ? Math.abs(engine.getTapeSpeed()) : 1.0;
+    const isStopped = velocity < 0.01;
+
     // 1. Clear
-    this.ctx.fillStyle = '#0a0a0a';
-    this.ctx.fillRect(0, 0, w, h);
+    this.ctx.clearRect(0, 0, w, h); 
+    
+    // If stopped, force silence in visualization
+    // (Actual buffer might have DC offset, we don't want to show it)
+    if (isStopped) {
+         // Optionally draw a "PAUSED" line or just nothing
+         return; 
+    }
 
     // 2. Draw Waveform (Windowed centered on Head)
     // Scale = samples per pixel.
@@ -202,7 +211,7 @@ export class HydraVisualizer extends LitElement {
         }
 
         // Scale -1..1 to 0..h
-        const y = (h/2) + (sample * (h * 0.4)); 
+        const y = (h * 0.4) + (sample * (h * 0.3)); // Shift up slightly to leave room for spectrum
         
         if (x === 0) this.ctx.moveTo(x, y);
         else this.ctx.lineTo(x, y);
@@ -227,57 +236,81 @@ export class HydraVisualizer extends LitElement {
     this.ctx.lineTo(w/2, h);
     this.ctx.stroke();
 
-    // 4. Draw Spectrum (Logarithmic)
-    const minF = 20;
-    const maxF = 22000;
-    const logMin = Math.log10(minF);
-    const logMax = Math.log10(maxF);
+    // 4. Draw Spectrum (1/3 Octave Bands, Reduced Lo-End)
+    // Removed 20, 25, 31.5 to reduce low-end clutter
+    const bands = [
+        40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 
+        800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000
+    ];
     
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-    this.ctx.beginPath();
-    this.ctx.moveTo(0, h);
-    
-    for (let x = 0; x < w; x+=2) {
-        // Map x (0..w) to Freq (minF..maxF) in Log space
-        const p = x / w;
-        const f = Math.pow(10, logMin + (p * (logMax - logMin)));
-        
-        // Map Freq to Linear Bin Index
-        // Bin 0 = 0Hz, Bin N = Nyquist (22050)
-        const nyquist = 22050; // Approx
-        const binIndex = (f / nyquist) * spectrum.length;
-        
-        // Interpolate
-        const i1 = Math.floor(binIndex);
-        const i2 = Math.min(spectrum.length - 1, i1 + 1);
-        const t = binIndex - i1;
-        
-        const val1 = (spectrum[i1] || 0);
-        const val2 = (spectrum[i2] || 0);
-        const val = (val1 + t * (val2 - val1)) / 255.0; // 0..1
-        
-        const barH = val * (h * 0.35); // Max Height 35%
-        this.ctx.lineTo(x, h - barH);
-    }
-    this.ctx.lineTo(w, h);
-    this.ctx.fill();
-    
-    // Draw Axis Labels
-    this.ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    // Reserve bottom space for labels
+    const labelHeight = 14;
+    const chartHeight = h - labelHeight; 
+
+    const nyquist = 22050;
+    const bandWidth = w / bands.length;
+    const gap = 1;
+
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     this.ctx.font = '9px monospace';
     this.ctx.textAlign = 'center';
-    
-    [50, 100, 200, 500, 1000, 2000, 5000, 10000].forEach(f => {
-        const logF = Math.log10(f);
-        const p = (logF - logMin) / (logMax - logMin);
-        if (p >= 0 && p <= 1) {
-            const x = p * w;
-            const label = f >= 1000 ? (f/1000) + 'k' : f;
-            this.ctx.fillText(String(label), x, h - 2);
-            // Tick
-            this.ctx.fillRect(x, h-12, 1, 4); 
+    this.ctx.textBaseline = 'middle';
+
+    for (let i = 0; i < bands.length; i++) {
+        const fc = bands[i];
+        
+        // 1/3 Octave Limits
+        const fMin = fc / Math.pow(2, 1/6);
+        const fMax = fc * Math.pow(2, 1/6);
+        
+        const startBin = Math.floor((fMin / nyquist) * spectrum.length);
+        const endBin = Math.floor((fMax / nyquist) * spectrum.length);
+        
+        // Sum Energies
+        let sum = 0;
+        let count = 0;
+        
+        // Ensure we check at least one bin (or interpolating point)
+        const iStart = Math.max(1, startBin); // Skip DC
+        const iEnd = Math.max(iStart, endBin);
+        
+        for (let j = iStart; j <= iEnd; j++) {
+            if (j < spectrum.length) {
+               sum += spectrum[j];
+               count++;
+            }
         }
-    });
+        
+        let avg = count > 0 ? sum / count : 0;
+        
+        // Normalize 0..1
+        let val = avg / 255.0;
+        
+        // Apply Pink Noise Compensation (Tilt)
+        const p = i / bands.length;
+        const weight = 0.5 + (0.9 * p); // Range 0.5 .. 1.4
+        val *= weight;
+        
+        // Draw Bar
+        const hVal = Math.min(1.0, val) * (chartHeight * 0.5); // Max 50% of chart area
+        const x = i * bandWidth;
+        
+        // Color: Transparent Light Gray, Brighter (more opaque) = Higher Energy
+        const alpha = 0.2 + (val * 0.8); 
+        this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`; 
+        
+        // Draw from chartHeight upwards
+        this.ctx.fillRect(x, chartHeight - hVal, bandWidth - gap, hVal);
+        
+        // Labels for key bands (Below bars)
+        if ([50, 100, 200, 500, 1000, 2000, 5000, 10000].includes(fc)) {
+             this.ctx.fillStyle = 'rgba(255,255,255,0.6)';
+             const label = fc >= 1000 ? (fc/1000) + 'k' : fc;
+             this.ctx.fillText(String(label), x + bandWidth/2, chartHeight + (labelHeight/2));
+             // Optional tick?
+             // this.ctx.fillRect(x + bandWidth/2, chartHeight, 1, 2);
+        }
+    }
     
     // Calculate Window Time for UI
     // Total samples shown = w * zoomScale

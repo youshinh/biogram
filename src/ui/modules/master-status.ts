@@ -79,6 +79,7 @@ export class MasterStatus extends LitElement {
     .play-btn {
         width: 100%;
         flex: 1;
+        min-height: 60px;
         border: none;
         border-top: 1px solid #333;
         background: black;
@@ -184,7 +185,10 @@ export class MasterStatus extends LitElement {
       </div>
 
       <button class="play-btn ${this.isPlaying ? 'playing' : ''}" @click="${this.togglePlay}">
-          ${this.isPlaying ? 'STOP' : 'PLAY'}
+          ${this.isPlaying 
+            ? html`<svg width="32" height="32" viewBox="0 0 32 32" fill="currentcolor"><rect x="6" y="6" width="20" height="20" /></svg>` 
+            : html`<svg width="32" height="32" viewBox="0 0 32 32" fill="currentcolor"><path d="M8,6 L28,16 L8,26 Z" /></svg>`
+          }
       </button>
     `;
   }
