@@ -1,4 +1,3 @@
-import { OFFSETS } from '../../types/shared';
 // @ts-ignore
 import { TapeTransport } from './dsp/tape-model';
 // @ts-ignore
@@ -11,12 +10,77 @@ import { SpectralGate } from './dsp/spectral-gate';
 import { BloomReverb } from './dsp/bloom-reverb';
 // @ts-ignore
 import { Limiter } from './dsp/limiter';
-// @ts-ignore
-import { SvfFilter } from './dsp/filter';
 
 // Polyfill for TypeScript environment where AudioWorkletProcessor might be undefined in 'lib'
 declare const AudioWorkletProcessor: any;
 declare const registerProcessor: any;
+
+// INLINED CONSTANTS
+const OFFSETS = {
+  WRITE_POINTER: 0,    // Int32: Current write index (frames)
+  READ_POINTER_A: 4,   // Int32: Head A play index
+  READ_POINTER_B: 8,   // Int32: Head B play index (Slice)
+  READ_POINTER_C: 12,  // Int32: Head C play index (Cloud)
+  STATE_FLAGS: 16,     // Int32: Bitmask
+  TAPE_VELOCITY: 20,   // Float32: Current physics velocity
+  BPM: 24,             // Float32: Global BPM
+};
+
+class SvfFilter {
+    private sampleRate: number;
+    private s1: number = 0.0;
+    private s2: number = 0.0;
+    
+    // TPT Coeffs
+    private g: number = 0.0;
+    private k: number = 0.0;
+    private a1: number = 0.0;
+    private a2: number = 0.0;
+    private a3: number = 0.0;
+
+    constructor(sampleRate: number) {
+        this.sampleRate = sampleRate;
+        this.calcCoeffs();
+    }
+    
+    setParams(cutoff: number, q: number) {
+        // TPT is stable up to Nyquist, so 20kHz is fine.
+        this.cutoff = Math.max(20, Math.min(this.sampleRate * 0.49, cutoff));
+        this.q = Math.max(0.1, q);
+        this.calcCoeffs();
+    }
+    
+    private calcCoeffs() {
+        // TPT (Trapezoidal Integrator) SVF
+        // g = tan(pi * fc / fs)
+        this.g = Math.tan(Math.PI * this.cutoff / this.sampleRate);
+        this.k = 1.0 / this.q;
+        this.a1 = 1.0 / (1.0 + this.g * (this.g + this.k));
+        this.a2 = this.g * this.a1;
+        this.a3 = this.g * this.a2;
+    }
+    
+    process(input: number, type: 'LP' | 'HP' | 'BP'): number {
+        // Solving implicit equations for linear TPT SVF:
+        // v1 = a1 * (input - s1 * (g + k) - s2) [Not quite, let's use the explicit loop form]
+        
+        // Simper's form:
+        const v3 = input - this.s2;
+        const v1 = this.a1 * this.s1 + this.a2 * v3;
+        const v2 = this.s2 + this.a2 * this.s1 + this.a3 * v3;
+        
+        this.s1 = 2 * v1 - this.s1;
+        this.s2 = 2 * v2 - this.s2;
+        
+        // v1 = BP, v2 = LP, Input - k*v1 - v2 = HP
+        
+        if (type === 'LP') return v2;
+        if (type === 'BP') return v1;
+        if (type === 'HP') return input - this.k * v1 - v2;
+        
+        return input;
+    }
+}
 
 class GhostProcessor extends AudioWorkletProcessor {
   private sab: SharedArrayBuffer | null = null;
@@ -38,6 +102,8 @@ class GhostProcessor extends AudioWorkletProcessor {
   private chopperActive: boolean = false;
   private chopperDecay: number = 0.9992;
   private chopperMix: number = 0.5;
+  private chopperEq: number = 0.5;
+  private chopperPrev: number = 0.0;
 
   private delay: TapeDelay = new TapeDelay(44100, 2.0);
   private dubFeedback: number = 0.0;
@@ -60,13 +126,30 @@ class GhostProcessor extends AudioWorkletProcessor {
   private bloomShimmer: number = 0.5;
   private bloomMix: number = 0.0;
   
-  private filterActive: boolean = true;
+  private filterActive: boolean = false;
+  private decimatorActive: boolean = false;
+  private tapeActive: boolean = false;
+  private reverbActive: boolean = false;
+  private compActive: boolean = false;
   
+  // Tims for params
+  private compThresh: number = 1.0;
+  private compRatio: number = 20.0; // Limiter default
+  private compMakeup: number = 1.0;
+  
+  // Filter State
+  private hpfFreq: number = 20;
+  private lpfFreq: number = 14000;
+  private filterQ: number = 0.7;
+
   constructor() {
     super();
-    this.hpf.setParams(20, 0.7); // Open
-    this.lpf.setParams(20000, 0.7); // Open
+    this.hpf.setParams(this.hpfFreq, this.filterQ); 
+    this.lpf.setParams(this.lpfFreq, this.filterQ); 
     
+    // Init Limiter
+    this.limiter.setParams(1.0, 20.0, 1.0, 100);
+
     this.port.onmessage = (event: MessageEvent) => {
       if (event.data.type === 'INIT_SAB') {
         this.sab = event.data.payload;
@@ -74,70 +157,73 @@ class GhostProcessor extends AudioWorkletProcessor {
       }
       
       if (event.data.type === 'CONFIG_UPDATE') {
+          // DECIMATOR
           if (event.data.param === 'SR') this.decimator.setParams(event.data.value, this.decimator.bitDepth);
           if (event.data.param === 'BITS') this.decimator.setParams(this.decimator.sampleRate, event.data.value);
           
-          if (event.data.param === 'TAPE_STOP') {
-              this.tape.setTargetSpeed(event.data.value > 0.5 ? 0.0 : 1.0);
+          // TAPE
+          if (event.data.param === 'TAPE_STOP') this.tape.setTargetSpeed(event.data.value > 0.5 ? 0.0 : 1.0);
+          if (event.data.param === 'SPEED') this.tape.setTargetSpeed(event.data.value);
+          if (event.data.param === 'NOISE_LEVEL') this.noiseLevel = event.data.value;
+
+          // ACTIVE FLAGS
+          if (event.data.param === 'FILTER_ACTIVE') this.filterActive = event.data.value > 0.5;
+          if (event.data.param === 'DECIMATOR_ACTIVE') this.decimatorActive = event.data.value > 0.5;
+          if (event.data.param === 'TAPE_ACTIVE') this.tapeActive = event.data.value > 0.5;
+          if (event.data.param === 'REVERB_ACTIVE') this.reverbActive = event.data.value > 0.5;
+          if (event.data.param === 'COMP_ACTIVE') this.compActive = event.data.value > 0.5;
+          if (event.data.param === 'CHOPPER_ACTIVE') this.chopperActive = event.data.value > 0.5;
+
+          // COMPRESSOR / LIMITER
+          if (event.data.param === 'COMP_THRESH') this.compThresh = event.data.value;
+          if (event.data.param === 'COMP_RATIO') this.compRatio = event.data.value;
+          if (event.data.param === 'COMP_MAKEUP') {
+               this.compMakeup = event.data.value; 
+               this.limiter.setParams(this.compThresh, this.compRatio, this.compMakeup, 100);
           }
-          if (event.data.param === 'SPEED') {
-              this.tape.setTargetSpeed(event.data.value);
-          }
-          if (event.data.param === 'NOISE_LEVEL') {
-              this.noiseLevel = event.data.value;
-          }
-          if (event.data.param === 'CHOPPER_ACTIVE') {
-              this.chopperActive = event.data.value > 0.5;
-          }
-          if (event.data.param === 'CHOPPER_DECAY') {
-               this.chopperDecay = 0.99 + (event.data.value * 0.0099);
-          }
-          if (event.data.param === 'CHOPPER_MIX') {
-              this.chopperMix = event.data.value;
-          }
-           if (event.data.param === 'DUB') {
-              this.dubFeedback = event.data.value * 0.95;
-          }
+
+          // CHOPPER (HEAD B)
+          if (event.data.param === 'CHOPPER_DECAY') this.chopperDecay = 0.99 + (event.data.value * 0.0099);
+          if (event.data.param === 'CHOPPER_MIX') this.chopperMix = event.data.value;
+          if (event.data.param === 'CHOPPER_EQ') this.chopperEq = event.data.value;
+          
+          // GLOBALS / GHOST
+          if (event.data.param === 'DUB') this.dubFeedback = event.data.value * 0.95;
           if (event.data.param === 'RESET') {
-              if (this.headerView) {
-                  Atomics.store(this.headerView, OFFSETS.READ_POINTER_A / 4, 0);
-              }
+              if (this.headerView) Atomics.store(this.headerView, OFFSETS.READ_POINTER_A / 4, 0);
           }
           if (event.data.param === 'GHOST_FADE') {
               const val = 1.0 - event.data.value; 
               this.ghostFadeIn = 0.0001 + (val * 0.01);
               this.ghostFadeOut = 0.00005 + (val * 0.005);
           }
-          if (event.data.param === 'GHOST_EQ') {
-              this.ghostEq = event.data.value;
-          }
+          if (event.data.param === 'GHOST_EQ') this.ghostEq = event.data.value;
+          
           if (event.data.param === 'GATE_THRESH') {
               const thresh = event.data.value * 0.3; 
               const mix = event.data.value > 0.01 ? 1.0 : 0.0;
               this.spectralGate.setParams(thresh, mix);
           }
           
-          // BLOOM REVERB PARAMS
+          // BLOOM REVERB
           if (event.data.param === 'BLOOM_SIZE') this.bloomSize = event.data.value;
           if (event.data.param === 'BLOOM_SHIMMER') this.bloomShimmer = event.data.value;
           if (event.data.param === 'BLOOM_MIX') this.bloomMix = event.data.value;
-          
           this.bloom.setParams(this.bloomSize, this.bloomShimmer, this.bloomMix);
           
-          // FILTER PARAMS
-          if (event.data.param === 'FILTER_ACTIVE') {
-              this.filterActive = event.data.value > 0.5;
+          // FILTER
+          if (event.data.param === 'FILTER_Q') {
+              this.filterQ = 0.1 + (event.data.value * 9.9);
+              this.hpf.setParams(this.hpfFreq, this.filterQ);
+              this.lpf.setParams(this.lpfFreq, this.filterQ);
           }
           if (event.data.param === 'HPF') {
-              // Map 0..1 -> 20..20000 (Log)
-              // 20 * (1000^val)
-              const freq = 20 * Math.pow(1000, event.data.value);
-              this.hpf.setParams(freq, 0.7);
+              this.hpfFreq = 20 * Math.pow(1000, event.data.value);
+              this.hpf.setParams(this.hpfFreq, this.filterQ);
           }
           if (event.data.param === 'LPF') {
-              // Map 0..1 -> 20..20000 (Log)
-              const freq = 20 * Math.pow(1000, event.data.value);
-              this.lpf.setParams(freq, 0.7);
+              this.lpfFreq = 20 * Math.pow(1000, event.data.value);
+              this.lpf.setParams(this.lpfFreq, this.filterQ);
           }
       }
       
@@ -197,7 +283,7 @@ class GhostProcessor extends AudioWorkletProcessor {
     let currentPtr = readPtrA;
     let currentPtrC = readPtrC;
     let currentPtrB = readPtrB;
-    const ghostVelocity = velocity * 0.9; 
+    const ghostVelocity = velocity * 0.5; // Half speed
     const bpm = this.floatView[OFFSETS.BPM / 4] || 120;
     const samplesPerBeat = (44100 * 60) / bpm;
     const distancePer16th = samplesPerBeat / 4;
@@ -227,7 +313,23 @@ class GhostProcessor extends AudioWorkletProcessor {
                 this.envB = 1.0;
             }
             const indexB = Math.floor(currentPtrB) % bufferSize;
-            const sampleB = this.audioData[indexB] || 0;
+            let sampleB = this.audioData[indexB] || 0;
+            
+            // HEAD B EQ
+            if (this.chopperEq > 0.55) {
+                 const coeff = (this.chopperEq - 0.5) * 1.8; 
+                 const low = this.chopperPrev + coeff * (sampleB - this.chopperPrev);
+                 this.chopperPrev = low;
+                 sampleB = sampleB - low; // High pass
+            } else if (this.chopperEq < 0.45) {
+                const coeff = this.chopperEq * 2.0; 
+                const low = this.chopperPrev + coeff * (sampleB - this.chopperPrev);
+                this.chopperPrev = low;
+                sampleB = low; // Low pass
+            } else {
+                this.chopperPrev = sampleB;
+            }
+
             sample = sample + (sampleB * this.chopperMix * this.envB);
             currentPtrB += velocity; 
             if (currentPtrB >= bufferSize) currentPtrB -= bufferSize;
@@ -267,25 +369,32 @@ class GhostProcessor extends AudioWorkletProcessor {
             sample = this.lpf.process(sample, 'LP');
         }
 
-        // --- FX CHAIN: MOD 04 TAPE ECHO (Pre or Post?) ---
-        // Modules usually series.
-        const delayTime = (60 / bpm) * 0.75; 
-        this.delay.setParams(delayTime, this.dubFeedback, 0.002); 
-        const wetDelay = this.delay.process(sample);
-        const wetMix = (this.dubFeedback / 0.95) * 0.5;
-        if (wetMix > 0.001) sample += wetDelay * wetMix; 
+        // --- FX CHAIN: MOD 04 TAPE ECHO ---
+        if (this.tapeActive) {
+            const delayTime = (60 / bpm) * 0.75; 
+            this.delay.setParams(delayTime, this.dubFeedback, 0.002); 
+            const wetDelay = this.delay.process(sample);
+            const wetMix = (this.dubFeedback / 0.95) * 0.5;
+            if (wetMix > 0.001) sample += wetDelay * wetMix; 
+        }
 
         // --- FX CHAIN: MOD 02 DECIMATOR ---
-        sample = this.decimator.process(sample);
+        if (this.decimatorActive) {
+            sample = this.decimator.process(sample);
+        }
         
         // --- FX CHAIN: MOD 05 GATE ---
         sample = this.spectralGate.process(sample);
         
         // --- FX CHAIN: MOD 03 BLOOM ---
-        sample = this.bloom.process(sample);
+        if (this.reverbActive) {
+            sample = this.bloom.process(sample);
+        }
 
-        // --- FX CHAIN: MOD 06 LIMITER ---
-        sample = this.limiter.process(sample);
+        // --- FX CHAIN: MOD 06 DYNAMICS ---
+        if (this.compActive) {
+            sample = this.limiter.process(sample);
+        }
 
         leftChannel[i] = sample;
         rightChannel[i] = sample;

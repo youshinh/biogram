@@ -64,8 +64,7 @@ export class AppShell extends LitElement {
     return html`
       <header>
         <div class="flex flex-col">
-            <div class="title">PROMPT_DJ<span style="font-size: 0.75rem; margin-left: 4px; font-weight: normal;">v2.0</span></div>
-            <div class="subtitle">SYS.BIO.GRAM // USER: GUEST</div>
+            <!-- Title Removed -->
         </div>
         <div style="font-size: 0.75rem; text-align: right;">
              <div>STATUS: ${this.status}</div>
@@ -83,10 +82,7 @@ export class AppShell extends LitElement {
                 <div class="flex-grow">
                     <slot name="master"></slot>
                 </div>
-                <div class="b-all p-2 flex-grow" style="min-height: 100px;">
-                    <div style="font-size: 0.7rem; font-weight: bold;">BUFFER_HEALTH</div>
-                    <div style="margin-top: 8px; font-size: 2rem; color: #0f0;">100%</div>
-                </div>
+                <!-- Buffer Health Removed -->
             </div>
         </div>
 

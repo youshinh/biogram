@@ -49,44 +49,43 @@ export class FxRack extends LitElement {
       border: 1px solid var(--fg-color);
       display: flex;
       flex-direction: column;
-      height: 180px;
+      min-height: 180px; /* Allow growth */
       padding: 8px;
       background: #000;
       box-sizing: border-box;
+      overflow: hidden; /* Clip internal overflows */
     }
 
+    /* ... (keep other styles) ... */
+
+    /* Toggle / LED Styles */
     .module-header {
-      display: flex;
       justify-content: space-between;
-      border-bottom: 1px solid rgba(255,255,255,0.2);
-      padding-bottom: 4px;
       margin-bottom: 8px;
-      font-size: 0.6rem;
-      flex-shrink: 0;
+    }
+    
+    .led {
+      width: 8px; height: 8px;
+      background: #333;
+      border-radius: 50%;
+      margin-right: 6px;
+      transition: all 0.2s ease;
+    }
+    .led.on {
+      background: #f00;
+      box-shadow: 0 0 5px #f00, 0 0 10px #800;
     }
 
-    .module-content {
-      flex-grow: 1;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* Toggle Switch */
     .toggle-rect {
-        appearance: none;
-        width: 30px; height: 16px;
-        border: 1px solid var(--fg-color);
-        position: relative;
-        cursor: pointer;
-        outline: none;
+       appearance: none;
+       width: 12px; height: 12px;
+       border: 1px solid #fff;
+       background: transparent;
+       cursor: pointer;
     }
-    .toggle-rect::after {
-        content: ''; position: absolute; top: 1px; left: 1px;
-        width: 12px; height: 12px; background-color: var(--fg-color);
-        transition: transform 0.2s;
+    .toggle-rect:checked {
+        background: #fff;
     }
-    .toggle-rect:checked::after { transform: translateX(14px); }
 
     /* XY Pad */
     .xy-grid {
@@ -95,7 +94,8 @@ export class FxRack extends LitElement {
             linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
         background-size: 20px 20px;
         cursor: crosshair;
-        flex-grow: 1;
+        flex-grow: 1; 
+        min-height: 120px;
         position: relative;
         border: 1px solid rgba(255,255,255,0.3);
     }
@@ -104,60 +104,54 @@ export class FxRack extends LitElement {
     .crosshair-pt { position: absolute; width: 6px; height: 6px; border: 1px solid #fff; transform: translate(-50%, -50%); pointer-events: none; }
 
     /* Bitcrusher */
-    .bit-step {
-        flex-grow: 1; border-right: 1px solid #333; cursor: pointer; opacity: 0.3;
-        background: #333; transition: all 0.1s;
-    }
-    .bit-step.active { opacity: 1; background: #fff; }
-    .bit-step:hover { background: #666; }
-
-    /* Knob SVG */
-    .knob-svg { width: 50px; height: 50px; transform: rotate(-90deg); cursor: ns-resize; }
-    .knob-circle { transition: stroke-dashoffset 0.1s; }
-
-    /* Meter */
-    /* LED Indicator */
-    .led {
-        width: 8px; height: 8px;
-        background: #333;
-        border-radius: 50%;
-        margin-right: 8px;
-        transition: all 0.2s;
-        box-shadow: inset 0 0 2px #000;
-    }
-    .led.on {
-        background: #ff0000;
-        box-shadow: 0 0 10px #ff0000, inset 0 0 2px #ffcccc;
-    }
+    /* ... */
   `;
 
-  // State
-  @property({ type: Number }) bits = 32;
-  @property({ type: Number }) sr = 1.0; // Normalized 0-1
   @property({ type: Number }) filterX = 0.5;
   @property({ type: Number }) filterY = 0.5;
-  @property({ type: Number }) bloomSize = 0.5;
-  @property({ type: Number }) bloomShimmer = 0.5;
-  @property({ type: Number }) limiterGR = 0.0; // Gain Reduction dB (visual)
-  
-  // Active States
+  @property({ type: Number }) filterQ = 0.5;
+
   @property({ type: Boolean }) activeFilter = true;
   @property({ type: Boolean }) activeDecimator = true;
   @property({ type: Boolean }) activeReverb = true;
   @property({ type: Boolean }) activeTape = true;
-  @property({ type: Boolean }) activeGate = false;
+  @property({ type: Boolean }) activeGate = true;
   @property({ type: Boolean }) activeLimiter = true;
 
-  // Handlers
-  private updateParam(name: string, val: number) {
-      // @ts-ignore
-      if (window.engine) window.engine.updateDspParam(name, val);
+  @property({ type: Number }) sr = 1.0;
+  @property({ type: Number }) bits = 16;
+  
+  @property({ type: Number }) bloomSize = 0.6;
+  @property({ type: Number }) bloomShimmer = 0.4;
+  @property({ type: Number }) bloomMix = 0.3;
+
+  @property({ type: Number }) limiterGR = 1.0;
+  @property({ type: Number }) compRatio = 4;
+  @property({ type: Number }) compThresh = 0.7;
+  @property({ type: Number }) compGain = 1.2;
+
+  firstUpdated() {
+      // Sync initial state
+      this.updateParam('FILTER_ACTIVE', this.activeFilter ? 1 : 0);
+      this.updateParam('DECIMATOR_ACTIVE', this.activeDecimator ? 1 : 0);
+      this.updateParam('REVERB_ACTIVE', this.activeReverb ? 1 : 0);
+      this.updateParam('TAPE_ACTIVE', this.activeTape ? 1 : 0);
+      this.updateParam('COMP_ACTIVE', this.activeLimiter ? 1 : 0);
+      this.updateParam('GATE_THRESH', this.activeGate ? this.compThresh : 0.0);
+  }
+
+  updateParam(id: string, val: number) {
+    this.dispatchEvent(new CustomEvent('param-change', {
+        detail: { id, val },
+        bubbles: true,
+        composed: true
+    }));
   }
 
   render() {
     return html`
       <div class="rack-grid">
-        
+
         <!-- MOD 01: FILTER XY -->
         <div class="module">
           <div class="module-header flex items-center">
@@ -171,8 +165,8 @@ export class FxRack extends LitElement {
                     this.updateParam('FILTER_ACTIVE', this.activeFilter ? 1 : 0);
                 }}">
           </div>
-          <div class="module-content">
-             <div class="xy-grid"
+          <div class="module-content flex flex-col gap-2">
+             <div class="xy-grid w-full"
                 @pointermove="${(e: PointerEvent) => {
                     if (e.buttons !== 1) return;
                     const rect = (e.target as HTMLElement).getBoundingClientRect();
@@ -183,15 +177,34 @@ export class FxRack extends LitElement {
                     this.updateParam('LPF', 1.0 - y); 
                     this.requestUpdate();
                 }}"
-                @pointerdown="${(e: PointerEvent) => (e.target as HTMLElement).setPointerCapture(e.pointerId)}"
+                @pointerdown="${(e: PointerEvent) => {
+                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                    const rect = (e.target as HTMLElement).getBoundingClientRect();
+                    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+                    this.filterX = x; this.filterY = y;
+                    this.updateParam('HPF', x); 
+                    this.updateParam('LPF', 1.0 - y); 
+                    this.requestUpdate();
+                }}"
              >
                 <div class="crosshair-x" style="left: ${this.filterX * 100}%"></div>
                 <div class="crosshair-y" style="top: ${this.filterY * 100}%"></div>
                 <div class="crosshair-pt" style="left: ${this.filterX * 100}%; top: ${this.filterY * 100}%"></div>
              </div>
-             <div class="flex justify-between text-xxs mt-1">
-                <span>HPF: ${(this.filterX * 20000).toFixed(0)}Hz</span>
-                <span>LPF: ${(20000 - this.filterY * 20000).toFixed(0)}Hz</span>
+             <div class="flex flex-col w-full">
+                 <div class="flex justify-between text-xxs">
+                    <span>RES (Q)</span>
+                    <span>${(this.filterQ * 100).toFixed(0)}%</span>
+                 </div>
+                 <input type="range" 
+                    class="w-full"
+                    min="0" max="100" value="${this.filterQ * 100}"
+                    @input="${(e: any) => {
+                        this.filterQ = e.target.value / 100;
+                        this.updateParam('FILTER_Q', this.filterQ);
+                    }}"
+                 >
              </div>
           </div>
         </div>
@@ -206,43 +219,41 @@ export class FxRack extends LitElement {
              <input type="checkbox" class="toggle-rect" ?checked="${this.activeDecimator}"
                 @change="${(e: any) => {
                     this.activeDecimator = e.target.checked;
-                    // TODO: Implement Active logic in DSP if needed, currently assumes always processing or mix logic
+                    this.updateParam('DECIMATOR_ACTIVE', this.activeDecimator ? 1 : 0);
                 }}">
           </div>
-          <div class="module-content flex gap-4">
-             <!-- Sample Rate -->
-             <div class="flex-col flex gap-1 w-full">
-                <span class="text-xxs">RATE</span>
-                <div class="flex border text-xxs h-6">
-                    ${[44, 22, 11, 4].map(k => html`
-                        <div class="flex-1 flex items-center justify-center cursor-pointer hover:bg-white hover:text-black
-                                    ${this.sr * 44100 < (k*1000 + 1000) && this.sr * 44100 > (k*1000 - 1000) ? 'bg-white text-black' : ''}"
-                             @click="${() => { 
-                                 const hz = k * 1000;
-                                 this.sr = hz / 44100;
-                                 this.updateParam('SR', hz);
-                                 this.requestUpdate();
-                             }}"
-                        >${k}k</div>
-                    `)}
+          <div class="module-content flex flex-col gap-2">
+             <!-- Top Row: Sample Rate -->
+             <div class="flex gap-2">
+                <span class="text-xxs w-12 pt-1">RATE</span>
+                <div class="flex flex-wrap gap-1 flex-grow">
+                     ${[44100, 22050, 11025, 8000, 4000].map(hz => html`
+                         <div class="cursor-pointer text-xxs px-2 border ${Math.abs(this.sr * 44100 - hz) < 500 ? 'bg-white text-black' : 'border-gray-600 hover:border-white'}"
+                              @click="${() => { 
+                                  this.sr = hz / 44100;
+                                  this.updateParam('SR', hz);
+                                  this.requestUpdate();
+                              }}"
+                         >${(hz/1000).toFixed(1)}k</div>
+                     `)}
                 </div>
              </div>
-             <!-- Bits -->
-             <div class="flex-col flex gap-1 w-full flex-grow">
-                <span class="text-xxs">BITS</span>
-                <div class="flex border h-10">
-                    ${Array.from({length: 16}).map((_, i) => html`
-                        <div class="bit-step ${i < (this.bits/2) ? 'active' : ''}"
-                             @click="${() => {
-                                 const b = (i + 1) * 2;
-                                 this.bits = b;
-                                 this.updateParam('BITS', b);
-                                 this.requestUpdate();
-                             }}"
-                        ></div>
-                    `)}
-                </div>
-                <span class="text-xxs text-center">${this.bits} bit</span>
+             
+             <!-- Bottom Row: Bits -->
+             <div class="flex flex-col gap-1 w-full mt-2">
+                 <div class="flex justify-between text-xxs">
+                    <span>BITS</span>
+                    <span>${this.bits}</span>
+                 </div>
+                 <input type="range" class="w-full" 
+                    min="1" max="16" step="1" value="${this.bits / 2}"
+                    @input="${(e: any) => {
+                        const b = Number(e.target.value) * 2;
+                        this.bits = b;
+                        this.updateParam('BITS', b);
+                        this.requestUpdate();
+                    }}"
+                 >
              </div>
           </div>
         </div>
@@ -255,47 +266,37 @@ export class FxRack extends LitElement {
                  <span>MOD_03 // BLOOM_VERB</span>
              </div>
              <input type="checkbox" class="toggle-rect" ?checked="${this.activeReverb}"
-                @change="${(e: any) => this.activeReverb = e.target.checked}">
+                @change="${(e: any) => {
+                    this.activeReverb = e.target.checked;
+                    this.updateParam('REVERB_ACTIVE', this.activeReverb ? 1 : 0);
+                }}">
           </div>
-          <div class="module-content flex items-center justify-around">
-            <!-- Knob 1 Size -->
-            <div class="flex flex-col items-center">
-                <svg class="knob-svg" viewBox="0 0 100 100"
-                    @pointermove="${(e: PointerEvent) => {
-                        if(e.buttons!==1) return;
-                        this.bloomSize = Math.max(0, Math.min(1, this.bloomSize - e.movementY * 0.01));
-                        this.updateParam('BLOOM_SIZE', this.bloomSize);
-                        this.requestUpdate();
-                    }}"
-                >
-                    <circle cx="50" cy="50" r="40" stroke="#333" stroke-width="8" fill="none" />
-                    <circle cx="50" cy="50" r="40" stroke="#fff" stroke-width="8" fill="none" class="knob-circle"
-                        stroke-dasharray="${251}" stroke-dashoffset="${251 * (1 - this.bloomSize)}" />
-                </svg>
-                <span class="text-xxs mt-1">SIZE</span>
-            </div>
-            <!-- Knob 2 Shimmer -->
-             <div class="flex flex-col items-center">
-                <svg class="knob-svg" viewBox="0 0 100 100"
-                    @pointermove="${(e: PointerEvent) => {
-                        if(e.buttons!==1) return;
-                        this.bloomShimmer = Math.max(0, Math.min(1, this.bloomShimmer - e.movementY * 0.01));
-                        this.updateParam('BLOOM_SHIMMER', this.bloomShimmer);
-                        this.requestUpdate();
-                    }}"
-                >
-                    <circle cx="50" cy="50" r="40" stroke="#333" stroke-width="8" fill="none" />
-                    <circle cx="50" cy="50" r="40" stroke="#fff" stroke-width="8" fill="none" class="knob-circle"
-                        stroke-dasharray="${251}" stroke-dashoffset="${251 * (1 - this.bloomShimmer)}" />
-                </svg>
-                 <span class="text-xxs mt-1">SHIMMER</span>
-            </div>
-          </div>
-          <!-- Mix Slider -->
-          <div class="p-2">
-             <input type="range" class="w-full" min="0" max="100" 
-                @input="${(e: any) => this.updateParam('BLOOM_MIX', e.target.value / 100)}" 
-             >
+          <div class="module-content flex flex-col justify-around p-1 gap-2">
+             <!-- 3 Horizontal Sliders -->
+             ${[
+                 { label: 'SIZE', val: this.bloomSize, param: 'BLOOM_SIZE' },
+                 { label: 'SHIMMER', val: this.bloomShimmer, param: 'BLOOM_SHIMMER' },
+                 { label: 'MIX', val: this.bloomMix, param: 'BLOOM_MIX' }
+             ].map(ctrl => html`
+                 <div class="flex flex-col w-full">
+                      <div class="flex justify-between text-xxs">
+                          <span>${ctrl.label}</span>
+                          <span>${(ctrl.val * 100).toFixed(0)}%</span>
+                      </div>
+                      <input type="range" 
+                             class="w-full"
+                             min="0" max="100" value="${ctrl.val * 100}"
+                             @input="${(e: any) => {
+                                 const v = e.target.value / 100;
+                                 if (ctrl.param === 'BLOOM_SIZE') this.bloomSize = v;
+                                 if (ctrl.param === 'BLOOM_SHIMMER') this.bloomShimmer = v;
+                                 if (ctrl.param === 'BLOOM_MIX') this.bloomMix = v;
+                                 this.updateParam(ctrl.param, v);
+                                 this.requestUpdate();
+                             }}"
+                      >
+                 </div>
+             `)}
           </div>
         </div>
         
@@ -307,7 +308,10 @@ export class FxRack extends LitElement {
                  <span>MOD_04 // TAPE_ECHO</span>
              </div>
              <input type="checkbox" class="toggle-rect" ?checked="${this.activeTape}"
-                @change="${(e: any) => this.activeTape = e.target.checked}">
+                @change="${(e: any) => {
+                    this.activeTape = e.target.checked;
+                    this.updateParam('TAPE_ACTIVE', this.activeTape ? 1 : 0);
+                }}">
           </div>
            <div class="module-content flex flex-col justify-around">
               <div class="flex justify-between text-xxs">
@@ -352,29 +356,106 @@ export class FxRack extends LitElement {
               >
            </div>
         </div>
-        
-         <!-- MOD 06: MASTER LIMITER -->
+
+         <!-- MOD 06: DYNAMICS (COMP/LIMIT) -->
         <div class="module">
           <div class="module-header flex items-center">
              <div class="flex items-center">
                  <div class="led ${this.activeLimiter ? 'on' : ''}"></div>
-                 <span>MOD_06 // LIMITER</span>
+                 <span>MOD_06 // DYNAMICS</span>
              </div>
-             <span style="color:red; background:white; padding:0 2px; font-weight:bold;">CLIP</span>
+             <span class="text-xxs ${this.limiterGR < 0.99 ? 'bg-red-500 text-white' : 'opacity-20'} px-1">GR</span>
+             <input type="checkbox" class="toggle-rect" ?checked="${this.activeLimiter}"
+                @change="${(e: any) => {
+                    this.activeLimiter = e.target.checked;
+                    this.updateParam('COMP_ACTIVE', this.activeLimiter ? 1 : 0);
+                }}">
           </div>
-           <div class="module-content flex gap-4 items-center">
-              <div class="h-full w-6 border bg-[#333] relative">
-                 <div class="absolute top-0 w-full bg-white transition-all" style="height: ${this.limiterGR * 100}%"></div>
+           <div class="module-content flex flex-col gap-2">
+              
+              <!-- GR Meter (Horizontal Top) -->
+              <div class="w-full h-2 bg-[#222] border relative mb-1">
+                 <div class="h-full bg-white transition-all opacity-80" 
+                      style="width: ${(1.0 - this.limiterGR) * 100}%; background: ${this.limiterGR < 0.9 ? 'red' : 'white'};"></div>
               </div>
-              <div class="flex flex-col text-xxs gap-2">
-                 <div>
-                    <div class="opacity-50">RATIO</div>
-                    <div class="text-lg font-bold">INF:1</div>
+              
+              <!-- Controls -->
+              <div class="flex flex-col gap-2 flex-grow">
+                 
+                 <!-- Preset Selector -->
+                 <div class="flex flex-col gap-1">
+                    <span class="text-xxs">PRESET</span>
+                    <select class="w-full text-xs bg-black border text-white p-1"
+                        @change="${(e: any) => {
+                             const p = e.target.value;
+                             // Apply Preset
+                             if (p === 'LIMIT') { this.compRatio = 20; this.compThresh = 1.0; this.compGain = 1.0; }
+                             if (p === 'SMASH') { this.compRatio = 8; this.compThresh = 0.6; this.compGain = 1.5; }
+                             if (p === 'VOCAL') { this.compRatio = 4; this.compThresh = 0.7; this.compGain = 1.2; }
+                             if (p === 'GLUE') { this.compRatio = 2; this.compThresh = 0.5; this.compGain = 1.1; }
+                             
+                             this.updateParam('COMP_RATIO', this.compRatio);
+                             this.updateParam('COMP_THRESH', this.compThresh);
+                             this.updateParam('COMP_MAKEUP', this.compGain);
+                             this.requestUpdate();
+                        }}"
+                    >
+                        <option value="LIMIT">MASTER_LIMIT</option>
+                        <option value="SMASH">DRUM_SMASH</option>
+                        <option value="VOCAL">VOCAL_LEVEL</option>
+                        <option value="GLUE">SUB_GLUE</option>
+                    </select>
                  </div>
-                 <div>
-                    <div class="opacity-50">GAIN</div>
-                    <div class="text-lg font-bold">+0dB</div>
+
+                 <!-- Ratio Selector -->
+                 <div class="flex flex-col gap-1">
+                    <span class="text-xxs">RATIO</span>
+                    <select class="w-full text-xs bg-black border text-white p-1"
+                        .value="${this.compRatio}"
+                        @change="${(e: any) => {
+                            this.compRatio = Number(e.target.value);
+                            this.updateParam('COMP_RATIO', this.compRatio);
+                            this.requestUpdate();
+                        }}"
+                    >
+                        <option value="2">2:1</option>
+                        <option value="4">4:1</option>
+                        <option value="8">8:1</option>
+                        <option value="20">INF:1</option>
+                    </select>
                  </div>
+
+                 <!-- Threshold -->
+                 <div class="flex flex-col gap-1">
+                    <div class="flex justify-between text-xxs">
+                        <span>THRESH</span>
+                        <span>${(20 * Math.log10(Math.max(0.001, this.compThresh))).toFixed(1)}dB</span>
+                    </div>
+                    <input type="range" class="w-full" min="0" max="100" value="${this.compThresh * 100}"
+                        @input="${(e: any) => {
+                             this.compThresh = e.target.value / 100;
+                             this.updateParam('COMP_THRESH', this.compThresh);
+                             this.requestUpdate();
+                        }}"
+                    >
+                 </div>
+                 
+                 <!-- Makeup Gain -->
+                 <div class="flex flex-col gap-1">
+                    <div class="flex justify-between text-xxs">
+                        <span>MAKEUP</span>
+                        <span>${(20 * Math.log10(Math.max(0.001, this.compGain))).toFixed(1)}dB</span>
+                    </div>
+                    <input type="range" class="w-full" min="100" max="300" value="${this.compGain * 100}"
+                        @input="${(e: any) => {
+                             // 1.0 to 3.0
+                             this.compGain = e.target.value / 100;
+                             this.updateParam('COMP_MAKEUP', this.compGain);
+                             this.requestUpdate();
+                        }}"
+                    >
+                 </div>
+
               </div>
            </div>
         </div>

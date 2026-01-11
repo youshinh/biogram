@@ -43,16 +43,13 @@ if (isVizMode) {
     viewContainer.style.display = 'flex';
     viewContainer.style.flexDirection = 'column';
     
-    // 1. HEADER (Navigation) - SIMPLIFIED
+    // 1. HEADER (Navigation) - MINIMAL
     const header = document.createElement('header');
     header.className = "flex justify-between items-end border-b border-white pb-2 mb-2 p-2";
     header.style.cssText = "height: 30px; box-sizing: border-box; background: #000; z-index: 1001; position: relative; border-bottom: 1px dashed #333;";
     header.innerHTML = `
         <div class="flex flex-col">
-            <h1 class="text-xl font-bold tracking-tighter" style="font-size:0.8rem; line-height:1; color:#fff;">BIO:GRAM<span class="text-xs font-normal align-top ml-1" style="font-size:0.5rem; opacity:0.7">v2.1 // RACK_VIEW</span></h1>
-        </div>
-        <div class="flex text-xs" style="font-size:0.6rem; opacity: 0.5;">
-            <span>SIGNAL_FLOW: SERIES</span>
+            <h1 class="text-xl font-bold tracking-tighter" style="font-size:0.8rem; line-height:1; color:#fff;">BIO:GRAM<span class="text-xs font-normal align-top ml-1" style="font-size:0.5rem; opacity:0.7">v2.1</span></h1>
         </div>
     `;
     document.body.appendChild(header);
@@ -69,6 +66,9 @@ if (isVizMode) {
     const fxRack = document.createElement('fx-rack') as FxRack;
     fxRack.style.display = 'block'; // Always visible
     fxRack.style.height = "35%";
+    fxRack.addEventListener('param-change', (e: any) => {
+        engine.updateDspParam(e.detail.id, e.detail.val);
+    });
     viewContainer.appendChild(fxRack);
     
     document.body.appendChild(viewContainer);
@@ -389,7 +389,8 @@ if (isVizMode) {
     editIndicator.style.opacity = "0.5";
     editIndicator.onclick = (e) => {
         e.stopPropagation(); // Don't toggle
-        toggleEditor();
+        // @ts-ignore
+        toggleHeadB();
     };
     headBBtn.appendChild(editIndicator);
 
@@ -483,69 +484,75 @@ if (isVizMode) {
     actionsContainer.appendChild(projLink);
 
     // Editor Overlay (Lazy create)
-    let editorOverlay: HTMLElement | null = null;
+    // Editors (Lazy create)
+    let headBOverlay: HTMLElement | null = null;
+    let ghostOverlay: HTMLElement | null = null;
     
-    const toggleEditor = () => {
-        if (editorOverlay) {
-            editorOverlay.remove();
-            editorOverlay = null;
-            return;
-        }
-        
-        editorOverlay = document.createElement('div');
-        Object.assign(editorOverlay.style, {
+    // Helpers
+    const mkOverlay = (title: string) => {
+        const el = document.createElement('div');
+        Object.assign(el.style, {
             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            width: '240px', background: 'rgba(0,0,0,0.95)', border: '1px solid #00ffff',
-            padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 2000,
-            boxShadow: '0 0 20px rgba(0,255,255,0.2)'
+            width: '280px', background: 'rgba(0,0,0,0.95)', border: '1px solid #00ffff',
+            padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 2000,
+            boxShadow: '0 0 30px rgba(0,255,255,0.3)'
         });
-        
-        const label = document.createElement('div');
-        label.textContent = "HEAD B PARAMETERS";
-        label.style.color = "#00ffff";
-        label.style.fontWeight = "bold";
-        label.style.fontSize = "0.8rem";
-        label.style.textAlign = "center";
-        editorOverlay.appendChild(label);
-        
-        // Helper to make slider
-        const mkSlider = (name: string, param: string, def: number, min: number, max: number) => {
-             const row = document.createElement('div');
-             const slabel = document.createElement('div');
-             slabel.textContent = name;
-             slabel.style.fontSize = "0.7rem"; 
-             slabel.style.marginBottom = "4px";
-             
-             const inp = document.createElement('input');
-             inp.type = "range";
-             inp.min = "0"; inp.max = "100";
-             inp.value = String(def * 100); 
-             inp.style.width = "100%";
-             inp.oninput = (e: any) => {
-                 const v = Number(e.target.value) / 100;
-                 engine.updateDspParam(param, v);
-             };
-             
-             row.appendChild(slabel);
-             row.appendChild(inp);
-             editorOverlay!.appendChild(row);
-        };
-        
-        // Decay 0-1 (Default 0.5 -> 0.995?)
-        mkSlider("DECAY LENGTH", 'CHOPPER_DECAY', 0.92, 0, 1);
-        mkSlider("MIX LEVEL", 'CHOPPER_MIX', 0.5, 0, 1);
+        const t = document.createElement('div');
+        t.textContent = title;
+        t.style.cssText = "color:#00ffff; font-weight:bold; font-size:1rem; text-align:center; margin-bottom:10px;";
+        el.appendChild(t);
+        return el;
+    };
+
+    const mkSlider = (parent: HTMLElement, name: string, param: string, def: number, min: number, max: number) => {
+         const row = document.createElement('div');
+         const slabel = document.createElement('div');
+         slabel.textContent = name;
+         slabel.style.fontSize = "0.7rem"; slabel.style.marginBottom = "4px";
+         
+         const inp = document.createElement('input');
+         inp.type = "range"; inp.min = "0"; inp.max = "100";
+         inp.value = String(def * 100); inp.style.width = "100%";
+         inp.oninput = (e: any) => {
+             const v = Number(e.target.value) / 100;
+             engine.updateDspParam(param, v);
+         };
+         row.appendChild(slabel); row.appendChild(inp);
+         parent.appendChild(row);
+    };
+
+    const toggleHeadB = () => {
+        if (headBOverlay) { headBOverlay.remove(); headBOverlay = null; return; }
+        headBOverlay = mkOverlay("HEAD B (SLICE)");
+        mkSlider(headBOverlay, "DECAY LENGTH", 'CHOPPER_DECAY', 0.92, 0, 1);
+        mkSlider(headBOverlay, "MIX LEVEL", 'CHOPPER_MIX', 0.5, 0, 1);
+        mkSlider(headBOverlay, "EQ (Dark<>Bright)", 'CHOPPER_EQ', 0.5, 0, 1);
         
         const close = document.createElement('button');
         close.textContent = "CLOSE";
         close.className = "b-all";
-        close.style.padding = "8px";
-        close.style.marginTop = "8px";
-        close.style.cursor = "pointer";
-        close.onclick = () => toggleEditor();
-        editorOverlay.appendChild(close);
-        
-        document.body.appendChild(editorOverlay);
+        close.style.padding = "10px";
+        close.onclick = () => toggleHeadB();
+        headBOverlay.appendChild(close);
+        document.body.appendChild(headBOverlay);
     };
+
+    const toggleGhost = () => {
+        if (ghostOverlay) { ghostOverlay.remove(); ghostOverlay = null; return; }
+        ghostOverlay = mkOverlay("GHOST (CLOUD)");
+        mkSlider(ghostOverlay, "GHOST EQ", 'GHOST_EQ', 0.5, 0, 1);
+        mkSlider(ghostOverlay, "FADE RATE", 'GHOST_FADE', 0.5, 0, 1);
+        
+        const close = document.createElement('button');
+        close.textContent = "CLOSE";
+        close.className = "b-all";
+        close.style.padding = "10px";
+        close.onclick = () => toggleGhost();
+        ghostOverlay.appendChild(close);
+        document.body.appendChild(ghostOverlay);
+    };
+
+    // Removed specific Edit Buttons as per user request
     
     shell.appendChild(actionsContainer);
 
@@ -578,10 +585,10 @@ if (isVizMode) {
             e.preventDefault(); // Prevent scrolling
             if (engine.getIsPlaying()) {
                 engine.pause();
-                masterStatus.forceUpdateState(false); // Helper if needed, or let polling handle it
+                (masterStatus as any).forceUpdateState(false); // Helper if needed, or let polling handle it
             } else {
                 engine.resume();
-                masterStatus.forceUpdateState(true);
+                (masterStatus as any).forceUpdateState(true);
             }
         }
     });

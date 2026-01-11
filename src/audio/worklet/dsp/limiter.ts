@@ -1,6 +1,8 @@
 export class Limiter {
     private sampleRate: number;
     private threshold: number = 0.95; // -0.5dB
+    private ratio: number = 1.0; // 1:1 (No compression) -> Inf:1
+    private makeup: number = 1.0; // Linear gain
     private release: number = 0.9995; // ~100ms at 44.1k
     private envelope: number = 0.0;
     
@@ -19,8 +21,10 @@ export class Limiter {
         this.buffer = new Float32Array(frames);
     }
     
-    setParams(threshold: number, releaseMs: number) {
+    setParams(threshold: number, ratio: number, makeup: number, releaseMs: number) {
         this.threshold = threshold;
+        this.ratio = Math.max(1, ratio);
+        this.makeup = makeup;
         this.release = Math.exp(-1.0 / (releaseMs * 0.001 * this.sampleRate));
     }
     
@@ -35,10 +39,20 @@ export class Limiter {
         }
         
         // 2. Calculate Gain Reduction needed
-        // If envelope > threshold, we need to attenuate
         let gain = 1.0;
-        if (this.envelope > this.threshold) {
-             gain = this.threshold / this.envelope;
+        
+        if (this.envelope > this.threshold && this.ratio > 1.0) {
+             // Linear Domain Compression?
+             // It's easier in dB.
+             // But log/exp every sample is heavy?
+             // Approximation: 
+             // Gain = (Threshold / Envelope) ^ (1 - 1/Ratio)
+             // If Ratio is Inf (very large), exponent -> 1. Gain -> Th/Env (Limiter)
+             // If Ratio is 1, exponent -> 0. Gain -> 1.
+             
+             // Optimized Power calculation valid for Ratio >= 1
+             const slope = 1.0 - (1.0 / this.ratio);
+             gain = Math.pow(this.threshold / this.envelope, slope);
         }
         
         this.currentReduction = gain;
@@ -46,22 +60,11 @@ export class Limiter {
         // 3. Write to delay buffer
         this.buffer[this.writePtr] = input;
         
-        // 4. Read from delay buffer
-        // Note: In a real lookahead, we'd apply the gain computed *now* to the signal *delayed*.
-        // The peak we detected 'now' will arrive at the output 'lookahead' samples later.
-        // Wait, lookahead means we see the peak *before* it happens.
-        // So we delay the AUDIO, but we apply the GAIN envelope immediately?
-        // Yes, aligning the "Attack" of the gain envelope with the "Peak" of the audio.
-        // Simple implementation: 
-        // Delay Line: [ ... ... Peak ... ... ]
-        // Control:    [ ... ... Gain ... ... ]
-        // We actually want the gain reduction to ramp down *before* the peak hits?
-        // For brickwall, Instant Attack on the *lookahead* signal is sufficient if we apply it to the *delayed* signal.
-        
+        // 4. Read from delayed buffer
         const delayedSample = this.buffer[this.readPtr];
         
-        // Apply Gain
-        const output = delayedSample * gain;
+        // Apply Gain & Makeup
+        const output = delayedSample * gain * this.makeup;
         
         // Update pointers
         this.writePtr++;

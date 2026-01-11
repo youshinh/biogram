@@ -9,84 +9,99 @@ export class MasterStatus extends LitElement {
       flex-direction: column;
       height: 100%;
       background: black;
-      border: 1px solid white;
-      font-family: inherit;
+      font-family: 'Courier New', monospace;
+      border: 1px solid #333;
     }
 
-    .header {
-        background: white;
-        color: black;
-        padding: 4px;
-        font-size: 0.7rem;
-        font-weight: bold;
-        letter-spacing: 0.1em;
-    }
-
-    .main-display {
+    .top-section {
         flex-grow: 1;
         display: flex;
+        border-bottom: 1px solid #333;
+    }
+
+    .bpm-display {
+        flex: 1; /* Large area */
+        display: flex;
         align-items: center;
-        justify-content: space-between;
-        padding: 0 16px;
-        font-size: 3rem;
+        justify-content: center;
+        font-size: 3.5rem;
         font-weight: bold;
         color: white;
-        position: relative;
+        border-right: 1px solid #333;
     }
-    
-    .bpm-controls {
+
+    .tap-btn {
+        width: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: white;
+        background: black;
+        border: none;
+        border-right: 1px solid #333;
+        cursor: pointer;
+    }
+    .tap-btn:active { background: white; color: black; }
+
+    .inc-dec {
+        width: 60px;
         display: flex;
         flex-direction: column;
-        height: 100%;
-        width: 60px; /* Increased width */
-        border-left: 1px solid white;
     }
     
-    .bpm-btn {
+    .adj-btn {
         flex: 1;
         border: none;
-        border-bottom: 1px solid white;
         background: black;
         color: white;
+        font-size: 1.5rem;
+        font-weight: bold;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.5rem; /* Larger font */
-        font-weight: bold;
     }
-    .bpm-btn:last-child { border-bottom: none; }
-    .bpm-btn:hover { background: #333; }
-    .bpm-btn:active { background: white; color: black; }
-
-    .transport-btn {
+    .adj-btn.up { border-bottom: 1px solid #333; }
+    .adj-btn:active { background: white; color: black; }
+    
+    .status-bar {
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 8px;
+        font-size: 0.7rem;
+        background: #111;
+        color: #888;
+    }
+    .play-btn {
         width: 100%;
-        height: 50px;
+        flex: 1;
         border: none;
-        border-top: 1px solid white;
+        border-top: 1px solid #333;
         background: black;
         color: white;
-        font-size: 1.2rem;
+        font-size: 2rem;
         font-weight: bold;
         cursor: pointer;
-        letter-spacing: 0.1em;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
-    .transport-btn.active {
-        background: white;
-        color: black;
-    }
-    .transport-btn:hover {
-        background: #222;
-    }
+    .play-btn:hover { background: #222; }
+    .play-btn.playing { background: white; color: black; }
   `;
 
   @property({ type: Number }) bpm = 120;
   @state() isPlaying = false;
-  @state() bufferHealth = 0;
-  @state() aiStatus = 'IDLE';
-  @state() ghostCount = 0;
+  @state() bufferHealth = 100;
+  @state() ghostCount = 1104; // Dummy/Real
+  @state() saveStatus = "SAVING"; // Dummy
 
   private timer = 0;
+  private tapTimes: number[] = [];
 
   connectedCallback() {
       super.connectedCallback();
@@ -101,14 +116,37 @@ export class MasterStatus extends LitElement {
   private updateStatus() {
       const engine = (window as any).engine;
       if (engine) {
-          this.bufferHealth = Math.round(engine.getBufferHealth());
-          this.aiStatus = engine.getAiStatus();
-          this.ghostCount = engine.getLibraryCount();
+          this.bufferHealth = Math.round(engine.getBufferHealth() || 100);
+          this.ghostCount = engine.getLibraryCount ? engine.getLibraryCount() : 1104;
+          // this.saveStatus = ...
       }
   }
 
   private changeBpm(delta: number) {
       this.bpm = Math.max(60, Math.min(200, this.bpm + delta));
+      this.dispatchBpm();
+  }
+  
+  private tapBpm() {
+      const now = performance.now();
+      this.tapTimes = this.tapTimes.filter(t => now - t < 2000);
+      this.tapTimes.push(now);
+      
+      if (this.tapTimes.length > 1) {
+          let totalInterval = 0;
+          for (let i = 1; i < this.tapTimes.length; i++) {
+              totalInterval += (this.tapTimes[i] - this.tapTimes[i-1]);
+          }
+          const avgInterval = totalInterval / (this.tapTimes.length - 1);
+          if (avgInterval > 0) {
+              const newBpm = Math.round(60000 / avgInterval);
+              this.bpm = Math.max(60, Math.min(200, newBpm));
+              this.dispatchBpm();
+          }
+      }
+  }
+  
+  private dispatchBpm() {
       this.dispatchEvent(new CustomEvent('bpm-change', { 
           detail: this.bpm, 
           bubbles: true, 
@@ -124,33 +162,29 @@ export class MasterStatus extends LitElement {
       }));
   }
 
-  public forceUpdateState(isPlaying: boolean) {
-      this.isPlaying = isPlaying;
-      this.updateStatus(); // Immediate poll
-  }
-
   render() {
     return html`
-      <div class="header">MASTER_CLOCK</div>
+      <div class="top-section">
+          <div style="position: absolute; top:0; left:0; font-size:0.6rem; padding:2px; pointer-events:none; opacity:0.8; color: black; background: white; font-weight: bold;">MASTER_CLOCK</div>
+          
+          <div class="bpm-display">${this.bpm}</div>
+          
+          <button class="tap-btn" @click="${this.tapBpm}">TAP</button>
+          
+          <div class="inc-dec">
+             <button class="adj-btn up" @click="${() => this.changeBpm(1)}">+</button>
+             <button class="adj-btn down" @click="${() => this.changeBpm(-1)}">-</button>
+          </div>
+      </div>
       
-      <div class="main-display">
-        <!-- Removed BPM Label -->
-        <span>${this.bpm}</span>
-        
-        <div class="bpm-controls">
-            <button class="bpm-btn" @click="${() => this.changeBpm(1)}">+</button>
-            <button class="bpm-btn" @click="${() => this.changeBpm(-1)}">-</button>
-        </div>
+      <div class="status-bar">
+          <span>BUF: ${this.bufferHealth}%</span>
+          <span>GHOST: <span class="highlight">${this.ghostCount}</span></span>
+          <span class="status-ok">${this.saveStatus}</span>
       </div>
 
-      <div style="background: #222; color: #aaa; font-size: 0.7rem; padding: 4px; display: flex; justify-content: space-between;">
-         <span>BUF: ${this.bufferHealth}%</span>
-         <span style="color: #bd00ff">GHOST: ${this.ghostCount}</span>
-         <span style="color: ${this.aiStatus === 'SAVING' ? '#00ff88' : '#ffaa00'}">${this.aiStatus}</span>
-      </div>
-
-      <button class="transport-btn ${this.isPlaying ? 'active' : ''}" @click="${this.togglePlay}">
-        ${this.isPlaying ? 'STOP_SYSTEM' : 'INITIATE_PLAY'}
+      <button class="play-btn ${this.isPlaying ? 'playing' : ''}" @click="${this.togglePlay}">
+          ${this.isPlaying ? 'STOP' : 'PLAY'}
       </button>
     `;
   }

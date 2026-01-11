@@ -227,14 +227,57 @@ export class HydraVisualizer extends LitElement {
     this.ctx.lineTo(w/2, h);
     this.ctx.stroke();
 
-    // 4. Draw Spectrum (Bottom Overlay)
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    const barW = w / spectrum.length;
-    for (let i = 0; i < spectrum.length; i++) {
-        const val = spectrum[i] / 255.0; // 0..1
-        const barH = val * (h * 0.3);
-        this.ctx.fillRect(i * barW, h - barH, barW - 1, barH);
+    // 4. Draw Spectrum (Logarithmic)
+    const minF = 20;
+    const maxF = 22000;
+    const logMin = Math.log10(minF);
+    const logMax = Math.log10(maxF);
+    
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    this.ctx.beginPath();
+    this.ctx.moveTo(0, h);
+    
+    for (let x = 0; x < w; x+=2) {
+        // Map x (0..w) to Freq (minF..maxF) in Log space
+        const p = x / w;
+        const f = Math.pow(10, logMin + (p * (logMax - logMin)));
+        
+        // Map Freq to Linear Bin Index
+        // Bin 0 = 0Hz, Bin N = Nyquist (22050)
+        const nyquist = 22050; // Approx
+        const binIndex = (f / nyquist) * spectrum.length;
+        
+        // Interpolate
+        const i1 = Math.floor(binIndex);
+        const i2 = Math.min(spectrum.length - 1, i1 + 1);
+        const t = binIndex - i1;
+        
+        const val1 = (spectrum[i1] || 0);
+        const val2 = (spectrum[i2] || 0);
+        const val = (val1 + t * (val2 - val1)) / 255.0; // 0..1
+        
+        const barH = val * (h * 0.35); // Max Height 35%
+        this.ctx.lineTo(x, h - barH);
     }
+    this.ctx.lineTo(w, h);
+    this.ctx.fill();
+    
+    // Draw Axis Labels
+    this.ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    this.ctx.font = '9px monospace';
+    this.ctx.textAlign = 'center';
+    
+    [50, 100, 200, 500, 1000, 2000, 5000, 10000].forEach(f => {
+        const logF = Math.log10(f);
+        const p = (logF - logMin) / (logMax - logMin);
+        if (p >= 0 && p <= 1) {
+            const x = p * w;
+            const label = f >= 1000 ? (f/1000) + 'k' : f;
+            this.ctx.fillText(String(label), x, h - 2);
+            // Tick
+            this.ctx.fillRect(x, h-12, 1, 4); 
+        }
+    });
     
     // Calculate Window Time for UI
     // Total samples shown = w * zoomScale
