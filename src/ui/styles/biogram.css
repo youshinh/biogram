@@ -1,0 +1,40 @@
+:root {
+  --bg-color: #000000;
+  --fg-color: #FFFFFF;
+  --grid-color: #333333;
+  --font-mono: 'Space Mono', monospace;
+  
+  /* Grid Units */
+  --border-width: 1px;
+  --spacing-base: 4px;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--fg-color);
+  font-family: var(--font-mono);
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utilities */
+.b-all { border: var(--border-width) solid var(--fg-color); }
+.b-t { border-top: var(--border-width) solid var(--fg-color); }
+.b-b { border-bottom: var(--border-width) solid var(--fg-color); }
+.b-l { border-left: var(--border-width) solid var(--fg-color); }
+.b-r { border-right: var(--border-width) solid var(--fg-color); }
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Scrollbar hidden but functional */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
