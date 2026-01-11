@@ -107,11 +107,17 @@ export class MasterStatus extends LitElement {
   connectedCallback() {
       super.connectedCallback();
       this.timer = window.setInterval(() => this.updateStatus(), 500);
+      window.addEventListener('playback-toggled', this.handleGlobalToggle.bind(this));
   }
 
   disconnectedCallback() {
       super.disconnectedCallback();
       clearInterval(this.timer);
+      window.removeEventListener('playback-toggled', this.handleGlobalToggle.bind(this));
+  }
+  
+  private handleGlobalToggle(e: any) {
+      this.isPlaying = e.detail;
   }
 
   private updateStatus() {

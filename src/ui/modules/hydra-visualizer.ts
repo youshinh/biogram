@@ -166,18 +166,14 @@ export class HydraVisualizer extends LitElement {
     const spectrum = engine.getSpectrum(); // Uint8Array(128)
     const audioData = engine.getAudioData(); // Float32Array (SAB)
     const headPos = engine.getReadPointer(); // Int index
-    const velocity = engine.getTapeSpeed ? Math.abs(engine.getTapeSpeed()) : 1.0;
-    const isStopped = velocity < 0.01;
+    
+    // Check pause state
+    const isPlaying = engine.getIsPlaying ? engine.getIsPlaying() : true;
 
     // 1. Clear
     this.ctx.clearRect(0, 0, w, h); 
     
-    // If stopped, force silence in visualization
-    // (Actual buffer might have DC offset, we don't want to show it)
-    if (isStopped) {
-         // Optionally draw a "PAUSED" line or just nothing
-         return; 
-    }
+
 
     // 2. Draw Waveform (Windowed centered on Head)
     // Scale = samples per pixel.
@@ -237,11 +233,13 @@ export class HydraVisualizer extends LitElement {
     this.ctx.stroke();
 
     // 4. Draw Spectrum (1/3 Octave Bands, Reduced Lo-End)
-    // Removed 20, 25, 31.5 to reduce low-end clutter
-    const bands = [
-        40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 
-        800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000
-    ];
+    // Only draw if playing to avoid stuck ghost spectrum
+    if (isPlaying) {
+        // Removed 20, 25, 31.5 to reduce low-end clutter
+        const bands = [
+            40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 
+            800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000
+        ];
     
     // Reserve bottom space for labels
     const labelHeight = 14;
@@ -311,6 +309,7 @@ export class HydraVisualizer extends LitElement {
              // this.ctx.fillRect(x + bandWidth/2, chartHeight, 1, 2);
         }
     }
+    } // End if (isPlaying)
     
     // Calculate Window Time for UI
     // Total samples shown = w * zoomScale

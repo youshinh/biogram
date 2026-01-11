@@ -129,6 +129,8 @@ export class FxRack extends LitElement {
   @property({ type: Number }) compRatio = 4;
   @property({ type: Number }) compThresh = 0.7;
   @property({ type: Number }) compGain = 1.2;
+  
+  @property({ type: Number }) dubSend = 0.0;
 
   firstUpdated() {
       // Sync initial state
@@ -315,10 +317,14 @@ export class FxRack extends LitElement {
           </div>
            <div class="module-content flex flex-col justify-around">
               <div class="flex justify-between text-xxs">
-                 <span>FEEDBACK</span>
+                 <span>DUB SEND (FEEDBACK)</span>
+                 <span>${(this.dubSend * 100).toFixed(0)}%</span>
               </div>
-              <input type="range" class="w-full" min="0" max="100"
-                 @input="${(e: any) => this.updateParam('DUB', e.target.value / 100)}"
+              <input type="range" class="w-full" min="0" max="100" value="${this.dubSend * 100}"
+                 @input="${(e: any) => {
+                     this.dubSend = e.target.value / 100;
+                     this.updateParam('DUB', this.dubSend);
+                 }}"
               >
               <div class="flex items-center justify-between border-t border-white/20 pt-2 mt-2">
                   <span class="text-xxs opacity-50">TAPE_HISS</span>

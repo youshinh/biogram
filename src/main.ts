@@ -99,43 +99,145 @@ if (isVizMode) {
     controlsContainer.style.gridTemplateColumns = 'repeat(6, 1fr)';
     controlsContainer.style.gap = '8px';
     controlsContainer.style.height = '100%';
+    
+    // --- AI PARAMETER GRID (6 SLOTS) ---
+    // Slots 1-3: Sliders (TECHNO, ACID, DETROIT)
+    // Slot 4: Dropdown (GENRE) + Slider
+    // Slot 5: Dropdown (MOOD) + Slider
+    // Slot 6: Custom Input + Slider
 
-    const params = ['TECHNO', 'ACID', 'DUB', 'NOISE', 'DETROIT', 'GLITCH'];
-    params.forEach(p => {
+    const createAiSlider = (label: string, prompt: string, isFixed = true) => {
         const slider = document.createElement('bio-slider');
-        slider.setAttribute('label', p);
+        slider.setAttribute('label', label);
         slider.setAttribute('value', "0");
+        slider.addEventListener('change', (e: any) => {
+            const val = e.detail / 100.0;
+            // Update prompt with weight
+            engine.updateAiPrompt(prompt, val);
+        });
+        return slider;
+    };
+
+    // Slot 1: AMBIENT (Was TECHNO)
+    controlsContainer.appendChild(createAiSlider('AMBIENT', 'Deep Ambient Drone Atmosphere'));
+    
+    // Slot 2: MINIMAL (Was ACID)
+    controlsContainer.appendChild(createAiSlider('MINIMAL', 'Minimal Tech Micro-house Glitch'));
+    
+    // Slot 3: DUB (Was DETROIT)
+    controlsContainer.appendChild(createAiSlider('DUB', 'Basic Channel Dub Techno Chords'));
+
+    // Helper for List/Combo Slots
+    const createComboSlot = (label: string, options: string[]) => {
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.flexDirection = 'column';
+        wrapper.style.flex = '1';
+        wrapper.style.border = '1px solid #333';
+        wrapper.style.background = 'black';
+        
+        // Header / Dropdown
+        const select = document.createElement('select');
+        select.style.background = 'black';
+        select.style.color = 'white';
+        select.style.border = 'none';
+        select.style.borderBottom = '1px solid #333';
+        select.style.fontSize = '0.6rem';
+        select.style.padding = '4px';
+        select.style.fontFamily = 'monospace';
+        select.style.outline = 'none';
+        
+        options.forEach(opt => {
+            const el = document.createElement('option');
+            el.value = opt;
+            el.textContent = opt.split(' ').slice(0, 2).join(' ').toUpperCase(); // Short label
+            wrapper.appendChild(el);
+            select.appendChild(el);
+        });
+        wrapper.appendChild(select);
+        
+        const slider = document.createElement('bio-slider');
+        slider.setAttribute('label', 'LEVEL'); // Generic label
+        slider.style.flex = "1";
+        slider.style.border = "none"; 
+        
+        let currentPrompt = options[0];
+        
+        select.onchange = (e: any) => {
+            currentPrompt = e.target.value;
+            const val = Number(slider.getAttribute('value')) / 100.0;
+            if (val > 0) engine.updateAiPrompt(currentPrompt, val);
+        };
         
         slider.addEventListener('change', (e: any) => {
-            const val = e.detail; 
-            const norm = val / 100.0;
-            
-            // PROMPT MAPPING
-            if (p === 'TECHNO') engine.updateAiPrompt('Techno Rhythms', norm);
-            if (p === 'ACID') engine.updateAiPrompt('Acid Bassline TB-303', norm);
-           // if (p === 'DUB') engine.updateAiPrompt('Dub Chords', norm); // REMOVED PROMPT MAPPING
-            if (p === 'DETROIT') engine.updateAiPrompt('Detroit Strings', norm);
-            
-            // DSP MAPPING
-            if (p === 'DUB') {
-                engine.updateDspParam('DUB', norm);
-            }
-            if (p === 'NOISE') {
-                // Spectral Gate
-                engine.updateDspParam('GATE_THRESH', norm);
-            }
-            if (p === 'GLITCH') {
-                // Combined Destruction (Bitcrush + Downsample)
-                // Tuned to be less destructive based on user feedback (Min SR 8k, Min Bits 6)
-                const bits = 32 - (norm * 26); // 32 -> 6
-                const rate = 44100 - (norm * 36100); // 44100 -> 8000
-                engine.updateDspParam('BITS', bits);
-                engine.updateDspParam('SR', rate);
-            }
+             const val = e.detail / 100.0;
+             engine.updateAiPrompt(currentPrompt, val);
         });
+        
+        wrapper.appendChild(slider);
+        return wrapper;
+    };
 
-        controlsContainer.appendChild(slider);
-    });
+    // Slot 4: TEXTURE (Was GENRE)
+    controlsContainer.appendChild(createComboSlot('TEXTURE', [
+        'Field Recordings Nature', 
+        'Industrial Factory Drone', 
+        'Tape Hiss Lo-Fi', 
+        'Underwater Hydrophone'
+    ]));
+
+    // Slot 5: RHYTHM (Was MOOD)
+    controlsContainer.appendChild(createComboSlot('RHYTHM', [
+        'Sparse 909 Kick', 
+        'Broken Beat Glitch', 
+        'Polyrhythmic Percussion', 
+        'Offbeat Dub Echo'
+    ]));
+
+    // Slot 6: CUSTOM INPUT
+    const createCustomSlot = () => {
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.flexDirection = 'column';
+        wrapper.style.flex = '1';
+        wrapper.style.border = '1px solid #333';
+        wrapper.style.background = 'black';
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'CUSTOM PROMPT';
+        input.style.background = 'black';
+        input.style.color = '#00ff88';
+        input.style.border = 'none';
+        input.style.borderBottom = '1px solid #333';
+        input.style.fontSize = '0.6rem';
+        input.style.padding = '4px';
+        input.style.fontFamily = 'monospace';
+        input.style.outline = 'none';
+        wrapper.appendChild(input);
+        
+        const slider = document.createElement('bio-slider');
+        slider.setAttribute('label', 'WEIGHT');
+        slider.style.flex = "1";
+        slider.style.border = "none";
+        
+        let prompt = "";
+        
+        input.onchange = (e: any) => {
+            prompt = e.target.value;
+        };
+        
+        slider.addEventListener('change', (e: any) => {
+             const val = e.detail / 100.0;
+             if (prompt) engine.updateAiPrompt(prompt, val);
+        });
+        
+        wrapper.appendChild(slider);
+        return wrapper;
+    };
+    
+    controlsContainer.appendChild(createCustomSlot());
+
     shell.appendChild(controlsContainer);
 
     // 3. Actions Panel (Right Bottom)
@@ -400,6 +502,7 @@ if (isVizMode) {
     // --- SLAM BUTTON ---
     const slamBtn = document.createElement('slam-button');
     slamBtn.style.flex = "1"; // Fill remaining
+    slamBtn.style.position = "relative"; // For Edit button
     
     // SLAM MACRO: Maximize Destruction with XY Control
     const updateSlamParams = (x: number, y: number) => {
@@ -428,11 +531,9 @@ if (isVizMode) {
         // X-Axis (Horizontal): Tone / Space
         // Left (x=0) = Dark/Dry. Right (x=1) = Bright/Wet.
         
-        // Dub: 0..0.98
-        engine.updateDspParam('DUB', x * 0.98);
-        
         // Ghost EQ: 0..1
         engine.updateDspParam('GHOST_EQ', x);
+        // DUB removed from here (now in FX Rack)
     };
     
     // RELEASE: Return to Clean / Safe State
@@ -440,7 +541,6 @@ if (isVizMode) {
         engine.updateDspParam('GATE_THRESH', 0.0); 
         engine.updateDspParam('SR', 44100); 
         engine.updateDspParam('BITS', 32); 
-        engine.updateDspParam('DUB', 0.0); 
         engine.updateDspParam('GHOST_EQ', 0.5);
     };
 
@@ -469,6 +569,104 @@ if (isVizMode) {
         releaseSlam();
     });
     window.addEventListener('pointerup', releaseSlam);
+
+    // --- DESTRUCTION EDITOR (Overlay) ---
+    let destOverlay: HTMLElement | null = null;
+    const toggleDestEditor = () => {
+        if (destOverlay) {
+            destOverlay.remove();
+            destOverlay = null;
+            return;
+        }
+        
+        destOverlay = document.createElement('div');
+        Object.assign(destOverlay.style, {
+            position: 'absolute', bottom: '20px', right: '20px',
+            width: '260px', background: 'rgba(0,0,0,0.9)', 
+            border: '1px solid #ff0055', // Red theme for destruction
+            padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 2002,
+            boxShadow: '0 0 20px rgba(255,0,85,0.3)'
+        });
+        
+        const label = document.createElement('div');
+        label.textContent = "DESTRUCTION PARAMETERS";
+        label.style.color = "#ff0055";
+        label.style.fontWeight = "bold";
+        label.style.fontSize = "0.7rem";
+        label.style.textAlign = "center";
+        destOverlay.appendChild(label);
+        
+        const mkSlider = (name: string, param: string, def: number, min: number, max: number, transf: (v:number)=>number, format: (v:number)=>string) => {
+             const row = document.createElement('div');
+             const slabel = document.createElement('div');
+             slabel.style.fontSize = "0.6rem"; 
+             slabel.style.marginBottom = "2px";
+             slabel.style.display = "flex";
+             slabel.style.justifyContent = "space-between";
+             
+             const nameSpan = document.createElement('span'); nameSpan.textContent = name;
+             const valSpan = document.createElement('span'); valSpan.textContent = format(def);
+             slabel.appendChild(nameSpan); slabel.appendChild(valSpan);
+             
+             const inp = document.createElement('input');
+             inp.type = "range";
+             inp.min = "0"; inp.max = "100";
+             // Inverse transform logic is complex, just assume 0..1 input
+             inp.value = "0"; // Default to 0 for destruction params (Clean state)
+             inp.style.width = "100%";
+             inp.oninput = (e: any) => {
+                 const norm = Number(e.target.value) / 100;
+                 const v = transf(norm);
+                 engine.updateDspParam(param, v);
+                 valSpan.textContent = format(v);
+             };
+             row.appendChild(slabel);
+             row.appendChild(inp);
+             destOverlay!.appendChild(row);
+        };
+        
+        // Spectral Gate
+        mkSlider("SPECTRAL GATE (THRESH)", 'GATE_THRESH', 0, 0, 1, (v)=>v, (v)=>(v*100).toFixed(0)+'%');
+        
+        // Bitcrush (Inverted input: 0=Clean(16), 1=Dirty(4))
+        mkSlider("BITCRUSHER (DEPTH)", 'BITS', 16, 4, 16, (v)=> 16 - (v*12), (v)=>v.toFixed(1)+' bits');
+        
+        // Downsample (Inverted: 0=Clean(44k), 1=Dirty(4k))
+        mkSlider("DOWNSAMPLER (RATE)", 'SR', 44100, 4000, 44100, (v)=> 44100 - (v*40000), (v)=>(v/1000).toFixed(1)+'kHz');
+
+        const close = document.createElement('button');
+        close.textContent = "CLOSE";
+        close.className = "b-all";
+        close.style.padding = "6px";
+        close.style.cursor = "pointer";
+        close.onclick = () => toggleDestEditor();
+        destOverlay.appendChild(close);
+        
+        document.body.appendChild(destOverlay);
+    };
+
+    // Edit Button on SLAM
+    const slamEdit = document.createElement('div');
+    slamEdit.textContent = "EDIT";
+    slamEdit.style.position = "absolute";
+    slamEdit.style.bottom = "8px";
+    slamEdit.style.right = "8px";
+    slamEdit.style.fontSize = "0.6rem";
+    slamEdit.style.border = "1px solid rgba(255,255,255,0.5)";
+    slamEdit.style.padding = "2px 4px";
+    slamEdit.style.color = "white";
+    slamEdit.style.opacity = "0.7";
+    slamEdit.style.cursor = "pointer";
+    slamEdit.style.zIndex = "10";
+    
+    slamEdit.addEventListener('pointerdown', (e) => {
+        e.stopPropagation(); // Stop slam trigger
+    });
+    slamEdit.onclick = (e) => {
+        e.stopPropagation();
+        toggleDestEditor();
+    };
+    slamBtn.appendChild(slamEdit);
 
     actionsContainer.appendChild(slamBtn);
 
@@ -585,10 +783,10 @@ if (isVizMode) {
             e.preventDefault(); // Prevent scrolling
             if (engine.getIsPlaying()) {
                 engine.pause();
-                (masterStatus as any).forceUpdateState(false); // Helper if needed, or let polling handle it
+                window.dispatchEvent(new CustomEvent('playback-toggled', { detail: false }));
             } else {
                 engine.resume();
-                (masterStatus as any).forceUpdateState(true);
+                window.dispatchEvent(new CustomEvent('playback-toggled', { detail: true }));
             }
         }
     });
