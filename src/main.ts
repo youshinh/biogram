@@ -188,10 +188,10 @@ if (isVizMode) {
 
     // Slot 5: RHYTHM (Was MOOD)
     controlsContainer.appendChild(createComboSlot('RHYTHM', [
-        'Sparse 909 Kick', 
-        'Broken Beat Glitch', 
-        'Polyrhythmic Percussion', 
-        'Offbeat Dub Echo'
+        'Sub-bass Pulse', 
+        'Granular Clicks', 
+        'Deep Dub Tech Rhythm', 
+        'Industrial Micro-beats'
     ]));
 
     // Slot 6: CUSTOM INPUT
@@ -256,6 +256,78 @@ if (isVizMode) {
     gridControls.style.height = '40%'; // Occupy top part
 
     // --- GHOST EDITOR (Defined early) ---
+    // Moved Helpers here to avoid Hoisting issues
+    // Editors (Lazy create)
+    let headBOverlay: HTMLElement | null = null;
+    let ghostOverlay: HTMLElement | null = null;
+    
+    // Helpers
+    const mkOverlay = (title: string) => {
+        const el = document.createElement('div');
+        Object.assign(el.style, {
+            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            width: '280px', background: 'rgba(0,0,0,0.95)', border: '1px solid #00ffff',
+            padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 2000,
+            boxShadow: '0 0 30px rgba(0,255,255,0.3)'
+        });
+        const t = document.createElement('div');
+        t.textContent = title;
+        t.style.cssText = "color:#00ffff; font-weight:bold; font-size:1rem; text-align:center; margin-bottom:10px;";
+        el.appendChild(t);
+        return el;
+    };
+
+    const mkSliderHelper = (parent: HTMLElement, name: string, param: string, def: number, min: number, max: number) => {
+         const row = document.createElement('div');
+         const slabel = document.createElement('div');
+         slabel.textContent = name;
+         slabel.style.fontSize = "0.7rem"; slabel.style.marginBottom = "4px";
+         
+         const inp = document.createElement('input');
+         inp.type = "range"; inp.min = "0"; inp.max = "100";
+         const currentVal = engine.getDspParam(param) ?? def;
+         inp.value = String(currentVal * 100); inp.style.width = "100%";
+         inp.oninput = (e: any) => {
+             const v = Number(e.target.value) / 100;
+             engine.updateDspParam(param, v);
+         };
+         row.appendChild(slabel); row.appendChild(inp);
+         parent.appendChild(row);
+    };
+
+    const toggleHeadB = () => {
+        if (headBOverlay) { headBOverlay.remove(); headBOverlay = null; return; }
+        headBOverlay = mkOverlay("HEAD B (SLICE)");
+        mkSliderHelper(headBOverlay, "DECAY LENGTH", 'CHOPPER_DECAY', 0.92, 0, 1);
+        mkSliderHelper(headBOverlay, "RHYTHM DENSITY", 'CHOPPER_DENSITY', 0.25, 0, 1); // 4/16 default
+        mkSliderHelper(headBOverlay, "MIX LEVEL", 'CHOPPER_MIX', 0.5, 0, 1);
+        mkSliderHelper(headBOverlay, "EQ (Dark<>Bright)", 'CHOPPER_EQ', 0.5, 0, 1);
+        
+        const close = document.createElement('button');
+        close.textContent = "CLOSE";
+        close.className = "b-all";
+        close.style.padding = "10px";
+        close.onclick = () => toggleHeadB();
+        headBOverlay.appendChild(close);
+        document.body.appendChild(headBOverlay);
+    };
+    
+    // (Note: Ghost uses specific toggleGhostEditor below, but we keep toggleGhost for completeness)
+    const toggleGhost = () => {
+        if (ghostOverlay) { ghostOverlay.remove(); ghostOverlay = null; return; }
+        ghostOverlay = mkOverlay("GHOST (CLOUD)");
+        mkSliderHelper(ghostOverlay, "GHOST EQ", 'GHOST_EQ', 0.5, 0, 1);
+        mkSliderHelper(ghostOverlay, "FADE RATE", 'GHOST_FADE', 0.5, 0, 1);
+        
+        const close = document.createElement('button');
+        close.textContent = "CLOSE";
+        close.className = "b-all";
+        close.style.padding = "10px";
+        close.onclick = () => toggleGhost();
+        ghostOverlay.appendChild(close);
+        document.body.appendChild(ghostOverlay);
+    };
+
     let ghostEditorOverlay: HTMLElement | null = null;
     const toggleGhostEditor = () => {
          if (ghostEditorOverlay) {
@@ -287,10 +359,11 @@ if (isVizMode) {
              slabel.style.fontSize = "0.7rem"; 
              slabel.style.marginBottom = "4px";
              
+             const currentVal = engine.getDspParam(param) ?? def;
              const inp = document.createElement('input');
              inp.type = "range";
              inp.min = "0"; inp.max = "100";
-             inp.value = String(def * 100); 
+             inp.value = String(currentVal * 100); 
              inp.style.width = "100%";
              inp.oninput = (e: any) => {
                  const v = Number(e.target.value) / 100;
@@ -325,7 +398,11 @@ if (isVizMode) {
     ghostBtn.style.justifyContent = "center";
     ghostBtn.style.alignItems = "center";
     ghostBtn.style.cursor = "pointer";
+    ghostBtn.style.flex = "1"; // Ensure it grows
+    ghostBtn.style.width = "100%"; // Fill wrapper
     ghostBtn.style.position = "relative";
+    ghostBtn.style.background = "#000"; // Black Background
+    ghostBtn.style.color = "#fff"; // White Text
     ghostBtn.style.userSelect = "none"; 
     ghostBtn.style.touchAction = "none"; // Prevent scrolling/zooming on touch
     
@@ -349,26 +426,8 @@ if (isVizMode) {
     ghostVal.textContent = "GHOST";
     ghostBtn.appendChild(ghostVal);
     
-    // Edit Indicator for Ghost
-    const ghostEdit = document.createElement('div');
-    ghostEdit.textContent = "EDIT";
-    ghostEdit.style.position = "absolute";
-    ghostEdit.style.bottom = "2px";
-    ghostEdit.style.right = "2px";
-    ghostEdit.style.fontSize = "0.5rem";
-    ghostEdit.style.border = "1px solid currentColor";
-    ghostEdit.style.padding = "1px 3px";
-    ghostEdit.style.opacity = "0.5";
-    
-    // Crucial: Stop Propagation to prevent Parent Button Capture!
-    ghostEdit.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-    });
-    ghostEdit.onclick = (e) => {
-        e.stopPropagation(); 
-        toggleGhostEditor();
-    };
-    ghostBtn.appendChild(ghostEdit);
+    ghostBtn.appendChild(ghostVal);
+    // Edit Code Moved Outside
 
     // Logic
     let isGhostLocked = false;
@@ -390,8 +449,8 @@ if (isVizMode) {
             ghostBtn.style.color = "#000";
             ghostDot.style.opacity = "1";
         } else {
-            ghostBtn.style.background = "";
-            ghostBtn.style.color = "";
+            ghostBtn.style.background = "#000"; // Reset to Black
+            ghostBtn.style.color = "#fff"; // Reset to White
             ghostDot.style.opacity = "0.2";
         }
         
@@ -447,7 +506,40 @@ if (isVizMode) {
         updateGhostVisuals();
     });
 
-    gridControls.appendChild(ghostBtn);
+    // --- GHOST WRAPPER ---
+    const ghostWrapper = document.createElement('div');
+    ghostWrapper.style.position = "relative";
+    ghostWrapper.style.display = "flex";
+    ghostWrapper.style.width = "100%"; // Fill grid cell
+    ghostWrapper.appendChild(ghostBtn);
+    
+    // --- GHOST BUTTON (Keep Logic) ---
+
+    // Edit Indicator for Ghost (Refactored to Sibling)
+    const ghostEdit = document.createElement('div');
+    ghostEdit.textContent = "EDIT";
+    ghostEdit.style.position = "absolute";
+    ghostEdit.style.top = "4px";
+    ghostEdit.style.left = "4px";
+    ghostEdit.style.fontSize = "0.7rem";
+    ghostEdit.style.border = "1px solid currentColor";
+    ghostEdit.style.padding = "4px 8px";
+    ghostEdit.style.opacity = "0.7";
+    ghostEdit.style.cursor = "pointer";
+    ghostEdit.style.zIndex = "10";
+    
+    ghostEdit.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+    });
+    ghostEdit.onclick = (e) => {
+        e.stopPropagation(); 
+        toggleGhostEditor();
+    };
+    ghostWrapper.appendChild(ghostEdit);
+
+    // (Logic and Handlers are above)
+
+    gridControls.appendChild(ghostWrapper);
 
     // --- HEAD B BUTTON ---
     let isChopperActive = false;
@@ -458,6 +550,10 @@ if (isVizMode) {
     headBBtn.style.justifyContent = "center";
     headBBtn.style.alignItems = "center";
     headBBtn.style.cursor = "pointer";
+    headBBtn.style.background = "#000"; // Black Background
+    headBBtn.style.color = "#fff"; // White Text
+    headBBtn.style.flex = "1"; // Grow
+    headBBtn.style.width = "100%"; // Fill wrapper
     headBBtn.style.position = "relative"; // For Edit indicator
     
     const headBLabel = document.createElement('span');
@@ -475,28 +571,44 @@ if (isVizMode) {
         // Simple Toggle
         isChopperActive = !isChopperActive;
         headBVal.textContent = isChopperActive ? "ON" : "OFF";
-        headBLabel.style.color = isChopperActive ? "#00ffff" : "";
+        headBLabel.style.color = isChopperActive ? "#00ffff" : "#fff"; // Explicit White when off
         engine.updateDspParam('CHOPPER_ACTIVE', isChopperActive ? 1.0 : 0.0);
     };
 
-    // Edit Handler (Right Click or Long Press ideal, but let's add visual mini-button)
+    headBBtn.appendChild(headBVal);
+    // Edit Code Moved Outside
+
+    // --- HEAD B WRAPPER ---
+    const headBWrapper = document.createElement('div');
+    headBWrapper.style.position = "relative";
+    headBWrapper.style.display = "flex";
+    headBWrapper.style.width = "100%"; // Fill grid cell
+    headBWrapper.appendChild(headBBtn);
+
+    // Edit Handler (Refactored to Sibling)
     const editIndicator = document.createElement('div');
     editIndicator.textContent = "EDIT";
     editIndicator.style.position = "absolute";
-    editIndicator.style.bottom = "2px";
-    editIndicator.style.right = "2px";
-    editIndicator.style.fontSize = "0.5rem";
+    editIndicator.style.top = "4px";
+    editIndicator.style.left = "4px";
+    editIndicator.style.fontSize = "0.7rem";
     editIndicator.style.border = "1px solid currentColor";
-    editIndicator.style.padding = "1px 3px";
-    editIndicator.style.opacity = "0.5";
+    editIndicator.style.padding = "4px 8px";
+    editIndicator.style.opacity = "0.7";
+    editIndicator.style.cursor = "pointer";
+    editIndicator.style.zIndex = "10";
+
+    editIndicator.addEventListener('pointerdown', (e) => {
+        e.stopPropagation(); 
+    });
     editIndicator.onclick = (e) => {
-        e.stopPropagation(); // Don't toggle
+        e.stopPropagation(); 
         // @ts-ignore
         toggleHeadB();
     };
-    headBBtn.appendChild(editIndicator);
+    headBWrapper.appendChild(editIndicator);
 
-    gridControls.appendChild(headBBtn);
+    gridControls.appendChild(headBWrapper);
     actionsContainer.appendChild(gridControls);
 
     // --- SLAM BUTTON ---
@@ -537,7 +649,11 @@ if (isVizMode) {
     };
     
     // RELEASE: Return to Clean / Safe State
+    let isSlamming = false;
     const releaseSlam = () => {
+        if (!isSlamming) return; // Only release if actually slamming
+        isSlamming = false;
+        
         engine.updateDspParam('GATE_THRESH', 0.0); 
         engine.updateDspParam('SR', 44100); 
         engine.updateDspParam('BITS', 32); 
@@ -552,6 +668,7 @@ if (isVizMode) {
     };
 
     slamBtn.addEventListener('pointerdown', (e) => {
+        isSlamming = true; // Start slamming
         slamBtn.setPointerCapture(e.pointerId);
         handleSlamMove(e); // Trigger immediately
         slamBtn.addEventListener('pointermove', handleSlamMove);
@@ -581,8 +698,8 @@ if (isVizMode) {
         
         destOverlay = document.createElement('div');
         Object.assign(destOverlay.style, {
-            position: 'absolute', bottom: '20px', right: '20px',
-            width: '260px', background: 'rgba(0,0,0,0.9)', 
+            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            width: '260px', background: 'rgba(0,0,0,0.95)', 
             border: '1px solid #ff0055', // Red theme for destruction
             padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 2002,
             boxShadow: '0 0 20px rgba(255,0,85,0.3)'
@@ -596,7 +713,7 @@ if (isVizMode) {
         label.style.textAlign = "center";
         destOverlay.appendChild(label);
         
-        const mkSlider = (name: string, param: string, def: number, min: number, max: number, transf: (v:number)=>number, format: (v:number)=>string) => {
+        const mkSlider = (name: string, param: string, def: number, min: number, max: number, transf: (v:number)=>number, invTransf: (v:number)=>number, format: (v:number)=>string) => {
              const row = document.createElement('div');
              const slabel = document.createElement('div');
              slabel.style.fontSize = "0.6rem"; 
@@ -604,15 +721,19 @@ if (isVizMode) {
              slabel.style.display = "flex";
              slabel.style.justifyContent = "space-between";
              
+             // Get current DSP value or Default
+             const currentDsp = engine.getDspParam(param) ?? def;
+             // Inverse transform to get normalized 0..1
+             const normVal = invTransf(currentDsp);
+             
              const nameSpan = document.createElement('span'); nameSpan.textContent = name;
-             const valSpan = document.createElement('span'); valSpan.textContent = format(def);
+             const valSpan = document.createElement('span'); valSpan.textContent = format(currentDsp);
              slabel.appendChild(nameSpan); slabel.appendChild(valSpan);
              
              const inp = document.createElement('input');
              inp.type = "range";
              inp.min = "0"; inp.max = "100";
-             // Inverse transform logic is complex, just assume 0..1 input
-             inp.value = "0"; // Default to 0 for destruction params (Clean state)
+             inp.value = String(Math.max(0, Math.min(100, normVal * 100))); // Clamp 0-100
              inp.style.width = "100%";
              inp.oninput = (e: any) => {
                  const norm = Number(e.target.value) / 100;
@@ -625,14 +746,20 @@ if (isVizMode) {
              destOverlay!.appendChild(row);
         };
         
-        // Spectral Gate
-        mkSlider("SPECTRAL GATE (THRESH)", 'GATE_THRESH', 0, 0, 1, (v)=>v, (v)=>(v*100).toFixed(0)+'%');
+        // Spectral Gate: v -> v. Inv: v -> v
+        mkSlider("SPECTRAL GATE (THRESH)", 'GATE_THRESH', 0, 0, 1, 
+            (v)=>v, (v)=>v, 
+            (v)=>(v*100).toFixed(0)+'%');
         
-        // Bitcrush (Inverted input: 0=Clean(16), 1=Dirty(4))
-        mkSlider("BITCRUSHER (DEPTH)", 'BITS', 16, 4, 16, (v)=> 16 - (v*12), (v)=>v.toFixed(1)+' bits');
+        // Bitcrush: v -> 16 - (v*12). Inv: (16 - DSP) / 12
+        mkSlider("BITCRUSHER (DEPTH)", 'BITS', 16, 4, 16, 
+            (v)=> 16 - (v*12), (v)=> (16 - v) / 12, 
+            (v)=>v.toFixed(1)+' bits');
         
-        // Downsample (Inverted: 0=Clean(44k), 1=Dirty(4k))
-        mkSlider("DOWNSAMPLER (RATE)", 'SR', 44100, 4000, 44100, (v)=> 44100 - (v*40000), (v)=>(v/1000).toFixed(1)+'kHz');
+        // Downsample: v -> 44100 - (v*40000). Inv: (44100 - DSP) / 40000
+        mkSlider("DOWNSAMPLER (RATE)", 'SR', 44100, 4000, 44100, 
+            (v)=> 44100 - (v*40000), (v)=> (44100 - v) / 40000,
+            (v)=>(v/1000).toFixed(1)+'kHz');
 
         const close = document.createElement('button');
         close.textContent = "CLOSE";
@@ -645,30 +772,37 @@ if (isVizMode) {
         document.body.appendChild(destOverlay);
     };
 
+    // SLAM Wrapper to hold Button + Edit Overlay
+    const slamWrapper = document.createElement('div');
+    slamWrapper.style.flex = "1";
+    slamWrapper.style.position = "relative"; // Anchor for absolute children
+    slamWrapper.style.display = "flex"; // Ensure button fills it
+    slamWrapper.appendChild(slamBtn);
+
     // Edit Button on SLAM
     const slamEdit = document.createElement('div');
     slamEdit.textContent = "EDIT";
     slamEdit.style.position = "absolute";
-    slamEdit.style.bottom = "8px";
-    slamEdit.style.right = "8px";
-    slamEdit.style.fontSize = "0.6rem";
-    slamEdit.style.border = "1px solid rgba(255,255,255,0.5)";
-    slamEdit.style.padding = "2px 4px";
-    slamEdit.style.color = "white";
-    slamEdit.style.opacity = "0.7";
+    slamEdit.style.top = "10px"; // Top alignment
+    slamEdit.style.left = "10px";
+    slamEdit.style.fontSize = "0.7rem";
+    slamEdit.style.color = "white"; // White for consistency
+    slamEdit.style.border = "1px solid white";
+    slamEdit.style.padding = "4px 8px";
+    slamEdit.style.backgroundColor = "rgba(0,0,0,0.8)"; // Higher contrast background
     slamEdit.style.cursor = "pointer";
-    slamEdit.style.zIndex = "10";
-    
+    slamEdit.style.zIndex = "100"; // Ensure clearly on top
+
     slamEdit.addEventListener('pointerdown', (e) => {
-        e.stopPropagation(); // Stop slam trigger
+        e.stopPropagation(); // Prevent SLAM trigger
     });
     slamEdit.onclick = (e) => {
         e.stopPropagation();
         toggleDestEditor();
     };
-    slamBtn.appendChild(slamEdit);
+    slamWrapper.appendChild(slamEdit);
 
-    actionsContainer.appendChild(slamBtn);
+    actionsContainer.appendChild(slamWrapper);
 
     // Open Projector (Small Text Link below Actions)
     const projLink = document.createElement('div');
@@ -681,76 +815,7 @@ if (isVizMode) {
     projLink.onclick = () => window.open('/?mode=viz', 'biogram_viz');
     actionsContainer.appendChild(projLink);
 
-    // Editor Overlay (Lazy create)
-    // Editors (Lazy create)
-    let headBOverlay: HTMLElement | null = null;
-    let ghostOverlay: HTMLElement | null = null;
-    
-    // Helpers
-    const mkOverlay = (title: string) => {
-        const el = document.createElement('div');
-        Object.assign(el.style, {
-            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            width: '280px', background: 'rgba(0,0,0,0.95)', border: '1px solid #00ffff',
-            padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 2000,
-            boxShadow: '0 0 30px rgba(0,255,255,0.3)'
-        });
-        const t = document.createElement('div');
-        t.textContent = title;
-        t.style.cssText = "color:#00ffff; font-weight:bold; font-size:1rem; text-align:center; margin-bottom:10px;";
-        el.appendChild(t);
-        return el;
-    };
-
-    const mkSlider = (parent: HTMLElement, name: string, param: string, def: number, min: number, max: number) => {
-         const row = document.createElement('div');
-         const slabel = document.createElement('div');
-         slabel.textContent = name;
-         slabel.style.fontSize = "0.7rem"; slabel.style.marginBottom = "4px";
-         
-         const inp = document.createElement('input');
-         inp.type = "range"; inp.min = "0"; inp.max = "100";
-         inp.value = String(def * 100); inp.style.width = "100%";
-         inp.oninput = (e: any) => {
-             const v = Number(e.target.value) / 100;
-             engine.updateDspParam(param, v);
-         };
-         row.appendChild(slabel); row.appendChild(inp);
-         parent.appendChild(row);
-    };
-
-    const toggleHeadB = () => {
-        if (headBOverlay) { headBOverlay.remove(); headBOverlay = null; return; }
-        headBOverlay = mkOverlay("HEAD B (SLICE)");
-        mkSlider(headBOverlay, "DECAY LENGTH", 'CHOPPER_DECAY', 0.92, 0, 1);
-        mkSlider(headBOverlay, "MIX LEVEL", 'CHOPPER_MIX', 0.5, 0, 1);
-        mkSlider(headBOverlay, "EQ (Dark<>Bright)", 'CHOPPER_EQ', 0.5, 0, 1);
-        
-        const close = document.createElement('button');
-        close.textContent = "CLOSE";
-        close.className = "b-all";
-        close.style.padding = "10px";
-        close.onclick = () => toggleHeadB();
-        headBOverlay.appendChild(close);
-        document.body.appendChild(headBOverlay);
-    };
-
-    const toggleGhost = () => {
-        if (ghostOverlay) { ghostOverlay.remove(); ghostOverlay = null; return; }
-        ghostOverlay = mkOverlay("GHOST (CLOUD)");
-        mkSlider(ghostOverlay, "GHOST EQ", 'GHOST_EQ', 0.5, 0, 1);
-        mkSlider(ghostOverlay, "FADE RATE", 'GHOST_FADE', 0.5, 0, 1);
-        
-        const close = document.createElement('button');
-        close.textContent = "CLOSE";
-        close.className = "b-all";
-        close.style.padding = "10px";
-        close.onclick = () => toggleGhost();
-        ghostOverlay.appendChild(close);
-        document.body.appendChild(ghostOverlay);
-    };
-
-    // Removed specific Edit Buttons as per user request
+    // (Helpers moved to top)
     
     shell.appendChild(actionsContainer);
 
@@ -771,10 +836,14 @@ if (isVizMode) {
     startBtn.onclick = async () => {
         startBtn.textContent = "INITIALIZING...";
         await engine.init();
-        engine.startAI(); 
-        shell.status = "LIVE";
+        engine.startAI(true); // Start Server Stream (Fill Buffer)
+        engine.updateDspParam('TAPE_STOP', 1); // Internal Stop (Silence)
+        
+        // Notify UI components that we are READY but PAUSED
+        window.dispatchEvent(new CustomEvent('playback-toggled', { detail: false }));
+        
+        shell.status = "LIVE (READY)";
         overlay.remove();
-        // engine.testAudio();
     };
 
     // Global Key Handlers

@@ -85,6 +85,7 @@ export class SlamButton extends LitElement {
         <div class="content-hover">
             RELEASE
         </div>
+        <slot></slot>
       </button>
     `;
   }

@@ -5,6 +5,7 @@ import { StreamAdapter } from './stream-adapter';
 import { MusicClient } from '../ai/music-client';
 
 export class AudioEngine {
+  private params = new Map<string, number>();
   private context: AudioContext;
   private workletNode: AudioWorkletNode | null = null;
   private sab: SharedArrayBuffer;
@@ -91,20 +92,29 @@ export class AudioEngine {
     }
   }
 
-  startAI() {
-      this.musicClient.start();
+  startAI(autoPlay: boolean = true) {
+      this.musicClient.start(autoPlay);
   }
+
+  /**
+   * Update DSP parameters in the AudioWorklet
+  private params = new Map<string, number>();
 
   /**
    * Update DSP parameters in the AudioWorklet
    */
   updateDspParam(effect: string, value: number) {
+      this.params.set(effect, value);
       if (!this.workletNode) return;
       this.workletNode.port.postMessage({
           type: 'CONFIG_UPDATE',
           param: effect,
           value: value
       });
+  }
+
+  getDspParam(effect: string): number | undefined {
+      return this.params.get(effect);
   }
 
   /**

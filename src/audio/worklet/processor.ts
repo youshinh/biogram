@@ -145,6 +145,10 @@ class GhostProcessor extends AudioWorkletProcessor {
   private lpfFreq: number = 14000;
   private filterQ: number = 0.7;
 
+  // State for Transport Logic
+  private internalSpeed: number = 1.0;
+  private isStopping: boolean = false;
+
   constructor() {
     super();
     this.hpf.setParams(this.hpfFreq, this.filterQ); 
@@ -164,9 +168,16 @@ class GhostProcessor extends AudioWorkletProcessor {
           if (event.data.param === 'SR') this.decimator.setParams(event.data.value, this.decimator.bitDepth);
           if (event.data.param === 'BITS') this.decimator.setParams(this.decimator.sampleRate, event.data.value);
           
-          // TAPE
-          if (event.data.param === 'TAPE_STOP') this.tape.setTargetSpeed(event.data.value > 0.5 ? 0.0 : 1.0);
-          if (event.data.param === 'SPEED') this.tape.setTargetSpeed(event.data.value);
+          // TAPE TRANSPORT LOGIC (Fixed Conflict)
+          if (event.data.param === 'TAPE_STOP') {
+              this.isStopping = event.data.value > 0.5;
+              this.tape.setTargetSpeed(this.isStopping ? 0.0 : this.internalSpeed);
+          }
+          if (event.data.param === 'SPEED') {
+              this.internalSpeed = event.data.value;
+              if (!this.isStopping) this.tape.setTargetSpeed(this.internalSpeed);
+          }
+          
           if (event.data.param === 'NOISE_LEVEL') this.noiseLevel = event.data.value;
 
           // ACTIVE FLAGS

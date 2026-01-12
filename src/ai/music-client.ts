@@ -125,11 +125,15 @@ export class MusicClient {
         return this.savedChunksCount;
     }
 
-    async start() {
+    async start(autoPlay: boolean = true) {
         if (!this.session) await this.connect();
         // Default prompts to get silence or initial sound
         await this.updatePrompt("Techno ambient background", 1.0);
-        this.session?.play();
+        
+        if (autoPlay) {
+            this.session?.play();
+        }
+        
         this.startHealthCheck();
     }
 
