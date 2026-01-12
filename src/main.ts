@@ -4,10 +4,14 @@ import './ui/atoms/bio-slider';
 import './ui/atoms/slam-button';
 import './ui/modules/hydra-visualizer';
 import './ui/modules/hydra-receiver';
-import './ui/modules/master-status';
+// import './ui/modules/master-status'; // Deprecated
+import './ui/modules/deck-controller'; // New
+import './ui/modules/dj-mixer'; // New
 import './ui/modules/fx-rack';
 import type { AppShell } from './ui/shell';
 import type { FxRack } from './ui/modules/fx-rack';
+import type { DeckController } from './ui/modules/deck-controller';
+import type { DjMixer } from './ui/modules/dj-mixer';
 
 console.log("Prompt-DJ v2.0 'Ghost in the Groove' initializing...");
 
@@ -51,21 +55,69 @@ if (isVizMode) {
         <div class="flex flex-col">
             <h1 class="text-xl font-bold tracking-tighter" style="font-size:0.8rem; line-height:1; color:#fff;">BIO:GRAM<span class="text-xs font-normal align-top ml-1" style="font-size:0.5rem; opacity:0.7">v2.1</span></h1>
         </div>
+        <div class="flex gap-2">
+            <button id="btn-view-deck" style="font-size:0.6rem; background:#fff; color:#000; border:none; padding:2px 4px; font-weight:bold; cursor:pointer;">DECK</button>
+            <button id="btn-view-rack" style="font-size:0.6rem; background:#000; color:#888; border:1px solid #333; padding:2px 4px; font-weight:bold; cursor:pointer;">FX_RACK</button>
+        </div>
+        <div style="font-size: 0.75rem; text-align: right;">
+             <!-- Status moved to AppShell header or kept here? AppShell has it. Removing redundancy if desired, but user didn't ask. -->
+        </div>
     `;
     document.body.appendChild(header);
+
+    // View State
+    let isRackVisible = false;
+
+    // Button Logic
+    setTimeout(() => {
+        const btnDeck = document.getElementById('btn-view-deck');
+        const btnRack = document.getElementById('btn-view-rack');
+        
+        const updateView = () => {
+             if (isRackVisible) {
+                 // Rack Mode (Split) -> Hide Shell Bottom, Show FX Rack
+                 shell.minimal = true; // Hides controls/actions
+                 shell.style.height = "60%"; // Shrink Shell (Decks only)
+                 
+                 // FX Rack takes bottom 40%
+                 fxRack.style.display = "block";
+                 fxRack.style.height = "40%";
+                 fxRack.style.borderTop = "1px solid #444";
+                 
+                 btnRack!.style.background = "#fff";
+                 btnRack!.style.color = "#000";
+                 btnDeck!.style.background = "#000";
+                 btnDeck!.style.color = "#888";
+             } else {
+                 // Deck Mode (Full) -> Show Shell Bottom, Hide FX Rack
+                 shell.minimal = false; // Shows controls/actions
+                 shell.style.height = "100%";
+                 
+                 fxRack.style.display = "none";
+                 
+                 btnDeck!.style.background = "#fff";
+                 btnDeck!.style.color = "#000";
+                 btnRack!.style.background = "#000";
+                 btnRack!.style.color = "#888";
+             }
+        };
+
+        btnDeck?.addEventListener('click', () => { isRackVisible = false; updateView(); });
+        btnRack?.addEventListener('click', () => { isRackVisible = true; updateView(); });
+    }, 0);
     
     // 2. VIEWS
-    // A. Main Shell (Top 65%)
+    // A. Main Shell (Default Full)
     const shell = document.createElement('app-shell') as AppShell;
-    shell.style.height = "65%";
+    shell.style.height = "100%";
     shell.style.display = "flex"; // Ensure it takes space
     shell.style.borderBottom = "1px solid #333";
     viewContainer.appendChild(shell);
     
     // B. FX Rack (Bottom 35%)
     const fxRack = document.createElement('fx-rack') as FxRack;
-    fxRack.style.display = 'block'; // Always visible
-    fxRack.style.height = "35%";
+    fxRack.style.display = 'none'; // Default Hidden
+    fxRack.style.height = "40%";
     fxRack.addEventListener('param-change', (e: any) => {
         engine.updateDspParam(e.detail.id, e.detail.val);
     });
@@ -73,24 +125,118 @@ if (isVizMode) {
     
     document.body.appendChild(viewContainer);
     
-    // View Switch Logic REMOVED (Always split view)
+    // 77. View Switch Logic REMOVED
 
     // -- Mount UI Modules (to shell) --
 
-    // 0. Visualizer
-    const viz = document.createElement('hydra-visualizer');
-    viz.slot = 'visualizer';
-    shell.appendChild(viz);
+    // 0. Deck A
+    const deckA = document.createElement('deck-controller');
+    deckA.deckId = "A";
+    deckA.slot = 'deck-a';
+    shell.appendChild(deckA);
 
-    // 1. Master Status (BPM & Transport)
-    const masterStatus = document.createElement('master-status');
-    masterStatus.slot = 'master';
-    masterStatus.addEventListener('bpm-change', (e: any) => {
-        engine.setBpm(e.detail);
+    // 1. Mixer
+    const mixer = document.createElement('dj-mixer') as DjMixer;
+    mixer.slot = 'mixer';
+    mixer.addEventListener('mixer-change', (e: any) => {
+        const { id, val } = e.detail;
+            
+        if (id === 'CROSSFADER') {
+            engine.setCrossfader(val);
+            return;
+        }
+
+        // Parse EQ_A_HI or KILL_B_LOW
+        const parts = id.split('_'); // [TYPE, DECK, BAND]
+        const type = parts[0];
+        const deck = parts[1] as 'A' | 'B';
+        const band = parts[2] as 'HI' | 'MID' | 'LOW';
+
+        if (type === 'EQ') {
+            engine.setEq(deck, band, val);
+        } else if (type === 'KILL') {
+            engine.setKill(deck, band, val > 0.5);
+        }
     });
-    masterStatus.addEventListener('play', () => engine.resume());
-    masterStatus.addEventListener('pause', () => engine.pause());
-    shell.appendChild(masterStatus);
+    shell.appendChild(mixer);
+
+    // 2. Deck B
+    const deckB = document.createElement('deck-controller');
+    deckB.deckId = "B";
+    deckB.slot = 'deck-b';
+    shell.appendChild(deckB);
+    
+    // Listen for Deck Events
+    window.addEventListener('deck-play-toggle', (e:any) => {
+        // TEMPORARY: Deck A Play = Check Resume
+        const deck = e.detail.deck as 'A' | 'B';
+        if (e.detail.playing) {
+             engine.setTapeStop(deck, false);
+             engine.resume();
+        } else {
+             engine.setTapeStop(deck, true);
+        }
+    });
+
+    window.addEventListener('deck-bpm-change', (e:any) => {
+        const { deck, bpm } = e.detail;
+        console.log(`Deck ${deck} BPM: ${bpm}`);
+        
+        // Update Engine State
+        engine.setDeckBpm(deck as 'A' | 'B', bpm);
+        
+        // Defaults to 1.0 speed (Native BPM) unless Synced
+    });
+    
+    window.addEventListener('deck-sync-toggle', (e:any) => {
+        const { deck, sync } = e.detail;
+        if (sync) {
+            engine.syncDeck(deck as 'A' | 'B');
+        } else {
+            // Reset Speed to 1.0? Or keep? Usually keep.
+            // Let's reset to 1.0 for clarity of "Unsync".
+            engine.updateDspParam('SPEED', 1.0, deck as 'A' | 'B');
+        }
+    });
+
+    window.addEventListener('bpm-change', (e:any) => {
+        const bpm = e.detail;
+        engine.setMasterBpm(bpm);
+    });
+
+    window.addEventListener('deck-prompt-change', (e: any) => {
+        const { deck, prompt } = e.detail;
+        engine.updateAiPrompt(deck as 'A' | 'B', prompt, 1.0);
+    });
+
+    window.addEventListener('deck-load-random', (e: any) => {
+        const { deck } = e.detail;
+        const genres = [
+            "Acid Techno 135BPM", "Deep House 122BPM", "Drum and Bass 174BPM", 
+            "Dub Techno 120BPM", "Industrial Techno 140BPM", "Minimal Microhouse 125BPM",
+            "Ambient Drone", "Lo-Fi Hip Hop", "Breakbeat Hardcore"
+        ];
+        const randomGenre = genres[Math.floor(Math.random() * genres.length)];
+        console.log(`Deck ${deck} Random Load: ${randomGenre}`);
+        
+        // Parse BPM if present to pre-set Deck BPM
+        const bpmMatch = randomGenre.match(/(\d+)BPM/);
+        if (bpmMatch) {
+            const bpm = parseInt(bpmMatch[1]);
+            engine.setDeckBpm(deck as 'A' | 'B', bpm);
+        }
+        
+        engine.updateAiPrompt(deck as 'A' | 'B', randomGenre, 1.0);
+    });
+
+    window.addEventListener('deck-sync-toggle', (e:any) => {
+        const { deck, sync } = e.detail;
+        if (sync) {
+            engine.syncDeck(deck as 'A' | 'B');
+        } else {
+            engine.updateDspParam('SPEED', 1.0, deck as 'A' | 'B');
+        }
+    });
 
     // 2. Controls (Bio Sliders)
     const controlsContainer = document.createElement('div');
@@ -112,8 +258,11 @@ if (isVizMode) {
         slider.setAttribute('value', "0");
         slider.addEventListener('change', (e: any) => {
             const val = e.detail / 100.0;
-            // Update prompt with weight
-            engine.updateAiPrompt(prompt, val);
+            // Update prompt with weight for Both Decks? Or just A?
+            // Let's safe bet: Update Deck A for now as it's the primary "Creative" deck often.
+            // Or both.
+            engine.updateAiPrompt('A', prompt, val);
+            engine.updateAiPrompt('B', prompt, val);
         });
         return slider;
     };
@@ -150,6 +299,7 @@ if (isVizMode) {
         options.forEach(opt => {
             const el = document.createElement('option');
             el.value = opt;
+            el.value = opt;
             el.textContent = opt.split(' ').slice(0, 2).join(' ').toUpperCase(); // Short label
             wrapper.appendChild(el);
             select.appendChild(el);
@@ -157,7 +307,7 @@ if (isVizMode) {
         wrapper.appendChild(select);
         
         const slider = document.createElement('bio-slider');
-        slider.setAttribute('label', 'LEVEL'); // Generic label
+        slider.setAttribute('label', ''); // Label removed
         slider.style.flex = "1";
         slider.style.border = "none"; 
         
@@ -166,12 +316,12 @@ if (isVizMode) {
         select.onchange = (e: any) => {
             currentPrompt = e.target.value;
             const val = Number(slider.getAttribute('value')) / 100.0;
-            if (val > 0) engine.updateAiPrompt(currentPrompt, val);
+            if (val > 0) engine.updateAiPrompt('A', currentPrompt, val);
         };
         
         slider.addEventListener('change', (e: any) => {
              const val = e.detail / 100.0;
-             engine.updateAiPrompt(currentPrompt, val);
+             engine.updateAiPrompt('A', currentPrompt, val);
         });
         
         wrapper.appendChild(slider);
@@ -217,7 +367,7 @@ if (isVizMode) {
         wrapper.appendChild(input);
         
         const slider = document.createElement('bio-slider');
-        slider.setAttribute('label', 'WEIGHT');
+        slider.setAttribute('label', '');
         slider.style.flex = "1";
         slider.style.border = "none";
         
@@ -229,7 +379,7 @@ if (isVizMode) {
         
         slider.addEventListener('change', (e: any) => {
              const val = e.detail / 100.0;
-             if (prompt) engine.updateAiPrompt(prompt, val);
+             if (prompt) engine.updateAiPrompt('A', prompt, val);
         });
         
         wrapper.appendChild(slider);
@@ -418,7 +568,7 @@ if (isVizMode) {
     
     const ghostLabel = document.createElement('span');
     ghostLabel.className = "text-xxs opacity-70";
-    ghostLabel.textContent = "SUMMON";
+    ghostLabel.textContent = "MASTER GHOST";
     ghostBtn.appendChild(ghostLabel);
     
     const ghostVal = document.createElement('span');
@@ -527,6 +677,9 @@ if (isVizMode) {
     ghostEdit.style.opacity = "0.7";
     ghostEdit.style.cursor = "pointer";
     ghostEdit.style.zIndex = "10";
+    // Ensure visibility against White BG
+    // We will update border/color in updateGhostVisuals or use mix-blend-mode
+    ghostEdit.style.mixBlendMode = "difference"; 
     
     ghostEdit.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
@@ -558,7 +711,7 @@ if (isVizMode) {
     
     const headBLabel = document.createElement('span');
     headBLabel.className = "text-xxs opacity-70";
-    headBLabel.textContent = "HEAD B";
+    headBLabel.textContent = "DECK B SLICER";
     headBBtn.appendChild(headBLabel);
     
     const headBVal = document.createElement('span');
@@ -571,7 +724,18 @@ if (isVizMode) {
         // Simple Toggle
         isChopperActive = !isChopperActive;
         headBVal.textContent = isChopperActive ? "ON" : "OFF";
-        headBLabel.style.color = isChopperActive ? "#00ffff" : "#fff"; // Explicit White when off
+        
+        // UX: Inverse Colors when Active
+        if (isChopperActive) {
+            headBBtn.style.background = "#fff";
+            headBBtn.style.color = "#000";
+            headBLabel.style.color = "#000"; 
+        } else {
+             headBBtn.style.background = "#000";
+             headBBtn.style.color = "#fff";
+             headBLabel.style.color = "#fff";
+        }
+
         engine.updateDspParam('CHOPPER_ACTIVE', isChopperActive ? 1.0 : 0.0);
     };
 
@@ -597,6 +761,7 @@ if (isVizMode) {
     editIndicator.style.opacity = "0.7";
     editIndicator.style.cursor = "pointer";
     editIndicator.style.zIndex = "10";
+    editIndicator.style.mixBlendMode = "difference"; // Ensure visibility
 
     editIndicator.addEventListener('pointerdown', (e) => {
         e.stopPropagation(); 
@@ -615,6 +780,10 @@ if (isVizMode) {
     const slamBtn = document.createElement('slam-button');
     slamBtn.style.flex = "1"; // Fill remaining
     slamBtn.style.position = "relative"; // For Edit button
+    
+    // (slamEdit defined below in Wrapper)
+    
+    // SLAM MACRO: Maximize Destruction with XY Control
     
     // SLAM MACRO: Maximize Destruction with XY Control
     const updateSlamParams = (x: number, y: number) => {
@@ -779,22 +948,22 @@ if (isVizMode) {
     slamWrapper.style.display = "flex"; // Ensure button fills it
     slamWrapper.appendChild(slamBtn);
 
-    // Edit Button on SLAM
+    // RESTORED: SLAM Edit Button
     const slamEdit = document.createElement('div');
     slamEdit.textContent = "EDIT";
     slamEdit.style.position = "absolute";
-    slamEdit.style.top = "10px"; // Top alignment
+    slamEdit.style.top = "10px"; 
     slamEdit.style.left = "10px";
     slamEdit.style.fontSize = "0.7rem";
-    slamEdit.style.color = "white"; // White for consistency
+    slamEdit.style.color = "white"; 
     slamEdit.style.border = "1px solid white";
     slamEdit.style.padding = "4px 8px";
-    slamEdit.style.backgroundColor = "rgba(0,0,0,0.8)"; // Higher contrast background
+    slamEdit.style.backgroundColor = "rgba(0,0,0,0.8)"; 
     slamEdit.style.cursor = "pointer";
-    slamEdit.style.zIndex = "100"; // Ensure clearly on top
+    slamEdit.style.zIndex = "100";
 
     slamEdit.addEventListener('pointerdown', (e) => {
-        e.stopPropagation(); // Prevent SLAM trigger
+        e.stopPropagation(); 
     });
     slamEdit.onclick = (e) => {
         e.stopPropagation();
@@ -836,10 +1005,13 @@ if (isVizMode) {
     startBtn.onclick = async () => {
         startBtn.textContent = "INITIALIZING...";
         await engine.init();
-        engine.startAI(true); // Start Server Stream (Fill Buffer)
-        engine.updateDspParam('TAPE_STOP', 1); // Internal Stop (Silence)
+        engine.startAI(true); // Start Server Stream
         
-        // Notify UI components that we are READY but PAUSED
+        // Explicitly Stop Both Decks
+        engine.setTapeStop('A', true);
+        engine.setTapeStop('B', true);
+        
+        // Notify UI components
         window.dispatchEvent(new CustomEvent('playback-toggled', { detail: false }));
         
         shell.status = "LIVE (READY)";
@@ -849,12 +1021,12 @@ if (isVizMode) {
     // Global Key Handlers
     window.addEventListener('keydown', (e) => {
         if (e.code === 'Space') {
-            e.preventDefault(); // Prevent scrolling
+            e.preventDefault(); 
             if (engine.getIsPlaying()) {
-                engine.pause();
+                engine.pause(); // Suspends Context
                 window.dispatchEvent(new CustomEvent('playback-toggled', { detail: false }));
             } else {
-                engine.resume();
+                engine.resume(); // Resumes Context
                 window.dispatchEvent(new CustomEvent('playback-toggled', { detail: true }));
             }
         }

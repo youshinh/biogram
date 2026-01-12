@@ -30,15 +30,39 @@ export class AppShell extends LitElement {
     main {
       flex-grow: 1;
       display: grid;
-      grid-template-rows: 3fr 2fr;
-      gap: 16px;
+      /* Fixed Top Row (500px) per user request */
+      grid-template-rows: 500px minmax(0, 1fr); 
+      gap: 8px;
       min-height: 0;
+      overflow: hidden;
     }
+    
+    /* main.minimal-mode removed to enforce consistent 350px Top Row */
 
     .row-top {
       display: grid;
-      grid-template-columns: 3fr 1fr;
-      gap: 16px;
+      grid-template-columns: 1fr 240px 1fr;
+      gap: 8px; /* Separator gap */
+      height: 100%;
+      min-height: 0; /* Allow shrink */
+    }
+
+    .deck-container {
+        border: 1px solid #333;
+        background: #050505;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden; /* Fix overlap */
+    }
+
+    .mixer-container {
+        border: 1px solid #444;
+        background: #111;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        overflow: hidden; /* Fix overlap */
     }
 
     .row-bottom {
@@ -59,44 +83,49 @@ export class AppShell extends LitElement {
   `;
 
   @property({ type: String }) status = "OFFLINE";
+  @property({ type: Boolean, reflect: true }) minimal = false;
 
   render() {
     return html`
       <header>
         <div class="flex flex-col">
-            <!-- Title Removed -->
+            <!-- Title -->
         </div>
         <div style="font-size: 0.75rem; text-align: right;">
              <div>STATUS: ${this.status}</div>
         </div>
       </header>
 
-      <main>
-        <!-- UPPER ROW: Visualizer & Master -->
+      <main class="${this.minimal ? 'minimal-mode' : ''}">
+        <!-- UPPER ROW: Dual Decks & Mixer -->
         <div class="row-top">
-            <div class="b-all" style="position: relative;">
-                <!-- HOST: Hydra Visualizer -->
-                <slot name="visualizer"></slot>
+            <!-- DECK A -->
+            <div class="deck-container">
+                <slot name="deck-a"></slot>
             </div>
-            <div class="flex flex-col gap-4">
-                <div class="flex-grow">
-                    <slot name="master"></slot>
-                </div>
-                <!-- Buffer Health Removed -->
+
+            <!-- MIXER (The Abyss) -->
+            <div class="mixer-container">
+                <slot name="mixer"></slot>
+            </div>
+
+            <!-- DECK B -->
+            <div class="deck-container">
+                <slot name="deck-b"></slot>
             </div>
         </div>
 
-        <!-- LOWER ROW: Sliders & Actions -->
+        <!-- LOWER ROW: Sliders & Actions (Global FX) -->
+        ${this.minimal ? null : html`
         <div class="row-bottom">
             <div class="b-all p-2">
-                <!-- HOST: Bio Sliders -->
                 <slot name="controls"></slot>
             </div>
             <div class="flex flex-col gap-4">
-               <!-- HOST: Actions & SLAM -->
                <slot name="actions"></slot>
             </div>
         </div>
+        `}
       </main>
 
       <footer>

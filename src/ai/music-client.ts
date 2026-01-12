@@ -38,10 +38,12 @@ export class MusicClient {
     private archiveSampleCount = 0;
     private readonly ARCHIVE_THRESHOLD = 44100 * 4; // ~4 seconds chunk size
     private savedChunksCount = 0;
+    private deckId: 'A' | 'B';
 
-    constructor(adapter: StreamAdapter, apiKey: string) {
+    constructor(adapter: StreamAdapter, apiKey: string, deckId: 'A' | 'B' = 'A') {
         this.ai = new GoogleGenAI({ apiKey, apiVersion: 'v1alpha' });
         this.adapter = adapter;
+        this.deckId = deckId;
         this.library = new LibraryStore();
         this.library.init().then(() => {
              this.library.getCount().then(c => this.savedChunksCount = c || 0);
@@ -51,13 +53,13 @@ export class MusicClient {
     async connect() {
         if (this.isConnected) return;
 
-        console.log("MusicClient: Connecting to Gemini...");
+        console.log(`MusicClient[${this.deckId}]: Connecting to Gemini...`);
         this.session = await this.ai.live.music.connect({
             model: 'lyria-realtime-exp',
             callbacks: {
                 onmessage: async (e: LiveMusicServerMessage) => {
                     if (e.setupComplete) {
-                        console.log("MusicClient: Session Setup Complete");
+                        console.log(`MusicClient[${this.deckId}]: Session Setup Complete`);
                         this.isConnected = true;
                     }
                     if (e.serverContent?.audioChunks) {
@@ -75,7 +77,7 @@ export class MusicClient {
                             }
                             
                             // 1. Playback
-                            this.adapter.writeChunk(mono);
+                            this.adapter.writeChunk(mono, this.deckId);
 
                             // 2. Ghost System Archiving
                             this.archiveBuffer.push(mono);
@@ -184,8 +186,8 @@ export class MusicClient {
     private checkBufferHealth() {
         if (!this.isConnected || !this.session) return;
 
-        const write = this.adapter.getWritePointer();
-        const read = this.adapter.getReadPointer();
+        const write = this.adapter.getWritePointer(this.deckId);
+        const read = this.adapter.getReadPointer(this.deckId);
         
         // Assuming linear pointers (safe for long duration)
         const samplesBuffered = write - read;

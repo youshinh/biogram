@@ -6,7 +6,7 @@
 
 export class TapeTransport {
     private velocity = 0.0;
-    private targetVelocity = 1.0; // 1.0 = Normal Speed
+    private targetVelocity = 0.0; // Stopped by default
     
     // Physics Constants
     private mass = 20.0;            // "Weight" of the reels

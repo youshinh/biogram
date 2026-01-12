@@ -28,6 +28,7 @@ export class HydraVisualizer extends LitElement {
     }
   `;
 
+  @property({ type: String }) deckId = 'A';
   @property({ type: Object }) sab: SharedArrayBuffer | null = null;
   
   private canvas: HTMLCanvasElement | null = null;
@@ -35,13 +36,12 @@ export class HydraVisualizer extends LitElement {
   private animationId: number = 0;
   private vjChannel: BroadcastChannel = new BroadcastChannel('vj_link');
 
-  // Scratch Interaction State
+  // Interaction State
   private isScratching = false;
   private wasPlaying = false;
   private lastX = 0;
   
-  // Zoom State (Samples per pixel)
-  // Default: ~300 samples/px (At 1000px width -> 300k samples ~ 6-7 seconds)
+  // Zoom State
   private zoomScale = 100; 
 
   firstUpdated() {
@@ -84,20 +84,9 @@ export class HydraVisualizer extends LitElement {
   // --- Interaction Handlers ---
   private onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      // Zoom In/Out
-      // DeltaY > 0 : Zoom Out (See more) -> Increase Scale
-      // DeltaY < 0 : Zoom In (See less) -> Decrease Scale
-      
       const zoomFactor = 1.1;
-      if (e.deltaY > 0) {
-          this.zoomScale *= zoomFactor;
-      } else {
-          this.zoomScale /= zoomFactor;
-      }
-      
-      // Clamp
-      // Min: 1 sample/px (Ultra Zoom)
-      // Max: 5000 samples/px (Full buffer view approx)
+      if (e.deltaY > 0) this.zoomScale *= zoomFactor;
+      else this.zoomScale /= zoomFactor;
       this.zoomScale = Math.max(1, Math.min(this.zoomScale, 5000));
   }
 
@@ -105,44 +94,33 @@ export class HydraVisualizer extends LitElement {
       this.canvas?.setPointerCapture(e.pointerId);
       this.isScratching = true;
       this.lastX = e.clientX;
-      
       const engine = (window as any).engine;
       if(engine) {
           this.wasPlaying = engine.getIsPlaying();
-          // Always stop tape physics (motor) when touching vinyl
-          // Use SCRATCH_SPEED to override potential TAPE_STOP lock
-          engine.updateDspParam('SCRATCH_SPEED', 0.0);
+          engine.updateDspParam('SCRATCH_SPEED', 0.0, this.deckId as 'A'|'B');
       }
   }
 
   private onPointerMove = (e: PointerEvent) => {
       if (!this.isScratching) return;
-      
       const deltaX = e.clientX - this.lastX;
       this.lastX = e.clientX;
-      
-      // Map pixel delta to Speed. 
-      // Right = Forward, Left = Backward.
-      // User Request: Invert direction (Pulling right = Rewind?)
       const speed = deltaX * -0.15; 
-      
       const engine = (window as any).engine;
-      if(engine) engine.updateDspParam('SCRATCH_SPEED', speed);
+      // Invert Logic?
+      if(engine) engine.updateDspParam('SCRATCH_SPEED', speed, this.deckId as 'A'|'B');
   }
 
   private onPointerUp = (e: PointerEvent) => {
       if (!this.isScratching) return;
       this.canvas?.releasePointerCapture(e.pointerId);
       this.isScratching = false;
-      
       const engine = (window as any).engine;
       if(engine) {
-          // Resume ONLY if it was playing before scratch
           if (this.wasPlaying) {
-              engine.updateDspParam('SPEED', 1.0);
+              engine.updateDspParam('SPEED', 1.0, this.deckId as 'A'|'B');
           } else {
-              // Stop the scratch hand
-              engine.updateDspParam('SCRATCH_SPEED', 0.0);
+              engine.updateDspParam('SCRATCH_SPEED', 0.0, this.deckId as 'A'|'B');
           }
       }
   }
@@ -156,58 +134,48 @@ export class HydraVisualizer extends LitElement {
     
     // Get Data from Engine
     const engine = (window as any).engine;
-    if (!engine || !engine.analyser) {
-        // Fallback / Loading
+    if (!engine || !engine.masterAnalyser) {
         this.ctx.fillStyle = '#111';
         this.ctx.fillRect(0,0,w,h);
         return;
     }
 
-    const spectrum = engine.getSpectrum(); // Uint8Array(128)
-    const audioData = engine.getAudioData(); // Float32Array (SAB)
-    const headPos = engine.getReadPointer(); // Int index
+    const spectrum = engine.getSpectrum(this.deckId as 'A' | 'B'); 
+    const audioData = engine.getAudioData(); 
     
-    // Check pause state
+    // Select Head based on Deck ID
+    const isDeckB = this.deckId === 'B';
+    const headPos = isDeckB ? engine.getHeadB() : engine.getReadPointer();
+    
+    // Check pause state (Global for now)
     const isPlaying = engine.getIsPlaying ? engine.getIsPlaying() : true;
 
     // 1. Clear
     this.ctx.clearRect(0, 0, w, h); 
     
-
-
     // 2. Draw Waveform (Windowed centered on Head)
-    // Scale = samples per pixel.
     const step = Math.ceil(this.zoomScale); 
     
-    this.ctx.strokeStyle = '#00ff88'; // "Bio" Green
+    this.ctx.strokeStyle = isDeckB ? '#00ffff' : '#ff0000'; // Cyan (B) or Red (A)
     this.ctx.lineWidth = 1;
     this.ctx.beginPath();
     
     const bufferLen = audioData.length;
-    const writePos = engine.getWritePointer ? engine.getWritePointer() : Number.MAX_SAFE_INTEGER;
+    const halfSize = Math.floor(bufferLen / 2);
+    const startOffset = isDeckB ? halfSize : 0;
     
+    // Draw
     for (let x = 0; x < w; x++) {
-        // Calculate sample index relative to head
-        // Center of screen (x = w/2) is HEAD position
         const relativeSampleIndex = (x - w/2) * step; 
         
-        const linearIndex = Math.floor(headPos + relativeSampleIndex);
-        let sample = 0;
+        // Wrap within Half Size
+        let idx = Math.floor(headPos + relativeSampleIndex) % halfSize;
+        if (idx < 0) idx += halfSize;
+        
+        // Access Data with Offset
+        const sample = audioData[startOffset + idx] || 0;
 
-        // Linear Masking: Only show valid data range [0, writePos]
-        if (linearIndex >= 0 && linearIndex < writePos) {
-            let actualIndex = linearIndex % bufferLen;
-            // Handle javascript negative modulo quirk just in case, though linearIndex >= 0 prevents it here
-            if (actualIndex < 0) actualIndex += bufferLen; 
-            
-            sample = audioData[actualIndex];
-        } else {
-            // Out of bounds (Past before 0, or Future after Write)
-            sample = 0;
-        }
-
-        // Scale -1..1 to 0..h
-        const y = (h * 0.4) + (sample * (h * 0.3)); // Shift up slightly to leave room for spectrum
+        const y = (h * 0.4) + (sample * (h * 0.3)); 
         
         if (x === 0) this.ctx.moveTo(x, y);
         else this.ctx.lineTo(x, y);
@@ -215,22 +183,20 @@ export class HydraVisualizer extends LitElement {
     this.ctx.stroke();
     
     // 3. Draw Heads (Hydra)
+    // Only draw "Other Heads" if they are in our Deck? 
+    // Or just draw Main Head (Center) always.
+    // The "Ghost" head logic was for single buffer.
+    // For now, let's just show Center Line.
     
-    // Head C (Ghost/Cloud) - Purple
-    const headCPos = engine.getHeadC();
-    this.drawHead(w, h, headPos, headCPos, '#bd00ff', 1);
-
-    // Head B (Slice) - Cyan
-    const headBPos = engine.getHeadB();
-    this.drawHead(w, h, headPos, headBPos, '#00ffff', 1);
-
-    // Head A (Live) - Red (Main)
-    this.ctx.strokeStyle = '#ff0055';
+    this.ctx.strokeStyle = 'rgba(255,255,255,0.5)';
     this.ctx.lineWidth = 2;
     this.ctx.beginPath();
     this.ctx.moveTo(w/2, 0);
     this.ctx.lineTo(w/2, h);
     this.ctx.stroke();
+    
+    // ... Spectrum (Keep as is, it visualizes Master Output)
+
 
     // 4. Draw Spectrum (1/3 Octave Bands, Reduced Lo-End)
     // Only draw if playing to avoid stuck ghost spectrum

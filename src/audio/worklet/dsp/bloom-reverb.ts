@@ -1,8 +1,8 @@
 export class BloomReverb {
     private sampleRate: number;
-    private size: number = 0.5; // Room Size
-    private shimmer: number = 0.5; // Brightness / Modulation
-    private mix: number = 0.5;
+    public size: number = 0.5; // Room Size
+    public shimmer: number = 0.5; // Brightness / Modulation
+    public mix: number = 0.5;
     
     // Diffusion steps (Allpass filters)
     private allpassDelays: Float32Array[] = [];

@@ -54,11 +54,14 @@ export class BioSlider extends LitElement {
     }
 
     .label {
-      font-size: 0.6rem;
-      margin-top: 4px;
+      font-size: 0.9rem;
+      margin-bottom: 6px;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       font-weight: bold;
+      color: #fff;
+      width: 100%;
+      text-align: center;
     }
 
     .value {
@@ -115,6 +118,7 @@ export class BioSlider extends LitElement {
     const activeCount = Math.floor((this.value / this.max) * 20);
 
     return html`
+      <div class="label">${this.label}</div>
       <div class="track-container">
         <div class="touch-overlay"
              @pointerdown="${this.handlePointerDown}"
@@ -127,7 +131,6 @@ export class BioSlider extends LitElement {
            `)}
         </div>
       </div>
-      <div class="label">${this.label}</div>
       <div class="value">${this.value.toString().padStart(3, '0')}</div>
     `;
   }

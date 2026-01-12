@@ -16,7 +16,8 @@ export class AudioEngine {
   private audioData: Float32Array;
 
   private adapter: StreamAdapter;
-  public musicClient: MusicClient;
+  public musicClientA: MusicClient;
+  public musicClientB: MusicClient;
   private isPlaying = false;
 
   constructor() {
@@ -37,11 +38,11 @@ export class AudioEngine {
 
     // Initialize adapters
     this.adapter = new StreamAdapter(this.sab);
-    // Use env var for key. Note: Vite uses import.meta.env, BUT strict defines might use process.env replacement.
-    // Let's safe check both or use what vite config defined.
-    // Vite config defined 'process.env.GEMINI_API_KEY'.
-    const apiKey = process.env.GEMINI_API_KEY || '';
-    this.musicClient = new MusicClient(this.adapter, apiKey);
+    // Support both Vite env and process.env (legacy/fallback)
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+    
+    this.musicClientA = new MusicClient(this.adapter, apiKey, 'A');
+    this.musicClientB = new MusicClient(this.adapter, apiKey, 'B');
   }
 
   async init() {
@@ -55,8 +56,8 @@ export class AudioEngine {
 
       this.workletNode = new AudioWorkletNode(this.context, 'ghost-processor', {
         numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [2]
+        numberOfOutputs: 3, // 0:Master, 1:DeckA, 2:DeckB
+        outputChannelCount: [2, 2, 2]
       });
 
       // Force Pause State (Stop Tape)
@@ -76,16 +77,34 @@ export class AudioEngine {
       });
 
       // Wire up Analyser for Visualization
-      this.analyser = this.context.createAnalyser();
-      this.analyser.fftSize = 2048; // Increased resolution
-      this.analyser.smoothingTimeConstant = 0.85;
-      this.workletNode.connect(this.analyser);
-      this.analyser.connect(this.context.destination);
+      const setupAnalyser = () => {
+          const a = this.context.createAnalyser();
+          a.fftSize = 2048;
+          a.smoothingTimeConstant = 0.85;
+          return a;
+      }
+      
+      this.masterAnalyser = setupAnalyser();
+      this.analyserA = setupAnalyser();
+      this.analyserB = setupAnalyser();
+      
+      // Route Worklet Outputs
+      // Output 0 -> Master -> Destination
+      this.workletNode.connect(this.masterAnalyser, 0, 0);
+      this.masterAnalyser.connect(this.context.destination);
+      
+      // Output 1 -> Deck A Analyser (No destination, just viz)
+      this.workletNode.connect(this.analyserA, 1, 0);
+      
+      // Output 2 -> Deck B Analyser
+      this.workletNode.connect(this.analyserB, 2, 0);
 
       console.log('AudioEngine Initialized');
       
       // Start AI Connection
-      await this.musicClient.connect();
+      // Note: Concurrent connections might be rate-limited, but let's try.
+      await this.musicClientA.connect();
+      await this.musicClientB.connect();
 
     } catch (e) {
       console.error('Failed to initialize AudioEngine:', e);
@@ -93,24 +112,41 @@ export class AudioEngine {
   }
 
   startAI(autoPlay: boolean = true) {
-      this.musicClient.start(autoPlay);
+      this.musicClientA?.start(autoPlay);
+      this.musicClientB?.start(autoPlay);
   }
 
   /**
    * Update DSP parameters in the AudioWorklet
-  private params = new Map<string, number>();
-
-  /**
-   * Update DSP parameters in the AudioWorklet
    */
-  updateDspParam(effect: string, value: number) {
-      this.params.set(effect, value);
-      if (!this.workletNode) return;
-      this.workletNode.port.postMessage({
-          type: 'CONFIG_UPDATE',
-          param: effect,
-          value: value
-      });
+  updateDspParam(param: string, value: number, deck?: 'A' | 'B') {
+    if (!this.workletNode) return;
+    this.workletNode.port.postMessage({
+      type: 'CONFIG_UPDATE',
+      param,
+      value,
+      deck // Optional
+    });
+  }
+
+  setCrossfader(value: number) {
+      this.updateDspParam('CROSSFADER', value);
+  }
+
+  setEq(deck: 'A' | 'B', band: 'HI' | 'MID' | 'LOW', value: number) {
+      this.updateDspParam(`EQ_${band}`, value, deck);
+  }
+
+  setKill(deck: 'A' | 'B', band: 'HI' | 'MID' | 'LOW', value: boolean) {
+      this.updateDspParam(`KILL_${band}`, value ? 1.0 : 0.0, deck);
+  }
+
+  setTapeStop(deck: 'A' | 'B', stop: boolean) {
+      this.updateDspParam('TAPE_STOP', stop ? 1.0 : 0.0, deck);
+  }
+
+  setScratch(deck: 'A' | 'B', speed: number) {
+      this.updateDspParam('SCRATCH_SPEED', speed, deck);
   }
 
   getDspParam(effect: string): number | undefined {
@@ -120,22 +156,25 @@ export class AudioEngine {
   /**
    * Update AI Prompt Weights
    */
-  updateAiPrompt(genre: string, weight: number) {
-      this.musicClient?.updatePrompt(genre, weight);
+  updateAiPrompt(deck: 'A' | 'B', text: string, weight: number = 1.0) {
+      if (deck === 'B') this.musicClientB?.updatePrompt(text, weight);
+      else this.musicClientA?.updatePrompt(text, weight);
   }
 
   pause() {
-      this.musicClient?.pause();
-      // Send Stop command to Physics
-      this.updateDspParam('TAPE_STOP', 1);
       this.isPlaying = false;
+      this.context.suspend();
+      this.musicClientA?.pause();
+      this.musicClientB?.pause();
   }
 
   resume() {
-      this.musicClient?.resume();
-      // Send Resume command (Target speed 1.0)
-      this.updateDspParam('TAPE_STOP', 0);
+      if (this.context.state === 'suspended') {
+          this.context.resume();
+      }
       this.isPlaying = true;
+      this.musicClientA?.resume();
+      this.musicClientB?.resume();
   }
 
   callGhost() {
@@ -162,7 +201,8 @@ export class AudioEngine {
       this.floatView[OFFSETS.BPM / 4] = bpm;
       
       // 2. Update AI Generation
-      this.musicClient?.setConfig({ bpm: bpm });
+      this.musicClientA?.setConfig({ bpm: bpm });
+      this.musicClientB?.setConfig({ bpm: bpm });
       
       // 3. Update Tape Speed via Message
       const ratio = bpm / 120.0;
@@ -191,13 +231,45 @@ export class AudioEngine {
     Atomics.store(this.headerView, OFFSETS.READ_POINTER_A / 4, 0);
   }
 
+  // --- BPM & SYNC LINK ---
+  public masterBpm = 120;
+  public bpmA = 120;
+  public bpmB = 120;
+
+  setMasterBpm(bpm: number) {
+      this.masterBpm = bpm;
+      // Ideally propagate to synced decks immediately?
+      // For now, relies on UI calling syncDeck again or continuous loop.
+      // But let's verify if we should auto-update.
+      // DJ Software usually keeps "Sync" active.
+      // Implementation: Check active sync state (not stored here yet).
+  }
+
+  setDeckBpm(deck: 'A' | 'B', bpm: number) {
+      if (deck === 'A') this.bpmA = bpm;
+      else this.bpmB = bpm;
+  }
+
+  syncDeck(deck: 'A' | 'B') {
+      const sourceBpm = deck === 'A' ? this.bpmA : this.bpmB;
+      if (sourceBpm <= 0) return;
+      
+      const ratio = this.masterBpm / sourceBpm;
+      console.log(`Syncing Deck ${deck}: Source=${sourceBpm} -> Master=${this.masterBpm} (Speed=${ratio.toFixed(3)})`);
+      this.updateDspParam('SPEED', ratio, deck);
+  }
+
   // Visualization Support
-  public analyser: AnalyserNode | null = null;
+  public masterAnalyser: AnalyserNode | null = null;
+  public analyserA: AnalyserNode | null = null;
+  public analyserB: AnalyserNode | null = null;
   private spectrumData: Uint8Array = new Uint8Array(128);
 
-  getSpectrum(): Uint8Array {
-      if (!this.analyser) return this.spectrumData;
-      this.analyser.getByteFrequencyData(this.spectrumData);
+  getSpectrum(deck: 'A' | 'B' | 'MASTER' = 'MASTER'): Uint8Array {
+      const target = deck === 'A' ? this.analyserA : deck === 'B' ? this.analyserB : this.masterAnalyser;
+      if (!target) return this.spectrumData;
+      // @ts-ignore
+      target.getByteFrequencyData(this.spectrumData);
       return this.spectrumData;
   }
   
@@ -210,16 +282,20 @@ export class AudioEngine {
   }
 
   getWritePointer(): number {
-      return Atomics.load(this.headerView, OFFSETS.WRITE_POINTER / 4);
+      return Atomics.load(this.headerView, OFFSETS.WRITE_POINTER_A / 4);
   }
 
   // AI Status
   getBufferHealth(): number {
-      return this.musicClient ? this.musicClient.getBufferHealth() : 0;
+      const healthA = this.musicClientA ? this.musicClientA.getBufferHealth() : 0;
+      const healthB = this.musicClientB ? this.musicClientB.getBufferHealth() : 0;
+      return Math.min(healthA, healthB);
   }
   
   getAiStatus(): string {
-      return this.musicClient ? this.musicClient.getSmartStatus() : 'OFFLINE';
+      const a = this.musicClientA ? (this.musicClientA as any).isConnected ? 'ON' : 'OFF' : 'OFF';
+      const b = this.musicClientB ? (this.musicClientB as any).isConnected ? 'ON' : 'OFF' : 'OFF';
+      return `A:${a} B:${b}`; 
   }
 
   // Hydra Heads (Visuals)
@@ -230,10 +306,12 @@ export class AudioEngine {
   }
 
   getHeadC(): number {
-      return Atomics.load(this.headerView, OFFSETS.READ_POINTER_C / 4);
+      return 0; // Deprecated
   }
 
   getLibraryCount(): number {
-      return this.musicClient ? this.musicClient.getArchiveCount() : 0;
+      const countA = this.musicClientA ? this.musicClientA.getArchiveCount() : 0;
+      const countB = this.musicClientB ? this.musicClientB.getArchiveCount() : 0;
+      return countA + countB;
   }
 }
