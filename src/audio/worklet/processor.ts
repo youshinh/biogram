@@ -177,6 +177,10 @@ class GhostProcessor extends AudioWorkletProcessor {
               this.internalSpeed = event.data.value;
               if (!this.isStopping) this.tape.setTargetSpeed(this.internalSpeed);
           }
+          if (event.data.param === 'SCRATCH_SPEED') {
+              // Bypass isStopping check for manual scratch interaction
+              this.tape.setTargetSpeed(event.data.value);
+          }
           
           if (event.data.param === 'NOISE_LEVEL') this.noiseLevel = event.data.value;
 

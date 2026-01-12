@@ -110,7 +110,8 @@ export class HydraVisualizer extends LitElement {
       if(engine) {
           this.wasPlaying = engine.getIsPlaying();
           // Always stop tape physics (motor) when touching vinyl
-          engine.updateDspParam('SPEED', 0.0);
+          // Use SCRATCH_SPEED to override potential TAPE_STOP lock
+          engine.updateDspParam('SCRATCH_SPEED', 0.0);
       }
   }
 
@@ -126,7 +127,7 @@ export class HydraVisualizer extends LitElement {
       const speed = deltaX * -0.15; 
       
       const engine = (window as any).engine;
-      if(engine) engine.updateDspParam('SPEED', speed);
+      if(engine) engine.updateDspParam('SCRATCH_SPEED', speed);
   }
 
   private onPointerUp = (e: PointerEvent) => {
@@ -140,9 +141,8 @@ export class HydraVisualizer extends LitElement {
           if (this.wasPlaying) {
               engine.updateDspParam('SPEED', 1.0);
           } else {
-              // Ensure it stays stopped (Speed 0 or Tape Stop?)
-              // Speed 0 maintains the physics state but zero velocity.
-              engine.updateDspParam('SPEED', 0.0);
+              // Stop the scratch hand
+              engine.updateDspParam('SCRATCH_SPEED', 0.0);
           }
       }
   }
