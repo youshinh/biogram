@@ -1,25 +1,28 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { sharedStyles } from '../styles/theme';
 
 @customElement('dj-mixer')
 export class DjMixer extends LitElement {
-  static styles = css`
+  static styles = [
+    sharedStyles,
+    css`
     :host {
       display: flex;
       flex-direction: column;
       height: 100%;
-      background: #111;
+      background: var(--panel-bg);
       color: #fff;
       padding: 2px;
       box-sizing: border-box;
-      font-family: 'Verdana', sans-serif;
-      overflow-y: auto; /* Fallback scroll */
+      overflow-y: auto;
     }
+
 
     .eq-section {
         flex-grow: 1;
         display: grid;
-        grid-template-columns: 1fr 1fr; /* Deck A EQ | Deck B EQ */
+        grid-template-columns: 1fr 1fr;
         gap: 4px;
         border-bottom: 1px solid #333;
         padding-bottom: 8px;
@@ -30,10 +33,13 @@ export class DjMixer extends LitElement {
         flex-direction: column;
         align-items: center;
         justify-content: space-around;
-        background: #000;
+        background: var(--channel-bg);
         padding: 4px;
         border: 1px solid #222;
     }
+    
+    .channel-strip.deck-a { border-top: 2px solid var(--neon-cyan); }
+    .channel-strip.deck-b { border-top: 2px solid var(--neon-red); }
 
     .knob-row {
         display: flex;
@@ -41,20 +47,25 @@ export class DjMixer extends LitElement {
         align-items: center;
         gap: 2px;
         width: 100%;
+        margin-top: 4px;
     }
 
     .knob-label {
         font-size: 0.6rem;
-        color: #888;
+        color: var(--text-gray);
         font-weight: bold;
+        opacity: 0.8;
     }
+    
+    .deck-a .knob-label { color: var(--neon-cyan); }
+    .deck-b .knob-label { color: var(--neon-red); }
 
     /* Tactile Slider - EXPANDED VERTICAL */
     input[type=range].eq-slider {
         -webkit-appearance: none;
         appearance: none;
-        writing-mode: vertical-lr; /* CRITICAL: Enables vertical drag */
-        direction: rtl; /* Top = max, Bottom = min */
+        writing-mode: vertical-lr;
+        direction: rtl;
         width: 40px; 
         height: 80px;
         background: #1a1a1a;
@@ -64,44 +75,44 @@ export class DjMixer extends LitElement {
         border-radius: 2px;
     }
     input[type=range].eq-slider::-webkit-slider-runnable-track {
-        width: 100%;
-        height: 100%;
-        background: #1a1a1a;
+        width: 100%; height: 100%; background: #1a1a1a;
     }
     input[type=range].eq-slider::-webkit-slider-thumb {
         -webkit-appearance: none;
-        height: 16px;
-        width: 100%;
-        background: var(--slider-color, #888);
+        height: 16px; width: 100%;
+        background: var(--text-gray);
         border: 1px solid #fff;
         border-radius: 2px;
     }
+    
+    .deck-a input[type=range].eq-slider::-webkit-slider-thumb { background: var(--neon-cyan); }
+    .deck-b input[type=range].eq-slider::-webkit-slider-thumb { background: var(--neon-red); }
 
     .kill-btn {
         width: 100%;
         font-size: 0.6rem;
         background: #222;
         border: 1px solid #444;
-        color: #888;
+        color: var(--text-gray);
         cursor: pointer;
         padding: 2px 0;
         margin-top: 2px;
     }
     .kill-btn.active {
-        background: #ff0000;
+        background: var(--neon-red);
         color: white;
-        box-shadow: 0 0 5px red;
-        border-color: red;
+        box-shadow: 0 0 5px var(--neon-red);
+        border-color: var(--neon-red);
     }
     .kill-btn.active.cyan {
-        background: #00ffff;
-        box-shadow: 0 0 5px #00ffff;
-        border-color: #00ffff;
+        background: var(--neon-cyan);
+        box-shadow: 0 0 5px var(--neon-cyan);
+        border-color: var(--neon-cyan);
         color: black;
     }
 
     .fader-section {
-        height: 50px; /* Reduced from 100px */
+        height: 50px;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -109,14 +120,14 @@ export class DjMixer extends LitElement {
         background: #0a0a0a;
         margin-top: 2px;
         border-top: 1px solid #333;
-        flex-shrink: 0; /* Prevent shrinking */
+        flex-shrink: 0;
     }
 
     .crossfader {
         -webkit-appearance: none;
         width: 90%;
         height: 10px;
-        background: linear-gradient(90deg, #00ffff, #333 50%, #ff0000);
+        background: linear-gradient(90deg, var(--neon-cyan), #333 50%, var(--neon-red));
         border-radius: 5px;
         outline: none;
         margin: 14px 0;
@@ -125,8 +136,7 @@ export class DjMixer extends LitElement {
     .crossfader::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
-        width: 30px;
-        height: 40px;
+        width: 30px; height: 40px;
         background: #fff;
         border: 2px solid #555;
         border-radius: 4px;
@@ -147,33 +157,22 @@ export class DjMixer extends LitElement {
     }
     .beat-led {
         width: 12px; height: 12px;
-        background: #300;
-        border-radius: 50%;
-        margin-right: 8px;
-        transition: background 0.05s;
+        background: #300; border-radius: 50%;
+        margin-right: 8px; transition: background 0.05s;
     }
     .beat-led.active {
-        background: #f00;
-        box-shadow: 0 0 8px #f00;
+        background: #f00; box-shadow: 0 0 8px #f00;
     }
     .bpm-btn {
-        background: #333;
-        border: 1px solid #555;
-        color: white;
-        font-size: 0.8rem;
-        width: 24px;
-        height: 24px;
-        cursor: pointer;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 0 4px;
-        user-select: none;
+        background: #333; border: 1px solid #555;
+        color: white; font-size: 0.8rem;
+        width: 24px; height: 24px;
+        cursor: pointer; display: flex;
+        justify-content: center; align-items: center;
+        margin: 0 4px; user-select: none;
     }
-    .bpm-btn:active {
-        background: #666;
-    }
-  `;
+    .bpm-btn:active { background: #666; }
+  `];
 
   @state() crossfader = 0.5; // 0 (A) to 1 (B)
   
@@ -283,10 +282,9 @@ export class DjMixer extends LitElement {
   }
 
   private renderChannel(deck: 'A'|'B', eq: any, kill: any) {
+      // Add class for deck color scope
       return html`
-        <div class="channel-strip">
-            <!-- Channel Label Removed -->
-            
+        <div class="channel-strip deck-${deck.toLowerCase()}">
             <!-- PRE-AMP -->
             ${this.renderPreAmp(deck)}
             
@@ -305,15 +303,15 @@ export class DjMixer extends LitElement {
         <div class="pre-amp-section" style="border-bottom:1px solid #333; margin-bottom:2px; padding-bottom:2px;">
             <!-- TRIM -->
             <div class="knob-row">
-                <span class="knob-label" style="color:#aaa;">TRM</span>
+                <span class="knob-label">TRM</span>
                 <input type="range" class="eq-slider" style="height:30px;"
                        min="0" max="2" step="0.01" .value="${trim}"
                        @input="${(e:any) => this.handlePreAmp(deck, 'TRIM', e.target.value)}"/>
             </div>
             <!-- DRIVE -->
             <div class="knob-row">
-                <span class="knob-label" style="color:#ff4400;">DRV</span>
-                <input type="range" class="eq-slider" style="height:30px; --thumb-color: #ff4400;"
+                <span class="knob-label" style="color:#ff4400; opacity:1;">DRV</span>
+                <input type="range" class="eq-slider" style="height:30px; --channel-bg: #200;"
                        min="0" max="1" step="0.01" .value="${drive}"
                        @input="${(e:any) => this.handlePreAmp(deck, 'DRIVE', e.target.value)}"/>
             </div>
@@ -333,19 +331,18 @@ export class DjMixer extends LitElement {
 
   private renderKnob(deck: string, band: 'HI'|'MID'|'LOW', val: number, isKill: boolean) {
       const key = band.toLowerCase();
-      const color = deck === 'A' ? '#00ffff' : '#ff0000';
+      // Inline styles removed in favor of deck classes
       return html`
         <div class="knob-row" style="margin-top: 4px;">
-            <span class="knob-label" style="color: ${color}; opacity: 0.8;">${band}</span>
+            <span class="knob-label">${band}</span>
             <!-- Value Display -->
-            <span style="font-size:0.7rem; font-family:'Space Mono'; color:${color}; margin-bottom:2px;">
+            <span style="font-size:0.7rem; font-family:'Space Mono'; color:inherit; opacity:0.7; margin-bottom:2px;">
                 ${val.toFixed(2)}
             </span>
             
             <input type="range" class="eq-slider" 
                    min="0" max="1.5" step="0.01" 
                    .value="${val}" 
-                   style="--slider-color: ${color}"
                    @input="${(e:any) => this.handleEq(deck, key, e.target.value)}"/>
                    
             <button class="kill-btn ${isKill ? 'active' : ''} ${deck === 'A' ? 'cyan' : ''}" 

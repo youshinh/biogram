@@ -251,8 +251,7 @@ export class AudioEngine {
     Atomics.store(this.headerView, OFFSETS.READ_POINTER_A / 4, 0);
   }
 
-  // --- BPM & SYNC LINK ---
-  public masterBpm = 120;
+
   // --- BPM & SYNC LINK ---
   public masterBpm = 120;
   public bpmA = 120;

@@ -1,10 +1,13 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { sharedStyles } from '../styles/theme';
 import './hydra-visualizer';
 
 @customElement('deck-controller')
 export class DeckController extends LitElement {
-  static styles = css`
+  static styles = [
+    sharedStyles,
+    css`
     :host {
       display: flex;
       flex-direction: column;
@@ -151,7 +154,7 @@ export class DeckController extends LitElement {
         pointer-events: none;
         z-index: 10;
     }
-  `;
+  `];
 
   @property({ type: String }) deckId = "A"; 
   @state() isPlaying = false;
