@@ -30,11 +30,11 @@ export class AppShell extends LitElement {
     main {
       flex-grow: 1;
       display: grid;
-      /* Fixed Top Row (500px) per user request */
-      grid-template-rows: 500px minmax(0, 1fr); 
-      gap: 8px;
+      /* Flexible layout: Top takes 60%, Bottom takes remaining */
+      grid-template-rows: minmax(250px, 60vh) minmax(100px, 1fr);
+      gap: 4px;
       min-height: 0;
-      overflow: hidden;
+      overflow-y: auto; /* Enable vertical scroll if needed */
     }
     
     /* main.minimal-mode removed to enforce consistent 350px Top Row */
@@ -68,7 +68,8 @@ export class AppShell extends LitElement {
     .row-bottom {
       display: grid;
       grid-template-columns: 2fr 1fr;
-      gap: 16px;
+      gap: 8px;
+      min-height: 100px; /* Ensure visibility */
     }
 
     footer {

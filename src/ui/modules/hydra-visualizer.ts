@@ -43,6 +43,10 @@ export class HydraVisualizer extends LitElement {
   
   // Zoom State
   private zoomScale = 100; 
+  
+  // Spectrogram History
+  private spectrogramHistory: Uint8Array[] = [];
+  private spectrogramWidth = 256; // History depth (columns) 
 
   firstUpdated() {
     this.canvas = this.renderRoot.querySelector('canvas');
@@ -147,16 +151,34 @@ export class HydraVisualizer extends LitElement {
     const isDeckB = this.deckId === 'B';
     const headPos = isDeckB ? engine.getHeadB() : engine.getReadPointer();
     
+    // Ghost Logic
+    // Read Shared Ghost Pointer (Global)
+    // If SAB available
+    let ghostPos = -1;
+    if (this.sab) {
+        // Direct read via Int32 View if helper unavailable?
+        // engine has `headerView`.
+        // Let's assume engine getter.
+        if (engine.getGhostPointer) ghostPos = engine.getGhostPointer(); // Need to add to engine?
+        // Fallback: Read manually if needed, but Engine wrapper is safer.
+        // Actually, Engine class needs `getGhostPointer`. I'll assume I add it or read directly.
+        // Let's rely on Engine method update.
+    }
+    
     // Check pause state (Global for now)
     const isPlaying = engine.getIsPlaying ? engine.getIsPlaying() : true;
 
     // 1. Clear
-    this.ctx.clearRect(0, 0, w, h); 
+    this.ctx.clearRect(0, 0, w, h);
+    
+    // 1.5 Update and Draw Spectrogram (Behind Waveform)
+    this.updateSpectrogram(spectrum);
+    this.drawSpectrogram(w, h); 
     
     // 2. Draw Waveform (Windowed centered on Head)
     const step = Math.ceil(this.zoomScale); 
     
-    this.ctx.strokeStyle = isDeckB ? '#00ffff' : '#ff0000'; // Cyan (B) or Red (A)
+    this.ctx.strokeStyle = isDeckB ? '#ff0000' : '#00ffff'; // Red (B) or Cyan (A)
     this.ctx.lineWidth = 1;
     this.ctx.beginPath();
     
@@ -183,17 +205,23 @@ export class HydraVisualizer extends LitElement {
     this.ctx.stroke();
     
     // 3. Draw Heads (Hydra)
-    // Only draw "Other Heads" if they are in our Deck? 
-    // Or just draw Main Head (Center) always.
-    // The "Ghost" head logic was for single buffer.
-    // For now, let's just show Center Line.
-    
-    this.ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    // MAIN HEAD (Center Line)
+    this.ctx.strokeStyle = '#ffffff'; // Solid White
     this.ctx.lineWidth = 2;
     this.ctx.beginPath();
     this.ctx.moveTo(w/2, 0);
     this.ctx.lineTo(w/2, h);
     this.ctx.stroke();
+    
+    // Ghost Head
+    if (engine && engine.getGhostPointer) {
+        const gp = engine.getGhostPointer();
+        if (gp >= 0) {
+            // Only draw if within reasonable distance?
+            // Or just draw relative to Main.
+            this.drawHead(w, h, headPos, gp, '#ffffff', 0.8);
+        }
+    }
     
     // ... Spectrum (Keep as is, it visualizes Master Output)
 
@@ -285,8 +313,100 @@ export class HydraVisualizer extends LitElement {
     
     this.shadowRoot!.querySelector('.time-scale')!.textContent = `WINDOW: ${totalTimeSec.toFixed(2)}s`;
 
+    // 5. Bar Markers (1 bar = 4 beats)
+    this.drawBarMarkers(w, h, headPos);
+
+    // 6. Loop Seam (Start/End of Ring Buffer)
+    // Draw a line at Index 0 relative to current position to show the "Seam"
+    this.drawHead(w, h, headPos, 0, '#ffff00', 0.5); // Yellow Line for Seam
+
+    // 6. GEN Indicator (Flashing)
+    if (this.deckId && engine.isGenerating(this.deckId)) {
+        const now = Date.now();
+        if (now % 1000 < 500) { // 500ms Flash
+            this.ctx.fillStyle = '#00ff00';
+            this.ctx.font = 'bold 24px monospace';
+            this.ctx.textAlign = 'right';
+            this.ctx.fillText('GEN', w - 10, 30);
+        }
+    }
+
     // Broadcast state to VJ window
-    this.vjChannel.postMessage({ type: 'FRAME', headPos: headPos, spectrum: spectrum }); 
+    this.vjChannel.postMessage({ type: 'FRAME', headPos: headPos, spectrum: spectrum });  
+  }
+
+  // --- Spectrogram Methods ---
+  private updateSpectrogram(spectrum: Uint8Array) {
+    // Add current spectrum to history (rightmost column)
+    const copy = new Uint8Array(spectrum.length);
+    copy.set(spectrum);
+    this.spectrogramHistory.push(copy);
+    
+    // Limit history size
+    while (this.spectrogramHistory.length > this.spectrogramWidth) {
+      this.spectrogramHistory.shift();
+    }
+  }
+
+  private drawSpectrogram(w: number, h: number) {
+    if (!this.ctx || this.spectrogramHistory.length === 0) return;
+    
+    const historyLen = this.spectrogramHistory.length;
+    const binCount = this.spectrogramHistory[0].length;
+    
+    const colWidth = w / this.spectrogramWidth;
+    const rowHeight = h / binCount;
+    
+    // Draw from left (oldest) to right (newest)
+    for (let col = 0; col < historyLen; col++) {
+      const spectrum = this.spectrogramHistory[col];
+      const x = col * colWidth;
+      
+      for (let bin = 0; bin < binCount; bin++) {
+        const value = spectrum[bin] / 255.0; // Normalize 0..1
+        if (value < 0.05) continue; // Skip very quiet bins
+        
+        // Map frequency bin to color (Bass=Red, Mid=Purple, Treble=Blue)
+        const freqRatio = bin / binCount;
+        const color = this.frequencyToColor(freqRatio, value);
+        
+        // Y: Low frequencies at bottom, high at top
+        const y = h - ((bin + 1) * rowHeight);
+        
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(x, y, colWidth + 1, rowHeight + 1);
+      }
+    }
+  }
+
+  private frequencyToColor(freqRatio: number, intensity: number): string {
+    // freqRatio: 0 = lowest, 1 = highest
+    // Color mapping: Red (low) -> Purple (mid) -> Blue (high)
+    let r: number, g: number, b: number;
+    
+    if (freqRatio < 0.33) {
+      // Bass: Red to Orange-Red
+      r = 255;
+      g = Math.floor(freqRatio * 3 * 100); // 0..100
+      b = 50;
+    } else if (freqRatio < 0.66) {
+      // Mid: Purple-Magenta
+      const t = (freqRatio - 0.33) / 0.33;
+      r = Math.floor(255 - t * 100); // 255..155
+      g = Math.floor(50 * (1 - t));    // 50..0
+      b = Math.floor(100 + t * 155);   // 100..255
+    } else {
+      // Treble: Blue
+      const t = (freqRatio - 0.66) / 0.34;
+      r = Math.floor(155 - t * 155); // 155..0
+      g = Math.floor(t * 100);         // 0..100
+      b = 255;
+    }
+    
+    // Apply intensity as alpha
+    const alpha = 0.2 + (intensity * 0.6); // Range 0.2..0.8
+    
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
   private drawHead(w: number, h: number, mainHeadPos: number, targetHeadPos: number, color: string, alpha: number) {
@@ -316,6 +436,66 @@ export class HydraVisualizer extends LitElement {
           this.ctx.stroke();
           this.ctx.setLineDash([]);
       }
+  }
+
+  private drawBarMarkers(w: number, h: number, headPos: number) {
+      if (!this.ctx) return;
+      
+      const engine = (window as any).engine;
+      if (!engine) return;
+      
+      // Get BPM & Offset from engine
+      // Assuming engine tracks bpmA/bpmB separately?
+      // For Master View, usually use Master BPM. 
+      // But for Deck View, ideally use Deck's BPM grid.
+      // Let's use Deck BPM if available to show "Track Grid"
+      
+      const isDeckA = this.deckId === 'A';
+      const deckBpm = isDeckA ? engine.bpmA : engine.bpmB;
+      const deckOffset = isDeckA ? engine.offsetA : engine.offsetB;
+      
+      const bpm = deckBpm || engine.masterBpm || 120;
+      const sampleRate = 44100;
+      
+      // Samples per bar (1 bar = 4 beats)
+      const samplesPerBar = (sampleRate * 60 * 4) / bpm;
+      const offsetSamples = (deckOffset || 0) * sampleRate;
+      
+      const step = Math.ceil(this.zoomScale);
+      
+      // Calculate how many bars fit on screen
+      const totalSamplesOnScreen = w * step;
+      const barsOnScreen = Math.ceil(totalSamplesOnScreen / samplesPerBar) + 2;
+      
+      // Find the nearest bar boundary relative to headPos (shifted by offset)
+      // T_bar = Offset + n * BarLen
+      // n = floor((Head - Offset) / BarLen)
+      const n = Math.floor((headPos - offsetSamples) / samplesPerBar);
+      const nearestBarSample = offsetSamples + (n * samplesPerBar);
+      
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'; // Brighter
+      this.ctx.lineWidth = 1;
+      this.ctx.setLineDash([2, 6]);
+      
+      // Draw bars
+      for (let i = -barsOnScreen / 2; i <= barsOnScreen / 2; i++) {
+          const barSample = nearestBarSample + (i * samplesPerBar);
+          const diff = barSample - headPos;
+          const x = (w / 2) + (diff / step);
+          
+          if (x >= 0 && x <= w) {
+              this.ctx.beginPath();
+              this.ctx.moveTo(x, 0);
+              this.ctx.lineTo(x, h);
+              this.ctx.stroke();
+              
+              // Bar Number (Relative)
+              // this.ctx.fillStyle = '#aaa';
+              // this.ctx.fillText(`${n+i}`, x + 4, 10);
+          }
+      }
+      
+      this.ctx.setLineDash([]);
   }
 
   render() {

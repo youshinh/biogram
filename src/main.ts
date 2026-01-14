@@ -146,6 +146,12 @@ if (isVizMode) {
             return;
         }
 
+        // Handle TRIM_A, TRIM_B, DRIVE_A, DRIVE_B directly
+        if (id.startsWith('TRIM_') || id.startsWith('DRIVE_')) {
+            engine.updateDspParam(id, parseFloat(val));
+            return;
+        }
+
         // Parse EQ_A_HI or KILL_B_LOW
         const parts = id.split('_'); // [TYPE, DECK, BAND]
         const type = parts[0];
@@ -193,9 +199,7 @@ if (isVizMode) {
         if (sync) {
             engine.syncDeck(deck as 'A' | 'B');
         } else {
-            // Reset Speed to 1.0? Or keep? Usually keep.
-            // Let's reset to 1.0 for clarity of "Unsync".
-            engine.updateDspParam('SPEED', 1.0, deck as 'A' | 'B');
+            engine.unsyncDeck(deck as 'A' | 'B');
         }
     });
 
@@ -211,6 +215,16 @@ if (isVizMode) {
 
     window.addEventListener('deck-load-random', (e: any) => {
         const { deck } = e.detail;
+        
+        // Debug: Check API Key
+        // @ts-ignore
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+            alert("⚠️ API KEY MISSING\n\nPlease set VITE_GEMINI_API_KEY in .env.local to generate audio.");
+            console.error("GEN Error: No API Key found.");
+            return;
+        }
+
         const genres = [
             "Acid Techno 135BPM", "Deep House 122BPM", "Drum and Bass 174BPM", 
             "Dub Techno 120BPM", "Industrial Techno 140BPM", "Minimal Microhouse 125BPM",
@@ -229,14 +243,7 @@ if (isVizMode) {
         engine.updateAiPrompt(deck as 'A' | 'B', randomGenre, 1.0);
     });
 
-    window.addEventListener('deck-sync-toggle', (e:any) => {
-        const { deck, sync } = e.detail;
-        if (sync) {
-            engine.syncDeck(deck as 'A' | 'B');
-        } else {
-            engine.updateDspParam('SPEED', 1.0, deck as 'A' | 'B');
-        }
-    });
+
 
     // 2. Controls (Bio Sliders)
     const controlsContainer = document.createElement('div');
@@ -412,17 +419,17 @@ if (isVizMode) {
     let ghostOverlay: HTMLElement | null = null;
     
     // Helpers
-    const mkOverlay = (title: string) => {
+    const mkOverlay = (title: string, color: string = '#00ffff') => {
         const el = document.createElement('div');
         Object.assign(el.style, {
             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            width: '280px', background: 'rgba(0,0,0,0.95)', border: '1px solid #00ffff',
+            width: '280px', background: 'rgba(0,0,0,0.95)', border: `1px solid ${color}`,
             padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 2000,
-            boxShadow: '0 0 30px rgba(0,255,255,0.3)'
+            boxShadow: `0 0 30px ${color}4d`
         });
         const t = document.createElement('div');
         t.textContent = title;
-        t.style.cssText = "color:#00ffff; font-weight:bold; font-size:1rem; text-align:center; margin-bottom:10px;";
+        t.style.cssText = `color:${color}; font-weight:bold; font-size:1rem; text-align:center; margin-bottom:10px;`;
         el.appendChild(t);
         return el;
     };
@@ -445,39 +452,6 @@ if (isVizMode) {
          parent.appendChild(row);
     };
 
-    const toggleHeadB = () => {
-        if (headBOverlay) { headBOverlay.remove(); headBOverlay = null; return; }
-        headBOverlay = mkOverlay("HEAD B (SLICE)");
-        mkSliderHelper(headBOverlay, "DECAY LENGTH", 'CHOPPER_DECAY', 0.92, 0, 1);
-        mkSliderHelper(headBOverlay, "RHYTHM DENSITY", 'CHOPPER_DENSITY', 0.25, 0, 1); // 4/16 default
-        mkSliderHelper(headBOverlay, "MIX LEVEL", 'CHOPPER_MIX', 0.5, 0, 1);
-        mkSliderHelper(headBOverlay, "EQ (Dark<>Bright)", 'CHOPPER_EQ', 0.5, 0, 1);
-        
-        const close = document.createElement('button');
-        close.textContent = "CLOSE";
-        close.className = "b-all";
-        close.style.padding = "10px";
-        close.onclick = () => toggleHeadB();
-        headBOverlay.appendChild(close);
-        document.body.appendChild(headBOverlay);
-    };
-    
-    // (Note: Ghost uses specific toggleGhostEditor below, but we keep toggleGhost for completeness)
-    const toggleGhost = () => {
-        if (ghostOverlay) { ghostOverlay.remove(); ghostOverlay = null; return; }
-        ghostOverlay = mkOverlay("GHOST (CLOUD)");
-        mkSliderHelper(ghostOverlay, "GHOST EQ", 'GHOST_EQ', 0.5, 0, 1);
-        mkSliderHelper(ghostOverlay, "FADE RATE", 'GHOST_FADE', 0.5, 0, 1);
-        
-        const close = document.createElement('button');
-        close.textContent = "CLOSE";
-        close.className = "b-all";
-        close.style.padding = "10px";
-        close.onclick = () => toggleGhost();
-        ghostOverlay.appendChild(close);
-        document.body.appendChild(ghostOverlay);
-    };
-
     let ghostEditorOverlay: HTMLElement | null = null;
     const toggleGhostEditor = () => {
          if (ghostEditorOverlay) {
@@ -486,47 +460,11 @@ if (isVizMode) {
             return;
         }
         
-        ghostEditorOverlay = document.createElement('div');
-        Object.assign(ghostEditorOverlay.style, {
-            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            width: '240px', background: 'rgba(50,0,50,0.95)', border: '1px solid #bd00ff', // Purple theme
-            padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 2001,
-            boxShadow: '0 0 20px rgba(189,0,255,0.2)'
-        });
+        ghostEditorOverlay = mkOverlay("GHOST PARAMETERS", "#00ffff"); // Cyan theme
         
-        const label = document.createElement('div');
-        label.textContent = "GHOST PARAMETERS";
-        label.style.color = "#bd00ff";
-        label.style.fontWeight = "bold";
-        label.style.fontSize = "0.8rem";
-        label.style.textAlign = "center";
-        ghostEditorOverlay.appendChild(label);
-        
-        const mkSlider = (name: string, param: string, def: number, min: number, max: number) => {
-             const row = document.createElement('div');
-             const slabel = document.createElement('div');
-             slabel.textContent = name;
-             slabel.style.fontSize = "0.7rem"; 
-             slabel.style.marginBottom = "4px";
-             
-             const currentVal = engine.getDspParam(param) ?? def;
-             const inp = document.createElement('input');
-             inp.type = "range";
-             inp.min = "0"; inp.max = "100";
-             inp.value = String(currentVal * 100); 
-             inp.style.width = "100%";
-             inp.oninput = (e: any) => {
-                 const v = Number(e.target.value) / 100;
-                 engine.updateDspParam(param, v);
-             };
-             row.appendChild(slabel);
-             row.appendChild(inp);
-             ghostEditorOverlay!.appendChild(row);
-        };
-        
-        mkSlider("FADE LENGTH", 'GHOST_FADE', 0.5, 0, 1);
-        mkSlider("EQUALIZER (Dark<>Bright)", 'GHOST_EQ', 0.5, 0, 1);
-        mkSlider("TAPE ECHO SEND", 'DUB', 0.0, 0, 1);
+        mkSliderHelper(ghostEditorOverlay, "FADE LENGTH", 'GHOST_FADE', 0.5, 0, 1);
+        mkSliderHelper(ghostEditorOverlay, "EQUALIZER (Dark<>Bright)", 'GHOST_EQ', 0.5, 0, 1);
+        mkSliderHelper(ghostEditorOverlay, "TAPE ECHO SEND", 'DUB', 0.0, 0, 1);
         
         const close = document.createElement('button');
         close.textContent = "CLOSE";
@@ -540,246 +478,160 @@ if (isVizMode) {
         document.body.appendChild(ghostEditorOverlay);
     };
 
-    // --- GHOST BUTTON ---
-    const ghostBtn = document.createElement('button');
-    ghostBtn.className = "b-all btn-bio"; 
-    ghostBtn.style.display = "flex";
-    ghostBtn.style.flexDirection = "column";
-    ghostBtn.style.justifyContent = "center";
-    ghostBtn.style.alignItems = "center";
-    ghostBtn.style.cursor = "pointer";
-    ghostBtn.style.flex = "1"; // Ensure it grows
-    ghostBtn.style.width = "100%"; // Fill wrapper
-    ghostBtn.style.position = "relative";
-    ghostBtn.style.background = "#000"; // Black Background
-    ghostBtn.style.color = "#fff"; // White Text
-    ghostBtn.style.userSelect = "none"; 
-    ghostBtn.style.touchAction = "none"; // Prevent scrolling/zooming on touch
-    
-    // Status Indicator (Small dot)
-    const ghostDot = document.createElement('div');
-    ghostDot.style.width = "4px";
-    ghostDot.style.height = "4px";
-    ghostDot.style.borderRadius = "50%";
-    ghostDot.style.background = "currentColor";
-    ghostDot.style.opacity = "0.2";
-    ghostDot.style.marginBottom = "2px";
-    ghostBtn.appendChild(ghostDot);
-    
-    const ghostLabel = document.createElement('span');
-    ghostLabel.className = "text-xxs opacity-70";
-    ghostLabel.textContent = "MASTER GHOST";
-    ghostBtn.appendChild(ghostLabel);
-    
-    const ghostVal = document.createElement('span');
-    ghostVal.style.fontWeight = "bold";
-    ghostVal.textContent = "GHOST";
-    ghostBtn.appendChild(ghostVal);
-    
-    ghostBtn.appendChild(ghostVal);
-    // Edit Code Moved Outside
+    // --- UI HELPER: FX MODULE WITH A/B TARGET (SLAM STYLE) ---
+    const createFxModule = (title: string, paramPrefix: string, onEdit: () => void) => {
+        const wrapper = document.createElement('div');
+        // wrapper.className = "relative w-full h-full bg-black"; // Classes missing in biogram.css
+        wrapper.className = "bg-black";
+        wrapper.style.position = "relative"; // CRITICAL FIX
+        wrapper.style.width = "100%";
+        wrapper.style.height = "100%";
+        wrapper.style.minHeight = "80px"; // Match SLAM min-height
 
-    // Logic
-    let isGhostLocked = false;
-    let isGhostHeld = false;
-    // ... (Handlers) ...
-
-    gridControls.appendChild(ghostBtn);
-    
-    // ... (Head B Code) ...
-    // ...
-    
-    // --- GHOST EDITOR (Moved up) ---
-    // (See above)
-
-    const updateGhostVisuals = () => {
-        const active = isGhostLocked || isGhostHeld;
-        if (active) {
-            ghostBtn.style.background = "#fff";
-            ghostBtn.style.color = "#000";
-            ghostDot.style.opacity = "1";
-        } else {
-            ghostBtn.style.background = "#000"; // Reset to Black
-            ghostBtn.style.color = "#fff"; // Reset to White
-            ghostDot.style.opacity = "0.2";
-        }
+        // 1. BIG TOGGLE BUTTON (Background)
+        const toggleBtn = document.createElement('button');
+        toggleBtn.style.position = "absolute";
+        toggleBtn.style.top = "0"; toggleBtn.style.left = "0";
+        toggleBtn.style.width = "100%"; toggleBtn.style.height = "100%";
+        // SLAM STRIPE PATTERN
+        toggleBtn.style.background = "repeating-linear-gradient(45deg, #000, #000 2px, #111 2px, #111 4px)";
+        toggleBtn.style.border = "1px solid white";
+        toggleBtn.style.color = "white";
+        toggleBtn.style.cursor = "pointer";
+        toggleBtn.style.display = "flex";
+        toggleBtn.style.flexDirection = "column"; 
+        toggleBtn.style.justifyContent = "center";
+        toggleBtn.style.alignItems = "center";
+        toggleBtn.style.transition = "all 0.1s";
+        toggleBtn.style.userSelect = "none";
         
-        if (isGhostLocked) {
-             ghostLabel.textContent = "LOCKED";
-        } else {
-             ghostLabel.textContent = "SUMMON";
-        }
+        // Internal State
+        let isActive = false;
+        
+        // Content
+        const labelMain = document.createElement('span');
+        labelMain.textContent = title;
+        labelMain.style.fontSize = "1.5rem";
+        labelMain.style.fontWeight = "bold";
+        labelMain.style.letterSpacing = "0.1em";
+        
+        const labelSub = document.createElement('span');
+        labelSub.textContent = "OFF";
+        labelSub.style.fontSize = "0.6rem";
+        labelSub.style.letterSpacing = "0.3em";
+        labelSub.style.marginTop = "4px";
+        
+        toggleBtn.appendChild(labelMain);
+        toggleBtn.appendChild(labelSub);
+        
+        // Hover Effects: Gray instead of white
+        toggleBtn.onmouseenter = () => {
+             if (!isActive) {
+                 toggleBtn.style.background = "#333";
+                 toggleBtn.style.color = "#ccc";
+             }
+        };
+        toggleBtn.onmouseleave = () => {
+             if (!isActive) {
+                 toggleBtn.style.background = "repeating-linear-gradient(45deg, #000, #000 2px, #111 2px, #111 4px)";
+                 toggleBtn.style.color = "white";
+             }
+        };
+        
+        // Click Logic: Toggle On/Off
+        toggleBtn.onclick = () => {
+             isActive = !isActive;
+             engine.updateDspParam(`${paramPrefix}_ACTIVE`, isActive ? 1.0 : 0.0);
+             
+             labelSub.textContent = isActive ? "ACTIVE" : "OFF";
+             
+             if (isActive) {
+                 toggleBtn.style.background = "white";
+                 toggleBtn.style.color = "black";
+             } else {
+                 toggleBtn.style.background = "repeating-linear-gradient(45deg, #000, #000 2px, #111 2px, #111 4px)";
+                 toggleBtn.style.color = "white";
+             }
+        };
+        
+        wrapper.appendChild(toggleBtn);
+
+        // 2. OVERLAY CONTROLS (Floating on top)
+        const overlay = document.createElement('div');
+        overlay.style.position = "absolute";
+        overlay.style.top = "0"; overlay.style.left = "0";
+        overlay.style.width = "100%"; overlay.style.height = "100%";
+        overlay.style.pointerEvents = "none"; // Let clicks pass through to Toggle
+        overlay.style.zIndex = "10"; // FIX: Stay above toggle button on hover
+        
+        // EDIT BUTTON (Top Left)
+        const editBtn = document.createElement('button');
+        editBtn.textContent = "EDIT";
+        editBtn.className = "text-xxs b-all px-1 bg-black text-white hover:bg-white hover:text-black";
+        editBtn.style.position = "absolute";
+        editBtn.style.top = "4px"; editBtn.style.left = "4px";
+        editBtn.style.pointerEvents = "auto"; // Catch clicks
+        editBtn.onclick = (e) => { e.stopPropagation(); onEdit(); };
+        
+        // A/B SWITCH (Top Right)
+        const abSwitch = document.createElement('div');
+        abSwitch.className = "flex b-all rounded overflow-hidden";
+        abSwitch.style.position = "absolute";
+        abSwitch.style.top = "4px"; abSwitch.style.right = "4px";
+        abSwitch.style.pointerEvents = "auto";
+        abSwitch.style.transform = "scale(0.8)"; // Smaller
+        
+        let target: 'A' | 'B' = 'A';
+        const btnA = document.createElement('button');
+        btnA.textContent = "A";
+        btnA.className = "px-2 py-0 text-xs font-bold";
+        btnA.style.background = "white"; btnA.style.color = "black"; // Default
+        
+        const btnB = document.createElement('button');
+        btnB.textContent = "B";
+        btnB.className = "px-2 py-0 text-xs font-bold";
+        btnB.style.background = "black"; btnB.style.color = "#555";
+        
+        const updateTargetVisuals = () => {
+             if (target === 'A') {
+                 btnA.style.background = "#fff"; btnA.style.color = "#000";
+                 btnB.style.background = "#000"; btnB.style.color = "#555";
+             } else {
+                 btnA.style.background = "#000"; btnA.style.color = "#555";
+                 btnB.style.background = "#fff"; btnB.style.color = "#000";
+             }
+        };
+        
+        btnA.onclick = (e) => { e.stopPropagation(); target = 'A'; updateTargetVisuals(); engine.updateDspParam(`${paramPrefix}_TARGET`, 0.0); };
+        btnB.onclick = (e) => { e.stopPropagation(); target = 'B'; updateTargetVisuals(); engine.updateDspParam(`${paramPrefix}_TARGET`, 1.0); };
+        
+        abSwitch.appendChild(btnA);
+        abSwitch.appendChild(btnB);
+        
+        overlay.appendChild(editBtn);
+        overlay.appendChild(abSwitch);
+        
+        wrapper.appendChild(overlay);
+        
+        return wrapper;
     };
 
-    // Handlers
-    ghostBtn.addEventListener('pointerdown', (e) => {
-        // If locked, we ignore the HOLD action.
-        // Wait for dblclick to unlock.
-        if (isGhostLocked) return;
+    // --- GHOST MODULE ---
+    // User Update: Toggle Mode, Selector A/B
+    const ghostModule = createFxModule("GHOST", "GHOST", () => toggleGhostEditor());
+    gridControls.appendChild(ghostModule);
 
-        ghostBtn.setPointerCapture(e.pointerId);
-        isGhostHeld = true;
-        engine.startGhost();
-        updateGhostVisuals();
-    });
+    // --- SLICER MODULE (Formerly Head B) ---
+    // User Update: Renamed to Slicer, Toggle Mode, Selector A/B
+    const slicerModule = createFxModule("SLICER", "SLICER", () => toggleHeadB());
+    gridControls.appendChild(slicerModule);
 
-    ghostBtn.addEventListener('pointerup', (e) => {
-        if (isGhostLocked) return;
-
-        isGhostHeld = false;
-        ghostBtn.releasePointerCapture(e.pointerId);
-        engine.stopGhost();
-        updateGhostVisuals();
-    });
-    
-    ghostBtn.addEventListener('pointercancel', (e) => {
-        if (isGhostLocked) return;
-        isGhostHeld = false; // Reset
-        ghostBtn.releasePointerCapture(e.pointerId);
-        engine.stopGhost();
-        updateGhostVisuals();
-    });
-    
-    // Double Click to Toggle Lock
-    ghostBtn.addEventListener('dblclick', (e) => {
-        e.preventDefault();
-        
-        isGhostLocked = !isGhostLocked;
-        console.log("Ghost Lock:", isGhostLocked);
-        
-        if (isGhostLocked) {
-            engine.startGhost();
-        } else {
-            engine.stopGhost();
-            isGhostHeld = false; 
-        }
-        updateGhostVisuals();
-    });
-
-    // --- GHOST WRAPPER ---
-    const ghostWrapper = document.createElement('div');
-    ghostWrapper.style.position = "relative";
-    ghostWrapper.style.display = "flex";
-    ghostWrapper.style.width = "100%"; // Fill grid cell
-    ghostWrapper.appendChild(ghostBtn);
-    
-    // --- GHOST BUTTON (Keep Logic) ---
-
-    // Edit Indicator for Ghost (Refactored to Sibling)
-    const ghostEdit = document.createElement('div');
-    ghostEdit.textContent = "EDIT";
-    ghostEdit.style.position = "absolute";
-    ghostEdit.style.top = "4px";
-    ghostEdit.style.left = "4px";
-    ghostEdit.style.fontSize = "0.7rem";
-    ghostEdit.style.border = "1px solid currentColor";
-    ghostEdit.style.padding = "4px 8px";
-    ghostEdit.style.opacity = "0.7";
-    ghostEdit.style.cursor = "pointer";
-    ghostEdit.style.zIndex = "10";
-    // Ensure visibility against White BG
-    // We will update border/color in updateGhostVisuals or use mix-blend-mode
-    ghostEdit.style.mixBlendMode = "difference"; 
-    
-    ghostEdit.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-    });
-    ghostEdit.onclick = (e) => {
-        e.stopPropagation(); 
-        toggleGhostEditor();
-    };
-    ghostWrapper.appendChild(ghostEdit);
-
-    // (Logic and Handlers are above)
-
-    gridControls.appendChild(ghostWrapper);
-
-    // --- HEAD B BUTTON ---
-    let isChopperActive = false;
-    const headBBtn = document.createElement('button');
-    headBBtn.className = "b-all btn-bio";
-    headBBtn.style.display = "flex";
-    headBBtn.style.flexDirection = "column";
-    headBBtn.style.justifyContent = "center";
-    headBBtn.style.alignItems = "center";
-    headBBtn.style.cursor = "pointer";
-    headBBtn.style.background = "#000"; // Black Background
-    headBBtn.style.color = "#fff"; // White Text
-    headBBtn.style.flex = "1"; // Grow
-    headBBtn.style.width = "100%"; // Fill wrapper
-    headBBtn.style.position = "relative"; // For Edit indicator
-    
-    const headBLabel = document.createElement('span');
-    headBLabel.className = "text-xxs opacity-70";
-    headBLabel.textContent = "DECK B SLICER";
-    headBBtn.appendChild(headBLabel);
-    
-    const headBVal = document.createElement('span');
-    headBVal.style.fontWeight = "bold";
-    headBVal.textContent = "OFF";
-    headBBtn.appendChild(headBVal);
-    
-    // Toggle Handler
-    headBBtn.onclick = (e) => {
-        // Simple Toggle
-        isChopperActive = !isChopperActive;
-        headBVal.textContent = isChopperActive ? "ON" : "OFF";
-        
-        // UX: Inverse Colors when Active
-        if (isChopperActive) {
-            headBBtn.style.background = "#fff";
-            headBBtn.style.color = "#000";
-            headBLabel.style.color = "#000"; 
-        } else {
-             headBBtn.style.background = "#000";
-             headBBtn.style.color = "#fff";
-             headBLabel.style.color = "#fff";
-        }
-
-        engine.updateDspParam('CHOPPER_ACTIVE', isChopperActive ? 1.0 : 0.0);
-    };
-
-    headBBtn.appendChild(headBVal);
-    // Edit Code Moved Outside
-
-    // --- HEAD B WRAPPER ---
-    const headBWrapper = document.createElement('div');
-    headBWrapper.style.position = "relative";
-    headBWrapper.style.display = "flex";
-    headBWrapper.style.width = "100%"; // Fill grid cell
-    headBWrapper.appendChild(headBBtn);
-
-    // Edit Handler (Refactored to Sibling)
-    const editIndicator = document.createElement('div');
-    editIndicator.textContent = "EDIT";
-    editIndicator.style.position = "absolute";
-    editIndicator.style.top = "4px";
-    editIndicator.style.left = "4px";
-    editIndicator.style.fontSize = "0.7rem";
-    editIndicator.style.border = "1px solid currentColor";
-    editIndicator.style.padding = "4px 8px";
-    editIndicator.style.opacity = "0.7";
-    editIndicator.style.cursor = "pointer";
-    editIndicator.style.zIndex = "10";
-    editIndicator.style.mixBlendMode = "difference"; // Ensure visibility
-
-    editIndicator.addEventListener('pointerdown', (e) => {
-        e.stopPropagation(); 
-    });
-    editIndicator.onclick = (e) => {
-        e.stopPropagation(); 
-        // @ts-ignore
-        toggleHeadB();
-    };
-    headBWrapper.appendChild(editIndicator);
-
-    gridControls.appendChild(headBWrapper);
     actionsContainer.appendChild(gridControls);
 
-    // --- SLAM BUTTON ---
     const slamBtn = document.createElement('slam-button');
     slamBtn.style.flex = "1"; // Fill remaining
     slamBtn.style.position = "relative"; // For Edit button
+    slamBtn.setAttribute('label', 'SLAM // MASTER FX'); // Clarify Master Context
     
     // (slamEdit defined below in Wrapper)
     
@@ -796,25 +648,29 @@ if (isVizMode) {
         // Invert Y for "Intensity" (0..1 where 1 is Top)
         const intensity = 1.0 - y;
         
-        // Map Intensity to Bitcrush
-        // SR: Mild=12000, Max=4000 (Tuned up for less choppy sound)
-        const sr = 12000 - (intensity * 8000); 
-        // Bits: Mild=12, Max=5
-        const bits = 12 - (intensity * 7);
+        // Map Intensity to Bitcrush - Primary effect
+        // SR: Mild=22000, Max=4000
+        const sr = 22000 - (intensity * 18000); 
+        // Bits: Mild=16, Max=4
+        const bits = 16 - (intensity * 12);
         
         engine.updateDspParam('SR', sr);
         engine.updateDspParam('BITS', bits);
         
-        // Spectral Gate Thresh: Mild=0.2, Max=0.8
-        const thresh = 0.2 + (intensity * 0.6);
+        // Spectral Gate: Much lower threshold (0.01-0.05) to avoid muting
+        // Only cuts extremely quiet parts for a "choppy" effect
+        const thresh = 0.01 + (intensity * 0.04);
         engine.updateDspParam('GATE_THRESH', thresh);
+        
+        // Add noise injection for classic SLAM texture
+        const noiseLevel = intensity * 0.15; // Up to 15% noise
+        engine.updateDspParam('NOISE_LEVEL', noiseLevel);
 
         // X-Axis (Horizontal): Tone / Space
         // Left (x=0) = Dark/Dry. Right (x=1) = Bright/Wet.
         
         // Ghost EQ: 0..1
         engine.updateDspParam('GHOST_EQ', x);
-        // DUB removed from here (now in FX Rack)
     };
     
     // RELEASE: Return to Clean / Safe State
@@ -829,117 +685,28 @@ if (isVizMode) {
         engine.updateDspParam('GHOST_EQ', 0.5);
     };
 
-    const handleSlamMove = (e: PointerEvent) => {
+    const handleSlamMove = (e: CustomEvent) => {
         const rect = slamBtn.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / rect.width;
-        const y = (e.clientY - rect.top) / rect.height;
+        const x = (e.detail.x - rect.left) / rect.width;
+        const y = (e.detail.y - rect.top) / rect.height;
         updateSlamParams(x, y);
     };
 
-    slamBtn.addEventListener('pointerdown', (e) => {
-        isSlamming = true; // Start slamming
-        slamBtn.setPointerCapture(e.pointerId);
-        handleSlamMove(e); // Trigger immediately
-        slamBtn.addEventListener('pointermove', handleSlamMove);
+    slamBtn.addEventListener('slam-start', (e: Event) => {
+        isSlamming = true;
+        handleSlamMove(e as CustomEvent); // Trigger immediately
     });
     
-    slamBtn.addEventListener('pointerup', (e) => {
-        slamBtn.releasePointerCapture(e.pointerId);
-        slamBtn.removeEventListener('pointermove', handleSlamMove);
+    slamBtn.addEventListener('slam-move', (e: Event) => {
+        if (isSlamming) handleSlamMove(e as CustomEvent);
+    });
+
+    slamBtn.addEventListener('slam-end', () => {
         releaseSlam();
     });
-    
-    slamBtn.addEventListener('pointercancel', (e) => {
-        slamBtn.releasePointerCapture(e.pointerId);
-        slamBtn.removeEventListener('pointermove', handleSlamMove);
-        releaseSlam();
-    });
-    window.addEventListener('pointerup', releaseSlam);
 
-    // --- DESTRUCTION EDITOR (Overlay) ---
-    let destOverlay: HTMLElement | null = null;
-    const toggleDestEditor = () => {
-        if (destOverlay) {
-            destOverlay.remove();
-            destOverlay = null;
-            return;
-        }
-        
-        destOverlay = document.createElement('div');
-        Object.assign(destOverlay.style, {
-            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            width: '260px', background: 'rgba(0,0,0,0.95)', 
-            border: '1px solid #ff0055', // Red theme for destruction
-            padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 2002,
-            boxShadow: '0 0 20px rgba(255,0,85,0.3)'
-        });
-        
-        const label = document.createElement('div');
-        label.textContent = "DESTRUCTION PARAMETERS";
-        label.style.color = "#ff0055";
-        label.style.fontWeight = "bold";
-        label.style.fontSize = "0.7rem";
-        label.style.textAlign = "center";
-        destOverlay.appendChild(label);
-        
-        const mkSlider = (name: string, param: string, def: number, min: number, max: number, transf: (v:number)=>number, invTransf: (v:number)=>number, format: (v:number)=>string) => {
-             const row = document.createElement('div');
-             const slabel = document.createElement('div');
-             slabel.style.fontSize = "0.6rem"; 
-             slabel.style.marginBottom = "2px";
-             slabel.style.display = "flex";
-             slabel.style.justifyContent = "space-between";
-             
-             // Get current DSP value or Default
-             const currentDsp = engine.getDspParam(param) ?? def;
-             // Inverse transform to get normalized 0..1
-             const normVal = invTransf(currentDsp);
-             
-             const nameSpan = document.createElement('span'); nameSpan.textContent = name;
-             const valSpan = document.createElement('span'); valSpan.textContent = format(currentDsp);
-             slabel.appendChild(nameSpan); slabel.appendChild(valSpan);
-             
-             const inp = document.createElement('input');
-             inp.type = "range";
-             inp.min = "0"; inp.max = "100";
-             inp.value = String(Math.max(0, Math.min(100, normVal * 100))); // Clamp 0-100
-             inp.style.width = "100%";
-             inp.oninput = (e: any) => {
-                 const norm = Number(e.target.value) / 100;
-                 const v = transf(norm);
-                 engine.updateDspParam(param, v);
-                 valSpan.textContent = format(v);
-             };
-             row.appendChild(slabel);
-             row.appendChild(inp);
-             destOverlay!.appendChild(row);
-        };
-        
-        // Spectral Gate: v -> v. Inv: v -> v
-        mkSlider("SPECTRAL GATE (THRESH)", 'GATE_THRESH', 0, 0, 1, 
-            (v)=>v, (v)=>v, 
-            (v)=>(v*100).toFixed(0)+'%');
-        
-        // Bitcrush: v -> 16 - (v*12). Inv: (16 - DSP) / 12
-        mkSlider("BITCRUSHER (DEPTH)", 'BITS', 16, 4, 16, 
-            (v)=> 16 - (v*12), (v)=> (16 - v) / 12, 
-            (v)=>v.toFixed(1)+' bits');
-        
-        // Downsample: v -> 44100 - (v*40000). Inv: (44100 - DSP) / 40000
-        mkSlider("DOWNSAMPLER (RATE)", 'SR', 44100, 4000, 44100, 
-            (v)=> 44100 - (v*40000), (v)=> (44100 - v) / 40000,
-            (v)=>(v/1000).toFixed(1)+'kHz');
-
-        const close = document.createElement('button');
-        close.textContent = "CLOSE";
-        close.className = "b-all";
-        close.style.padding = "6px";
-        close.style.cursor = "pointer";
-        close.onclick = () => toggleDestEditor();
-        destOverlay.appendChild(close);
-        
-        document.body.appendChild(destOverlay);
-    };
+    // Use THE ALREADY DEFINED toggleDestEditor or a local override?
+    // Let's just use the shared one from above
 
     // SLAM Wrapper to hold Button + Edit Overlay
     const slamWrapper = document.createElement('div');

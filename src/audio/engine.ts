@@ -1,6 +1,6 @@
 import { SAB_SIZE_BYTES, HEADER_SIZE_BYTES, OFFSETS, WorkletMessage, MainThreadMessage } from '../types/shared';
 // Import the processor as a raw URL for Vite to handle
-import processorUrl from './worklet/processor.ts?worker&url'; 
+import processorUrl from './worklet/processor.ts?url'; 
 import { StreamAdapter } from './stream-adapter';
 import { MusicClient } from '../ai/music-client';
 
@@ -39,10 +39,24 @@ export class AudioEngine {
     // Initialize adapters
     this.adapter = new StreamAdapter(this.sab);
     // Support both Vite env and process.env (legacy/fallback)
+    // @ts-ignore
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
     
-    this.musicClientA = new MusicClient(this.adapter, apiKey, 'A');
-    this.musicClientB = new MusicClient(this.adapter, apiKey, 'B');
+    this.musicClientA = new MusicClient(this.adapter, apiKey, 'A', (bpm, offset) => {
+        console.log(`[Engine] Auto-detected BPM for A: ${bpm}`);
+        this.setDeckBpm('A', bpm);
+        // Notify UI
+        window.dispatchEvent(new CustomEvent('deck-bpm-update', { 
+            detail: { deck: 'A', bpm: bpm, offset: offset } 
+        }));
+    });
+    this.musicClientB = new MusicClient(this.adapter, apiKey, 'B', (bpm, offset) => {
+        console.log(`[Engine] Auto-detected BPM for B: ${bpm}`);
+        this.setDeckBpm('B', bpm);
+        window.dispatchEvent(new CustomEvent('deck-bpm-update', { 
+            detail: { deck: 'B', bpm: bpm, offset: offset } 
+        }));
+    });
   }
 
   async init() {
@@ -120,6 +134,9 @@ export class AudioEngine {
    * Update DSP parameters in the AudioWorklet
    */
   updateDspParam(param: string, value: number, deck?: 'A' | 'B') {
+    // Cache for UI persistence
+    this.params.set(param, value);
+    
     if (!this.workletNode) return;
     this.workletNode.port.postMessage({
       type: 'CONFIG_UPDATE',
@@ -217,6 +234,9 @@ export class AudioEngine {
         case 'BUFFER_UNDERRUN':
             console.warn('Audio Buffer Underrun');
             break;
+        default:
+            console.log('Worklet Message:', msg);
+            break;
     }
   }
 
@@ -233,30 +253,131 @@ export class AudioEngine {
 
   // --- BPM & SYNC LINK ---
   public masterBpm = 120;
+  // --- BPM & SYNC LINK ---
+  public masterBpm = 120;
   public bpmA = 120;
   public bpmB = 120;
+  public offsetA = 0;
+  public offsetB = 0;
+  private syncA = false;
+  private syncB = false;
 
   setMasterBpm(bpm: number) {
       this.masterBpm = bpm;
-      // Ideally propagate to synced decks immediately?
-      // For now, relies on UI calling syncDeck again or continuous loop.
-      // But let's verify if we should auto-update.
-      // DJ Software usually keeps "Sync" active.
-      // Implementation: Check active sync state (not stored here yet).
+      // Send to processor for SLICER sync
+      this.updateDspParam('MASTER_BPM', bpm);
+      
+      // Auto-update synced decks when Master BPM changes
+      if (this.syncA) this.syncDeck('A');
+      if (this.syncB) this.syncDeck('B');
   }
 
-  setDeckBpm(deck: 'A' | 'B', bpm: number) {
-      if (deck === 'A') this.bpmA = bpm;
-      else this.bpmB = bpm;
+  setDeckBpm(deck: 'A' | 'B', bpm: number, offset: number = 0) {
+      if (deck === 'A') { this.bpmA = bpm; this.offsetA = offset; }
+      else { this.bpmB = bpm; this.offsetB = offset; }
   }
 
   syncDeck(deck: 'A' | 'B') {
       const sourceBpm = deck === 'A' ? this.bpmA : this.bpmB;
       if (sourceBpm <= 0) return;
       
+      // Track sync state
+      if (deck === 'A') this.syncA = true;
+      else this.syncB = true;
+      
       const ratio = this.masterBpm / sourceBpm;
       console.log(`Syncing Deck ${deck}: Source=${sourceBpm} -> Master=${this.masterBpm} (Speed=${ratio.toFixed(3)})`);
       this.updateDspParam('SPEED', ratio, deck);
+      
+      // PHASE SYNC (Align to nearest beat)
+      this.alignPhase(deck);
+  }
+
+  alignPhase(deck: 'A' | 'B') {
+      if (!this.headerView) return;
+      
+      const targetBpm = this.masterBpm;
+      
+      // Let's align to the "Other" deck if it is playing
+      const otherDeck = deck === 'A' ? 'B' : 'A';
+      
+      const offsetSelf = deck === 'A' ? this.offsetA : this.offsetB;
+      const offsetOther = deck === 'A' ? this.offsetB : this.offsetA;
+      
+      const ptrSelf = Atomics.load(this.headerView, (deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B) / 4);
+      const ptrOther = Atomics.load(this.headerView, (deck === 'A' ? OFFSETS.READ_POINTER_B : OFFSETS.READ_POINTER_A) / 4);
+      
+      const bpmSelf = deck === 'A' ? this.bpmA : this.bpmB;
+      const bpmOther = deck === 'A' ? this.bpmB : this.bpmA;
+      
+      // Valid BPM check
+      if (bpmSelf < 1 || bpmOther < 1) return;
+      
+      // BAR Sync Logic (Assuming 4/4 time signature)
+      const beatsPerBar = 4;
+      
+      // Samples per beat & bar
+      const spbOther = (44100 * 60) / bpmOther;
+      const samplesPerBarOther = spbOther * beatsPerBar;
+      
+      // Calculate Phase of Other relative to BAR (0..1)
+      // Phase = How far into the BAR are we?
+      const barProgressOther = ((ptrOther - (offsetOther * 44100)) % samplesPerBarOther) / samplesPerBarOther;
+      
+      // We want Self to have the same BAR phase
+      const spbSelf = (44100 * 60) / bpmSelf;
+      const samplesPerBarSelf = spbSelf * beatsPerBar;
+      
+      const currentBarStartSelf = ptrSelf - ((ptrSelf - (offsetSelf * 44100)) % samplesPerBarSelf);
+      
+      // Target position = Current Bar Start + (samplesPerBarSelf * barProgressOther)
+      // This matches the relative position within the BAR
+      let targetPtr = currentBarStartSelf + (samplesPerBarSelf * barProgressOther);
+      
+      // NOTE: Because we are jumping to a specific phase in the bar, 
+      // the target pointer might be BEHIND the current pointer (rewind) or AHEAD (skip).
+      // This creates the "Cueing" effect.
+      
+      // Write back
+      if (!isNaN(targetPtr)) {
+           console.log(`Bar Sync ${deck}: Ptr ${ptrSelf} -> ${targetPtr} (Match ${otherDeck} Bar Phase ${barProgressOther.toFixed(2)})`);
+           Atomics.store(this.headerView, (deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B) / 4, Math.floor(targetPtr));
+      }
+  }
+
+  // --- Grid Management ---
+  
+  shiftGrid(deck: 'A' | 'B', beats: number) {
+      const bpm = deck === 'A' ? this.bpmA : this.bpmB;
+      const beatDur = 60 / bpm;
+      
+      if (deck === 'A') {
+          this.offsetA = (this.offsetA + (beats * beatDur));
+          // Normalize to positive range 0..beatDur (Optional, but keeps offset clean)
+          // while (this.offsetA < 0) this.offsetA += beatDur; 
+          // while (this.offsetA >= beatDur) this.offsetA -= beatDur;
+      } else {
+          this.offsetB = (this.offsetB + (beats * beatDur));
+      }
+      
+      console.log(`Grid Shift ${deck}: ${beats > 0 ? '+' : ''}${beats} beat(s)`);
+      
+      // Notify UI for redraw
+      window.dispatchEvent(new CustomEvent('deck-bpm-update', { 
+            detail: { deck: deck, bpm: bpm, offset: deck === 'A' ? this.offsetA : this.offsetB } 
+      }));
+  }
+
+  tapBpm(deck: 'A' | 'B') {
+      // Basic TAP Logic placeholder
+      // Could maintain a list of tap times
+      console.log(`TAP ${deck}`);
+  }
+  
+  unsyncDeck(deck: 'A' | 'B') {
+      if (deck === 'A') this.syncA = false;
+      else this.syncB = false;
+      this.updateDspParam('SPEED', 1.0, deck);
   }
 
   // Visualization Support
@@ -298,15 +419,24 @@ export class AudioEngine {
       return `A:${a} B:${b}`; 
   }
 
+  isGenerating(deck: 'A'|'B'): boolean {
+      if (deck === 'A') return this.musicClientA?.isGenerating() || false;
+      return this.musicClientB?.isGenerating() || false;
+  }
+
   // Hydra Heads (Visuals)
   getHeadB(): number {
       // For now, read from SAB or shared memory if implemented in Processor
       // Assuming Processor updates READ_POINTER_B and C
       return Atomics.load(this.headerView, OFFSETS.READ_POINTER_B / 4);
   }
-
+  
   getHeadC(): number {
       return 0; // Deprecated
+  }
+  
+  getGhostPointer(): number {
+      return Atomics.load(this.headerView, OFFSETS.GHOST_POINTER / 4);
   }
 
   getLibraryCount(): number {

@@ -12,6 +12,10 @@ export const OFFSETS = {
   STATE_FLAGS: 16,      // Int32: Bitmask
   TAPE_VELOCITY: 20,    // Float32: Global Physics (Subject to change to per-deck)
   BPM: 24,              // Float32: Global BPM
+  
+  // Visual Pointers (Read-only for UI)
+  GHOST_POINTER: 28,    // Int32: Ghost Play Head Position
+  SLICER_ACTIVE: 32,    // Int32: Slicer Active State (0 or 1) for Viz
 } as const;
 
 // Helper to access SAB views

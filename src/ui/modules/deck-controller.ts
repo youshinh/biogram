@@ -94,6 +94,7 @@ export class DeckController extends LitElement {
         font-size: 1.4rem;
         font-weight: 900;
         color: var(--deck-color);
+        font-family: 'Verdana', sans-serif; /* Override for better digit legibility */
     }
     
     .nav-btn { width: 28px; font-size: 0.8rem; }
@@ -161,7 +162,7 @@ export class DeckController extends LitElement {
 
   updated(changed: Map<string, any>) {
       if (changed.has('deckId')) {
-          const col = this.deckId === 'A' ? '#ff0000' : '#00ffff';
+          const col = this.deckId === 'A' ? '#00ffff' : '#ff0000';
           this.style.setProperty('--deck-color', col);
       }
   }
@@ -170,7 +171,22 @@ export class DeckController extends LitElement {
       super.connectedCallback();
       const col = this.deckId === 'A' ? '#00ffff' : '#ff0000';
       this.style.setProperty('--deck-color', col);
+      
+      window.addEventListener('deck-bpm-update', this.onBpmUpdate);
   }
+
+  disconnectedCallback() {
+      super.disconnectedCallback();
+      window.removeEventListener('deck-bpm-update', this.onBpmUpdate);
+  }
+
+  private onBpmUpdate = (e: any) => {
+      const { deck, bpm } = e.detail;
+      if (deck === this.deckId) {
+          this.bpm = parseFloat(bpm.toFixed(1));
+          this.requestUpdate();
+      }
+  };
 
   render() {
       // Determine Order
@@ -182,7 +198,7 @@ export class DeckController extends LitElement {
 
     return html`
       <div class="visualizer-area">
-          <div class="deck-label">${this.deckId}</div>
+          <!-- <div class="deck-label">${this.deckId}</div> -->
           <hydra-visualizer .deckId="${this.deckId}"></hydra-visualizer>
       </div>
 
@@ -201,6 +217,12 @@ export class DeckController extends LitElement {
                   <button class="tap-btn" @click="${this.tapBpm}">TAP</button>
               </div>
               
+              <div class="row-grid" style="display:flex; justify-content:center; gap:4px; margin-top:4px; align-items:center;">
+                  <span style="font-size:0.6rem; color:#666; font-family:'Space Mono'; margin-right:4px;">GRID</span>
+                  <button class="nav-btn" style="font-size:0.7rem; padding:2px 6px; height:20px;" @click="${() => this.adjustGrid(-1)}">&lt; BAR</button>
+                  <button class="nav-btn" style="font-size:0.7rem; padding:2px 6px; height:20px;" @click="${() => this.adjustGrid(1)}">BAR &gt;</button>
+              </div>
+
               <div class="row-input">
                   <input class="prompt-input" 
                          type="text" 
@@ -233,6 +255,13 @@ export class DeckController extends LitElement {
 
       </div>
     `;
+  }
+
+  private adjustGrid(beats: number) {
+      const engine = (window as any).engine;
+      if (engine && engine.shiftGrid) {
+          engine.shiftGrid(this.deckId, beats);
+      }
   }
 
   private adjustBpm(delta: number) {

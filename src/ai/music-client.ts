@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { StreamAdapter } from '../audio/stream-adapter';
 import { LibraryStore } from '../audio/db/library-store';
 import { AudioAnalyser } from '../audio/analysis/analyser';
+import { BeatDetector } from '../audio/analysis/beat-detector';
 
 // Helper: Decode Base64 to Uint8Array
 function decodeBase64(base64: string): Uint8Array {
@@ -39,11 +40,13 @@ export class MusicClient {
     private readonly ARCHIVE_THRESHOLD = 44100 * 4; // ~4 seconds chunk size
     private savedChunksCount = 0;
     private deckId: 'A' | 'B';
+    private onAnalysis?: (bpm: number, offset: number) => void;
 
-    constructor(adapter: StreamAdapter, apiKey: string, deckId: 'A' | 'B' = 'A') {
+    constructor(adapter: StreamAdapter, apiKey: string, deckId: 'A' | 'B' = 'A', onAnalysis?: (bpm: number, offset: number) => void) {
         this.ai = new GoogleGenAI({ apiKey, apiVersion: 'v1alpha' });
         this.adapter = adapter;
         this.deckId = deckId;
+        this.onAnalysis = onAnalysis;
         this.library = new LibraryStore();
         this.library.init().then(() => {
              this.library.getCount().then(c => this.savedChunksCount = c || 0);
@@ -121,6 +124,18 @@ export class MusicClient {
         const stats = AudioAnalyser.analyze(merged);
         await this.library.saveChunk(merged, stats);
         this.savedChunksCount++;
+
+        // Detect BPM (Experimental)
+        // Only run if simple energy is sufficient to avoid noise
+        if (stats.energy > 0.05) {
+            const beatInfo = BeatDetector.analyze(merged);
+            console.log(`[BPM-DETECT:${this.deckId}] Detected: ${beatInfo.bpm} (Conf: ${beatInfo.confidence}) Offset: ${beatInfo.offset}`);
+            
+            // Invoke callback if confidence is decent
+            if (beatInfo.bpm > 60 && beatInfo.bpm < 200 && this.onAnalysis) {
+                this.onAnalysis(beatInfo.bpm, beatInfo.offset);
+            }
+        }
     }
 
     public getArchiveCount(): number {
@@ -215,5 +230,9 @@ export class MusicClient {
 
     public getSmartStatus(): string {
         return this.isSmartPaused ? 'SAVING' : 'GENERATING';
+    }
+
+    public isGenerating(): boolean {
+        return this.isConnected && !this.isSmartPaused;
     }
 }

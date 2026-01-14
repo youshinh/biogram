@@ -31,6 +31,11 @@ export class SpectralGate {
         this.mix = mix;
     }
     
+    setThreshold(threshold: number) {
+        this.threshold = threshold;
+        this.mix = threshold > 0 ? 1.0 : 0.0; // Auto enable mix when threshold is set
+    }
+    
     process(input: number): number {
         // 1. Crossover (State Variable or Simple One Pole)
         

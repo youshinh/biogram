@@ -22,6 +22,14 @@ export class Decimator {
         this.sampleRate = Math.max(100, Math.min(this.systemRate, rate));
         this.bitDepth = Math.max(1, Math.min(32, bits));
     }
+    
+    setSampleRate(rate: number) {
+        this.sampleRate = Math.max(100, Math.min(this.systemRate, rate));
+    }
+    
+    setBitDepth(bits: number) {
+        this.bitDepth = Math.max(1, Math.min(32, bits));
+    }
 
     process(input: number): number {
         // 1. Bit Reduction (Quantization)

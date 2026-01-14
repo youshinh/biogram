@@ -83,8 +83,12 @@ export class IsolatorEQ {
     }
     
     updateCoeffs() {
-        this.lpL.setLowPass(250, this.sr);
-        this.lpR.setLowPass(250, this.sr);
+        // Pioneer DJM-style frequencies:
+        // LOW: < 350Hz (crossover point)
+        // MID: 350Hz - 2.5kHz
+        // HIGH: > 2.5kHz (crossover point) - lowered from 3.5kHz for more effective KILL
+        this.lpL.setLowPass(350, this.sr);
+        this.lpR.setLowPass(350, this.sr);
         this.hpL.setHighPass(2500, this.sr);
         this.hpR.setHighPass(2500, this.sr);
     }

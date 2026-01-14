@@ -10,9 +10,10 @@ export class DjMixer extends LitElement {
       height: 100%;
       background: #111;
       color: #fff;
-      padding: 4px;
+      padding: 2px;
       box-sizing: border-box;
       font-family: 'Verdana', sans-serif;
+      overflow-y: auto; /* Fallback scroll */
     }
 
     .eq-section {
@@ -48,12 +49,32 @@ export class DjMixer extends LitElement {
         font-weight: bold;
     }
 
-    /* Simple CSS Range as Knob for now */
+    /* Tactile Slider - EXPANDED VERTICAL */
     input[type=range].eq-slider {
-        -webkit-appearance: slider-vertical; 
-        width: 8px;
-        height: 60px;
-        background: transparent;
+        -webkit-appearance: none;
+        appearance: none;
+        writing-mode: vertical-lr; /* CRITICAL: Enables vertical drag */
+        direction: rtl; /* Top = max, Bottom = min */
+        width: 40px; 
+        height: 80px;
+        background: #1a1a1a;
+        cursor: pointer;
+        margin: 2px 0;
+        border: 1px solid #333;
+        border-radius: 2px;
+    }
+    input[type=range].eq-slider::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 100%;
+        background: #1a1a1a;
+    }
+    input[type=range].eq-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 16px;
+        width: 100%;
+        background: var(--slider-color, #888);
+        border: 1px solid #fff;
+        border-radius: 2px;
     }
 
     .kill-btn {
@@ -64,6 +85,7 @@ export class DjMixer extends LitElement {
         color: #888;
         cursor: pointer;
         padding: 2px 0;
+        margin-top: 2px;
     }
     .kill-btn.active {
         background: #ff0000;
@@ -71,24 +93,31 @@ export class DjMixer extends LitElement {
         box-shadow: 0 0 5px red;
         border-color: red;
     }
+    .kill-btn.active.cyan {
+        background: #00ffff;
+        box-shadow: 0 0 5px #00ffff;
+        border-color: #00ffff;
+        color: black;
+    }
 
     .fader-section {
-        height: 80px;
+        height: 50px; /* Reduced from 100px */
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         background: #0a0a0a;
-        margin-top: 8px;
-        border: 1px solid #333;
+        margin-top: 2px;
+        border-top: 1px solid #333;
+        flex-shrink: 0; /* Prevent shrinking */
     }
 
     .crossfader {
         -webkit-appearance: none;
         width: 90%;
-        height: 12px;
-        background: linear-gradient(90deg, #ff0000, #00ffff);
-        border-radius: 6px;
+        height: 10px;
+        background: linear-gradient(90deg, #00ffff, #333 50%, #ff0000);
+        border-radius: 5px;
         outline: none;
         margin: 14px 0;
         box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
@@ -96,10 +125,10 @@ export class DjMixer extends LitElement {
     .crossfader::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
-        width: 24px;
-        height: 36px;
-        background: var(--thumb-color, #888);
-        border: 2px solid #fff;
+        width: 30px;
+        height: 40px;
+        background: #fff;
+        border: 2px solid #555;
         border-radius: 4px;
         cursor: pointer;
         box-shadow: 0 2px 5px rgba(0,0,0,0.5);
@@ -156,6 +185,10 @@ export class DjMixer extends LitElement {
   @state() killA = { hi: false, mid: false, low: false };
   @state() killB = { hi: false, mid: false, low: false };
 
+  // PRE-AMP
+  @state() trimA = 1.0; @state() driveA = 0.0;
+  @state() trimB = 1.0; @state() driveB = 0.0;
+
   @state() bpm = 120;
   @state() beatActive = false;
   private animId = 0;
@@ -192,18 +225,11 @@ export class DjMixer extends LitElement {
   render() {
     return html`
       <div class="master-section">
-          <div style="flex:1; padding-left:8px; font-weight:900; font-size:1.5rem; color:#333;">A</div>
+          <div class="beat-led ${this.beatActive ? 'active' : ''}"></div>
           
-          <div style="display:flex; align-items:center;">
-              <div class="beat-led ${this.beatActive ? 'active' : ''}"></div>
-              <button class="bpm-btn" @click="${() => this.changeBpm(-1)}">-</button>
-              <span style="font-family:'Space Mono', monospace; font-size:1.2rem; margin:0 8px;">
-                  ${this.bpm}
-              </span>
-              <button class="bpm-btn" @click="${() => this.changeBpm(1)}">+</button>
-          </div>
-          
-          <div style="flex:1; padding-right:8px; text-align:right; font-weight:900; font-size:1.5rem; color:#333;">B</div>
+          <button class="bpm-btn" @click="${() => this.changeBpm(-1)}">-</button>
+          <span>${this.bpm.toFixed(1)} BPM</span>
+          <button class="bpm-btn" @click="${() => this.changeBpm(1)}">+</button>
       </div>
 
       <div class="eq-section">
@@ -214,14 +240,13 @@ export class DjMixer extends LitElement {
       </div>
 
       <div class="fader-section">
-          <div style="font-size:0.6rem; color:#666;">CROSSFADER (COLLIDER)</div>
+          <div style="font-size:0.6rem; color:#666; letter-spacing:0.2em;">COLLIDER / CROSSFADER</div>
           <input type="range" class="crossfader"
                  min="0" max="1" step="0.01"
                  .value="${this.crossfader}"
-                 style="--thumb-color: rgb(${255 * (1 - this.crossfader)}, ${255 * this.crossfader}, ${255 * this.crossfader})"
                  @input="${this.handleCrossfader}" />
-          <div style="display:flex; justify-content:space-between; width:90%; font-size:0.6rem;">
-             <span>A</span><span>MIX</span><span>B</span>
+          <div style="display:flex; justify-content:space-between; width:90%; font-size:0.7rem; font-weight:bold; font-family:monospace;">
+             <span style="color:#00ffff;">DECK A</span><span style="color:#666;">MIX</span><span style="color:#ff0000;">DECK B</span>
           </div>
       </div>
     `;
@@ -230,7 +255,10 @@ export class DjMixer extends LitElement {
   private renderChannel(deck: 'A'|'B', eq: any, kill: any) {
       return html`
         <div class="channel-strip">
-            <div style="font-size:1.5rem; font-weight:bold; color:#444;">${deck}</div>
+            <!-- Channel Label Removed -->
+            
+            <!-- PRE-AMP -->
+            ${this.renderPreAmp(deck)}
             
             ${this.renderKnob(deck, 'HI', eq.hi, kill.hi)}
             ${this.renderKnob(deck, 'MID', eq.mid, kill.mid)}
@@ -239,16 +267,58 @@ export class DjMixer extends LitElement {
       `;
   }
 
+  private renderPreAmp(deck: 'A'|'B') {
+      const trim = deck === 'A' ? this.trimA : this.trimB;
+      const drive = deck === 'A' ? this.driveA : this.driveB;
+      
+      return html`
+        <div class="pre-amp-section" style="border-bottom:1px solid #333; margin-bottom:2px; padding-bottom:2px;">
+            <!-- TRIM -->
+            <div class="knob-row">
+                <span class="knob-label" style="color:#aaa;">TRM</span>
+                <input type="range" class="eq-slider" style="height:30px;"
+                       min="0" max="2" step="0.01" .value="${trim}"
+                       @input="${(e:any) => this.handlePreAmp(deck, 'TRIM', e.target.value)}"/>
+            </div>
+            <!-- DRIVE -->
+            <div class="knob-row">
+                <span class="knob-label" style="color:#ff4400;">DRV</span>
+                <input type="range" class="eq-slider" style="height:30px; --thumb-color: #ff4400;"
+                       min="0" max="1" step="0.01" .value="${drive}"
+                       @input="${(e:any) => this.handlePreAmp(deck, 'DRIVE', e.target.value)}"/>
+            </div>
+        </div>
+      `;
+  }
+
+  private handlePreAmp(deck: 'A'|'B', param: 'TRIM'|'DRIVE', val: string) {
+      const v = parseFloat(val);
+      if (deck === 'A') {
+          if (param === 'TRIM') this.trimA = v; else this.driveA = v;
+      } else {
+          if (param === 'TRIM') this.trimB = v; else this.driveB = v;
+      }
+      this.dispatchParam(`${param}_${deck}`, v);
+  }
+
   private renderKnob(deck: string, band: 'HI'|'MID'|'LOW', val: number, isKill: boolean) {
       const key = band.toLowerCase();
+      const color = deck === 'A' ? '#00ffff' : '#ff0000';
       return html`
-        <div class="knob-row">
-            <span class="knob-label">${band}</span>
+        <div class="knob-row" style="margin-top: 4px;">
+            <span class="knob-label" style="color: ${color}; opacity: 0.8;">${band}</span>
+            <!-- Value Display -->
+            <span style="font-size:0.7rem; font-family:'Space Mono'; color:${color}; margin-bottom:2px;">
+                ${val.toFixed(2)}
+            </span>
+            
             <input type="range" class="eq-slider" 
                    min="0" max="1.5" step="0.01" 
                    .value="${val}" 
+                   style="--slider-color: ${color}"
                    @input="${(e:any) => this.handleEq(deck, key, e.target.value)}"/>
-            <button class="kill-btn ${isKill ? 'active' : ''}" 
+                   
+            <button class="kill-btn ${isKill ? 'active' : ''} ${deck === 'A' ? 'cyan' : ''}" 
                     @click="${() => this.toggleKill(deck, key)}">
                 KILL
             </button>
