@@ -173,12 +173,23 @@ export class DeckController extends LitElement {
       this.style.setProperty('--deck-color', col);
       
       window.addEventListener('deck-bpm-update', this.onBpmUpdate);
+      window.addEventListener('deck-action', this.handleMidiAction);
   }
 
   disconnectedCallback() {
       super.disconnectedCallback();
       window.removeEventListener('deck-bpm-update', this.onBpmUpdate);
+      window.removeEventListener('deck-action', this.handleMidiAction);
   }
+
+  private handleMidiAction = (e: any) => {
+      const { deck, action } = e.detail;
+      if (deck !== this.deckId) return;
+
+      if (action === 'toggle-play') this.togglePlay();
+      else if (action === 'toggle-sync') this.toggleSync();
+      else if (action === 'load-random') this.loadRandom();
+  };
 
   private onBpmUpdate = (e: any) => {
       const { deck, bpm } = e.detail;

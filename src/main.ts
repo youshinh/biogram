@@ -1,4 +1,5 @@
 import { AudioEngine } from './audio/engine';
+import { MidiManager } from './midi/midi-manager'; // [NEW]
 import './ui/shell';
 import './ui/atoms/bio-slider';
 import './ui/atoms/slam-button';
@@ -19,6 +20,11 @@ console.log("Prompt-DJ v2.0 'Ghost in the Groove' initializing...");
 const engine = new AudioEngine();
 // @ts-ignore
 window.engine = engine;
+
+// Init MIDI
+const midiManager = new MidiManager();
+// @ts-ignore
+window.midiManager = midiManager;
 
 // ROUTING LOGIC
 const urlParams = new URLSearchParams(window.location.search);

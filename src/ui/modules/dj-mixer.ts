@@ -196,11 +196,41 @@ export class DjMixer extends LitElement {
   connectedCallback() {
       super.connectedCallback();
       this.animateValues();
+      window.addEventListener('mixer-update', this.handleMidiUpdate);
   }
 
   disconnectedCallback() {
       super.disconnectedCallback();
       cancelAnimationFrame(this.animId);
+      window.removeEventListener('mixer-update', this.handleMidiUpdate);
+  }
+
+  private handleMidiUpdate = (e: any) => {
+      const { parameter, value } = e.detail;
+      
+      if (parameter === 'crossfader') {
+          this.crossfader = value;
+          this.dispatchParam('CROSSFADER', this.crossfader);
+      } else if (parameter === 'volumeA') {
+          // Map Volume Fader to TRIM for now (since no Channel Fader in UI)
+          // Scale 0-1 to 0-2 (Trim Range)
+          this.handlePreAmp('A', 'TRIM', (value * 2.0).toString());
+      } else if (parameter === 'volumeB') {
+          this.handlePreAmp('B', 'TRIM', (value * 2.0).toString());
+      }
+      // EQ Mappings
+      else {
+           // param: lowA, midB etc.
+           // extract deck A/B
+           const deck = parameter.slice(-1); // 'A' or 'B'
+           const key = parameter.slice(0, -1); // 'low'
+           
+           if ((deck === 'A' || deck === 'B') && ['low', 'mid', 'high', 'hi'].includes(key)) {
+               const band = key === 'high' ? 'HI' : key.toUpperCase();
+               // EQ Range 0-1.5
+               this.handleEq(deck, band, (value * 1.5));
+           }
+      }
   }
 
   private animateValues = () => {
