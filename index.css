@@ -1,16 +1,22 @@
-html, body {
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  background-color: #0a0a0c;
+  color: #d4d4d8;
+  font-family: 'Inter', sans-serif;
   height: 100%;
-  margin: 0;
-}
-body {
-  font-family: 'Google Sans', sans-serif;
-  font-size: 14px;
+  width: 100%;
   overflow: hidden;
 }
-body.dragging {
-  cursor: ns-resize;
-}
-body.dragging * {
-  user-select: none;
-  pointer-events: none;
+
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  background: #0a0a0c;
 }

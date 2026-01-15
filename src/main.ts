@@ -1,3 +1,4 @@
+import '../index.css';
 import { AudioEngine } from './audio/engine';
 import { MidiManager } from './midi/midi-manager';
 import './ui/shell';
@@ -66,40 +67,29 @@ if (isVizMode) {
     // View State
     header.addEventListener('view-change', (e: any) => {
          const view = e.detail.view;
-         if (view === 'RACK') {
-             // Rack Mode (Split) -> Hide Shell Bottom, Show FX Rack
-             shell.minimal = true; // Hides controls/actions
-             shell.style.height = "60%"; // Shrink Shell (Decks only)
-             
-             // FX Rack takes bottom 40%
-             fxRack.style.display = "block";
-             fxRack.style.height = "40%";
-             fxRack.style.borderTop = "1px solid #444";
-         } else {
-             // Deck Mode (Full) -> Show Shell Bottom, Hide FX Rack
-             shell.minimal = false; // Shows controls/actions
-             shell.style.height = "100%";
-             
-             fxRack.style.display = "none";
-         }
+         shell.view = view; // Update Shell View State
     });
     
     // 2. VIEWS
     // A. Main Shell (Default Full)
     const shell = document.createElement('app-shell') as AppShell;
+    shell.view = 'DECK'; // Init
     shell.style.height = "100%";
     shell.style.display = "flex"; // Ensure it takes space
     shell.style.borderBottom = "1px solid #333";
     viewContainer.appendChild(shell);
     
-    // B. FX Rack (Bottom 35%)
+    // B. FX Rack
     const fxRack = document.createElement('fx-rack') as FxRack;
-    fxRack.style.display = 'none'; // Default Hidden
-    fxRack.style.height = "40%";
+    fxRack.slot = 'fx-rack'; // Mount to Shell Slot
+    // Ensure height is managed by slot
+    fxRack.style.display = 'block'; 
+    fxRack.style.height = "100%";
+    
     fxRack.addEventListener('param-change', (e: any) => {
         engine.updateDspParam(e.detail.id, e.detail.val);
     });
-    viewContainer.appendChild(fxRack);
+    shell.appendChild(fxRack); // Append TO SHELL, not viewContainer
     
     document.body.appendChild(viewContainer);
     
@@ -302,13 +292,54 @@ if (isVizMode) {
     const ghostModule = createFxModule("GHOST", "GHOST", () => toggleGhostEditor(), engine);
     gridControls.appendChild(ghostModule);
 
-    // --- SLICER MODULE (Formerly Head B) ---
-    // [FIX] Define missing toggles (Stubs) to fix hoisting errors
-    const toggleHeadB = () => { console.log("[UI] Slicer Editor not implemented yet."); };
-    const toggleDestEditor = () => { console.log("[UI] SLAM Editor not implemented yet."); };
+    // --- SLICER EDITOR (Formerly Head B) ---
+    let slicerOverlay: HTMLElement | null = null;
+    const toggleSlicerEditor = () => {
+        if (slicerOverlay) { slicerOverlay.remove(); slicerOverlay = null; return; }
+        
+        slicerOverlay = mkOverlay("SLICER PARAMS", "#10b981"); // Emerald
+        
+        // Slicer Params
+        mkSliderHelper(slicerOverlay, "PATTERN LENGTH", 'SLICER_PATTERN', 0.25, 0, 1, engine);
+        mkSliderHelper(slicerOverlay, "GATE TIME", 'SLICER_GATE', 0.5, 0, 1, engine);
+        mkSliderHelper(slicerOverlay, "SPEED DIV", 'SLICER_SPEED', 0.5, 0, 1, engine);
 
-    const slicerModule = createFxModule("SLICER", "SLICER", () => toggleHeadB(), engine);
+        const close = document.createElement('button');
+        close.textContent = "CLOSE";
+        close.className = "b-all font-mono text-xs hover:bg-white hover:text-black transition-colors border border-white/20 p-2 mt-2";
+        close.onclick = () => toggleSlicerEditor();
+        slicerOverlay.appendChild(close);
+        
+        document.body.appendChild(slicerOverlay);
+    };
+
+    const slicerModule = createFxModule("SLICER", "SLICER", () => toggleSlicerEditor(), engine);
     gridControls.appendChild(slicerModule);
+
+
+    // --- SLAM EDITOR ---
+    let slamOverlay: HTMLElement | null = null;
+    const toggleSlamEditor = () => {
+         if (slamOverlay) { slamOverlay.remove(); slamOverlay = null; return; }
+         
+         slamOverlay = mkOverlay("SLAM CONFIG", "#ef4444"); // Red
+         
+         mkSliderHelper(slamOverlay, "NOISE FLOOR", 'NOISE_LEVEL', 0.1, 0, 1, engine);
+         mkSliderHelper(slamOverlay, "CRUSH PRE-GAIN", 'CRUSH_GAIN', 1.0, 0, 2, engine); // 0..200%
+         mkSliderHelper(slamOverlay, "TARGET MIX", 'SLAM_MIX', 1.0, 0, 1, engine);
+
+         const close = document.createElement('button');
+         close.textContent = "CLOSE";
+         close.className = "b-all font-mono text-xs hover:bg-white hover:text-black transition-colors border border-white/20 p-2 mt-2";
+         close.onclick = () => toggleSlamEditor();
+         slamOverlay.appendChild(close);
+         
+         document.body.appendChild(slamOverlay);
+    };
+    
+    // Pass toggleSlamEditor to specific usage if needed, but here we just needed the function definition.
+    // The SlamButton uses toggleDestEditor in original code, so we map it there.
+    const toggleDestEditor = toggleSlamEditor;
 
     actionsContainer.appendChild(gridControls);
 

@@ -1,87 +1,39 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { sharedStyles } from '../styles/theme';
 
 @customElement('app-header')
 export class AppHeader extends LitElement {
-  static styles = [
-    sharedStyles,
-    css`
-      :host {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        border-bottom: 1px dashed #333;
-        padding-bottom: 8px;
-        margin-bottom: 8px;
-        padding: 8px;
-        height: 30px;
-        box-sizing: border-box;
-        background: #000;
-        z-index: 1001;
-        position: relative;
-      }
-      
-      h1 {
-        font-size: 0.8rem;
-        line-height: 1;
-        color: #fff;
-        margin: 0;
-        font-weight: bold;
-        letter-spacing: -0.05em;
-      }
-      
-      .version {
-        font-size: 0.5rem;
-        opacity: 0.7;
-        font-weight: normal;
-        vertical-align: top;
-        margin-left: 4px;
-      }
-
-      .btn-group {
-        display: flex;
-        gap: 8px;
-      }
-
-      button {
-        font-size: 0.6rem;
-        padding: 2px 4px;
-        font-weight: bold;
-        cursor: pointer;
-        border: 1px solid #333;
-      }
-      
-      button.active {
-        background: #fff;
-        color: #000;
-      }
-      
-      button.inactive {
-        background: #000;
-        color: #888;
-      }
-    `
-  ];
+  createRenderRoot() {
+    return this; // Enable Light DOM
+  }
 
   @state() currentView: 'DECK' | 'RACK' = 'DECK';
 
   render() {
     return html`
-      <div class="flex flex-col">
-          <h1>BIO:GRAM<span class="version">v2.1</span></h1>
-      </div>
-      <div class="btn-group">
-          <button 
-            class="${this.currentView === 'DECK' ? 'active' : 'inactive'}"
-            @click="${() => this.switchView('DECK')}">
-            DECK
-          </button>
-          <button 
-            class="${this.currentView === 'RACK' ? 'active' : 'inactive'}"
-            @click="${() => this.switchView('RACK')}">
-            FX_RACK
-          </button>
+      <div class="flex justify-between items-center border-b border-white/10 px-4 py-2 bg-black/90 backdrop-blur z-50 h-[40px]">
+          <div class="flex items-baseline">
+              <h1 class="text-sm font-bold text-white tracking-[0.2em]">BIO:GRAM</h1>
+              <span class="text-[10px] text-zinc-500 ml-2 font-mono">v2.1</span>
+          </div>
+          <div class="flex gap-2">
+              <button 
+                class="text-[10px] font-mono px-3 py-1 border transition-all duration-200 uppercase tracking-wider
+                ${this.currentView === 'DECK' 
+                    ? 'bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.3)]' 
+                    : 'bg-black text-zinc-600 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600'}"
+                @click="${() => this.switchView('DECK')}">
+                DECK_VIEW
+              </button>
+              <button 
+                class="text-[10px] font-mono px-3 py-1 border transition-all duration-200 uppercase tracking-wider
+                ${this.currentView === 'RACK' 
+                    ? 'bg-tech-cyan text-black border-tech-cyan shadow-[0_0_10px_cyan]' 
+                    : 'bg-black text-zinc-600 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600'}"
+                @click="${() => this.switchView('RACK')}">
+                FX_RACK
+              </button>
+          </div>
       </div>
     `;
   }

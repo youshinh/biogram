@@ -7,6 +7,7 @@ export const createAiSlider = (label: string, prompt: string, engine: AudioEngin
     const slider = document.createElement('bio-slider');
     slider.setAttribute('label', label);
     slider.setAttribute('value', "0");
+    slider.className = "w-full h-40"; // Height defined by class
     slider.addEventListener('change', (e: any) => {
         const val = e.detail / 100.0;
         engine.updateAiPrompt('A', prompt, val);
@@ -17,19 +18,11 @@ export const createAiSlider = (label: string, prompt: string, engine: AudioEngin
 
 export const createComboSlot = (label: string, options: string[], engine: AudioEngine) => {
     const wrapper = document.createElement('div');
-    wrapper.style.display = 'flex';
-    wrapper.style.flexDirection = 'column';
-    wrapper.style.flex = '1';
-    wrapper.style.border = '1px solid #333';
-    wrapper.style.background = 'black';
+    wrapper.className = "flex flex-col flex-1 border border-white/20 bg-black/40 rounded-lg overflow-hidden";
     
     // Header / Dropdown
     const select = document.createElement('select');
-    Object.assign(select.style, {
-        background: 'black', color: 'white', border: 'none',
-        borderBottom: '1px solid #333', fontSize: '0.6rem',
-        padding: '4px', fontFamily: 'monospace', outline: 'none'
-    });
+    select.className = "bg-black text-white border-b border-white/20 text-[11px] p-1.5 font-mono outline-none";
     
     options.forEach(opt => {
         const el = document.createElement('option');
@@ -41,8 +34,7 @@ export const createComboSlot = (label: string, options: string[], engine: AudioE
     
     const slider = document.createElement('bio-slider');
     slider.setAttribute('label', ''); 
-    slider.style.flex = "1";
-    slider.style.border = "none"; 
+    slider.className = "flex-1 border-none";
     
     let currentPrompt = options[0];
     
@@ -63,26 +55,17 @@ export const createComboSlot = (label: string, options: string[], engine: AudioE
 
 export const createCustomSlot = (engine: AudioEngine) => {
     const wrapper = document.createElement('div');
-    wrapper.style.display = 'flex';
-    wrapper.style.flexDirection = 'column';
-    wrapper.style.flex = '1';
-    wrapper.style.border = '1px solid #333';
-    wrapper.style.background = 'black';
+    wrapper.className = "flex flex-col flex-1 border border-white/20 bg-black/40 rounded-lg overflow-hidden";
     
     const input = document.createElement('input');
     input.type = 'text';
     input.placeholder = 'CUSTOM PROMPT';
-    Object.assign(input.style, {
-        background: 'black', color: '#00ff88', border: 'none',
-        borderBottom: '1px solid #333', fontSize: '0.6rem',
-        padding: '4px', fontFamily: 'monospace', outline: 'none'
-    });
+    input.className = "bg-black text-tech-cyan border-b border-white/20 text-[11px] p-1.5 font-mono outline-none placeholder-zinc-700";
     wrapper.appendChild(input);
     
     const slider = document.createElement('bio-slider');
     slider.setAttribute('label', '');
-    slider.style.flex = "1";
-    slider.style.border = "none";
+    slider.className = "flex-1 border-none";
     
     let prompt = "";
     
@@ -100,50 +83,29 @@ export const createCustomSlot = (engine: AudioEngine) => {
 };
 
 // --- FX Module Helpers ---
+// Note: These might be obsolete if FxRack handles everything, but keeping for compatibility if used elsewhere.
+// Reimplementing them to match BIO:GRAM if they are still used.
 
 export const createFxModule = (title: string, paramPrefix: string, onEdit: () => void, engine: AudioEngine) => {
     const wrapper = document.createElement('div');
-    wrapper.className = "bg-black";
-    wrapper.style.position = "relative";
-    wrapper.style.width = "100%";
-    wrapper.style.height = "100%";
-    wrapper.style.minHeight = "80px";
+    wrapper.className = "bg-black relative w-full h-full min-h-[80px] rounded-xl overflow-hidden border border-white/10 group hover:border-white/30 transition-colors";
 
     // 1. BIG TOGGLE BUTTON (Background)
     const toggleBtn = document.createElement('button');
-    Object.assign(toggleBtn.style, {
-        position: "absolute", top: "0", left: "0", width: "100%", height: "100%",
-        background: "repeating-linear-gradient(45deg, #000, #000 2px, #111 2px, #111 4px)",
-        border: "1px solid white", color: "white", cursor: "pointer",
-        display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
-        transition: "all 0.1s", userSelect: "none"
-    });
+    toggleBtn.className = "absolute top-0 left-0 w-full h-full cursor-pointer flex flex-col justify-center items-center transition-all duration-100 select-none bg-[repeating-linear-gradient(45deg,#000,#000_2px,#111_2px,#111_4px)] text-white hover:bg-zinc-800 hover:text-zinc-300";
     
     let isActive = false;
     
     const labelMain = document.createElement('span');
     labelMain.textContent = title;
-    Object.assign(labelMain.style, { fontSize: "1.5rem", fontWeight: "bold", letterSpacing: "0.1em" });
+    labelMain.className = "text-xl font-bold tracking-widest";
     
     const labelSub = document.createElement('span');
     labelSub.textContent = "OFF";
-    Object.assign(labelSub.style, { fontSize: "0.6rem", letterSpacing: "0.3em", marginTop: "4px" });
+    labelSub.className = "text-[11px] tracking-[0.3em] mt-1";
     
     toggleBtn.appendChild(labelMain);
     toggleBtn.appendChild(labelSub);
-    
-    toggleBtn.onmouseenter = () => {
-         if (!isActive) {
-             toggleBtn.style.background = "#333";
-             toggleBtn.style.color = "#ccc";
-         }
-    };
-    toggleBtn.onmouseleave = () => {
-         if (!isActive) {
-             toggleBtn.style.background = "repeating-linear-gradient(45deg, #000, #000 2px, #111 2px, #111 4px)";
-             toggleBtn.style.color = "white";
-         }
-    };
     
     toggleBtn.onclick = () => {
          isActive = !isActive;
@@ -152,11 +114,9 @@ export const createFxModule = (title: string, paramPrefix: string, onEdit: () =>
          labelSub.textContent = isActive ? "ACTIVE" : "OFF";
          
          if (isActive) {
-             toggleBtn.style.background = "white";
-             toggleBtn.style.color = "black";
+             toggleBtn.className = "absolute top-0 left-0 w-full h-full cursor-pointer flex flex-col justify-center items-center transition-all duration-100 select-none bg-white text-black";
          } else {
-             toggleBtn.style.background = "repeating-linear-gradient(45deg, #000, #000 2px, #111 2px, #111 4px)";
-             toggleBtn.style.color = "white";
+             toggleBtn.className = "absolute top-0 left-0 w-full h-full cursor-pointer flex flex-col justify-center items-center transition-all duration-100 select-none bg-[repeating-linear-gradient(45deg,#000,#000_2px,#111_2px,#111_4px)] text-white hover:bg-zinc-800 hover:text-zinc-300";
          }
     };
     
@@ -164,45 +124,34 @@ export const createFxModule = (title: string, paramPrefix: string, onEdit: () =>
 
     // 2. OVERLAY CONTROLS
     const overlay = document.createElement('div');
-    Object.assign(overlay.style, {
-        position: "absolute", top: "0", left: "0", width: "100%", height: "100%",
-        pointerEvents: "none", zIndex: "10"
-    });
+    overlay.className = "absolute top-0 left-0 w-full h-full pointer-events-none z-10";
     
     // EDIT BUTTON
     const editBtn = document.createElement('button');
     editBtn.textContent = "EDIT";
-    editBtn.className = "text-xxs b-all px-1 bg-black text-white hover:bg-white hover:text-black";
-    Object.assign(editBtn.style, {
-        position: "absolute", top: "4px", left: "4px", pointerEvents: "auto"
-    });
+    editBtn.className = "absolute top-1 left-1 pointer-events-auto text-[10px] px-1.5 py-0.5 border border-zinc-800 bg-black text-white hover:bg-white hover:text-black transition-colors";
     editBtn.onclick = (e) => { e.stopPropagation(); onEdit(); };
     
     // A/B SWITCH
     const abSwitch = document.createElement('div');
-    abSwitch.className = "flex b-all rounded overflow-hidden";
-    Object.assign(abSwitch.style, {
-        position: "absolute", top: "4px", right: "4px", pointerEvents: "auto", transform: "scale(0.8)"
-    });
+    abSwitch.className = "absolute top-1 right-1 pointer-events-auto flex border border-zinc-800 rounded overflow-hidden scale-90";
     
     let target: 'A' | 'B' = 'A';
     const btnA = document.createElement('button');
     btnA.textContent = "A";
-    btnA.className = "px-2 py-0 text-xs font-bold";
-    Object.assign(btnA.style, { background: "white", color: "black" });
+    btnA.className = "px-2 py-0 text-[10px] font-bold bg-white text-black";
     
     const btnB = document.createElement('button');
     btnB.textContent = "B";
-    btnB.className = "px-2 py-0 text-xs font-bold";
-    Object.assign(btnB.style, { background: "black", color: "#555" });
+    btnB.className = "px-2 py-0 text-[10px] font-bold bg-black text-zinc-500";
     
     const updateTargetVisuals = () => {
          if (target === 'A') {
-             btnA.style.background = "#fff"; btnA.style.color = "#000";
-             btnB.style.background = "#000"; btnB.style.color = "#555";
+             btnA.className = "px-2 py-0 text-[10px] font-bold bg-white text-black";
+             btnB.className = "px-2 py-0 text-[10px] font-bold bg-black text-zinc-500";
          } else {
-             btnA.style.background = "#000"; btnA.style.color = "#555";
-             btnB.style.background = "#fff"; btnB.style.color = "#000";
+             btnA.className = "px-2 py-0 text-[10px] font-bold bg-black text-zinc-500";
+             btnB.className = "px-2 py-0 text-[10px] font-bold bg-white text-black";
          }
     };
     
@@ -224,29 +173,32 @@ export const createFxModule = (title: string, paramPrefix: string, onEdit: () =>
 
 export const mkOverlay = (title: string, color: string = '#00ffff') => {
     const el = document.createElement('div');
-    Object.assign(el.style, {
-        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-        width: '280px', background: 'rgba(0,0,0,0.95)', border: `1px solid ${color}`,
-        padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 2000,
-        boxShadow: `0 0 30px ${color}4d`
-    });
+    el.className = "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] bg-black/95 border p-6 flex flex-col gap-4 z-[2000] shadow-[0_0_30px_rgba(0,0,0,0.5)] backdrop-blur";
+    el.style.borderColor = color;
+    el.style.boxShadow = `0 0 30px ${color}4d`;
+
     const t = document.createElement('div');
     t.textContent = title;
-    t.style.cssText = `color:${color}; font-weight:bold; font-size:1rem; text-align:center; margin-bottom:10px;`;
+    t.className = "text-lg font-bold text-center mb-2 tracking-widest";
+    t.style.color = color;
     el.appendChild(t);
     return el;
 };
 
 export const mkSliderHelper = (parent: HTMLElement, name: string, param: string, def: number, min: number, max: number, engine: AudioEngine) => {
      const row = document.createElement('div');
+     row.className = "flex flex-col w-full";
+     
      const slabel = document.createElement('div');
      slabel.textContent = name;
-     Object.assign(slabel.style, { fontSize: "0.7rem", marginBottom: "4px" });
+     slabel.className = "text-[11px] text-zinc-400 mb-1 font-mono";
      
      const inp = document.createElement('input');
      inp.type = "range"; inp.min = "0"; inp.max = "100";
      const currentVal = engine.getDspParam(param) ?? def;
-     inp.value = String(currentVal * 100); inp.style.width = "100%";
+     inp.value = String(currentVal * 100); 
+     inp.className = "w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white hover:accent-tech-cyan";
+     
      inp.oninput = (e: any) => {
          const v = Number(e.target.value) / 100;
          engine.updateDspParam(param, v);

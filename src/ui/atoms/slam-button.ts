@@ -1,85 +1,11 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { LitElement, html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
 
 @customElement('slam-button')
 export class SlamButton extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-      width: 100%;
-      height: 100%;
-      min-height: 80px;
-      user-select: none;
-      -webkit-user-select: none;
-      touch-action: none;
-    }
-
-    button {
-      width: 100%;
-      height: 100%;
-      background: repeating-linear-gradient(
-        45deg,
-        #000,
-        #000 2px,
-        #111 2px,
-        #111 4px
-      );
-      border: 1px solid white;
-      color: white;
-      font-family: inherit;
-      position: relative;
-      cursor: pointer;
-      overflow: hidden;
-      transition: all 0.1s;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-
-    /* Hover: gray instead of white */
-    button:hover {
-      background: #333;
-      color: #ccc;
-    }
-    
-    /* Active state: white (toggled on) */
-    button.active {
-      background: white;
-      color: black;
-    }
-
-    button:active {
-      transform: scale(0.98);
-    }
-
-    .content-default {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      z-index: 10;
-    }
-
-    .content-active {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        opacity: 0;
-        background: white;
-        color: black;
-        font-weight: bold;
-        letter-spacing: 0.2em;
-        transition: opacity 0.1s;
-    }
-
-    button.active .content-active {
-        opacity: 1;
-    }
-    
-    button.active .content-default {
-        opacity: 0;
-    }
-  `;
+  createRenderRoot() {
+    return this;
+  }
 
   @state() private isActive = false;
 
@@ -107,17 +33,29 @@ export class SlamButton extends LitElement {
   render() {
     return html`
       <button
-        class="${this.isActive ? 'active' : ''}"
+        class="group relative w-full h-full min-h-[80px] overflow-hidden border border-zinc-800 bg-black/40 backdrop-blur-sm transition-all duration-200 hover:border-zinc-500 hover:bg-zinc-900 focus:outline-none ${this.isActive ? 'border-white bg-white/10' : ''}"
         @click=${this.handleClick}
       >
-        <div class="content-default">
-            <span style="font-size: 1.5rem; font-weight: bold; letter-spacing: 0.1em;">SLAM</span>
-            <span style="font-size: 0.6rem; letter-spacing: 0.3em;">INJECT_NOISE</span>
+        <!-- Background Grid Pattern -->
+        <div class="absolute inset-0 opacity-10 pointer-events-none" 
+             style="background-image: radial-gradient(circle, #fff 1px, transparent 1px); background-size: 8px 8px;">
         </div>
-        <div class="content-active">
-            ACTIVE
+
+        <!-- Active Border Glow -->
+        <div class="absolute inset-0 transition-opacity duration-300 pointer-events-none ${this.isActive ? 'opacity-100 shadow-[inset_0_0_20px_rgba(255,255,255,0.2)]' : 'opacity-0'}"></div>
+
+        <!-- Content -->
+        <div class="relative z-10 flex flex-col items-center justify-center gap-1 transition-transform duration-100 active:scale-95">
+             <div class="text-xl font-bold tracking-widest text-zinc-300 group-hover:text-white transition-colors uppercase">
+                ${this.isActive ? 'ACTIVE' : 'SLAM'}
+             </div>
+             <div class="text-[0.6rem] font-mono tracking-[0.2em] text-zinc-600 group-hover:text-signal-emerald transition-colors uppercase">
+                ${this.isActive ? 'INJECTING...' : 'INJECT_NOISE'}
+             </div>
         </div>
-        <slot></slot>
+        
+        <!-- Active Indicator Dot -->
+        <div class="absolute top-2 right-2 w-1.5 h-1.5 rounded-full transition-colors duration-300 ${this.isActive ? 'bg-signal-emerald animate-pulse shadow-[0_0_8px_#10b981]' : 'bg-zinc-800'}"></div>
       </button>
     `;
   }
