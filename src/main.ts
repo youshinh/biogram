@@ -302,8 +302,20 @@ if (isVizMode) {
         const deck = e.detail.deck as 'A' | 'B';
         if (import.meta.env.DEV) console.log(`[SAVE HANDLER] Saving loop from Deck ${deck}`);
 
-        // Extract 8 bars from buffer
-        const loopData = engine.extractLoopBuffer(deck, 8);
+        // Ask user for bar count
+        const barOptions = ['8', '16', '32', '64', '128'];
+        const barChoice = window.prompt(
+            '保存する小節数を選択 (8, 16, 32, 64, 128):',
+            '32'
+        );
+        if (!barChoice) {
+            console.log('[SAVE HANDLER] Save cancelled by user');
+            return;
+        }
+        const bars = barOptions.includes(barChoice) ? parseInt(barChoice) : 32;
+
+        // Extract selected bars from buffer
+        const loopData = engine.extractLoopBuffer(deck, bars);
         if (!loopData) {
             console.warn('[SAVE HANDLER] Failed to extract loop data');
             return;
