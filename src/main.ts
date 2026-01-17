@@ -298,21 +298,94 @@ if (isVizMode) {
         return libraryStore;
     };
 
+    // Create Save Dialog Helper
+    const showSaveDialog = (): Promise<{ bars: number; name: string; tags: string[] } | null> => {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            Object.assign(overlay.style, {
+                position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
+                background: 'rgba(0,0,0,0.85)', display: 'flex', justifyContent: 'center', 
+                alignItems: 'center', zIndex: '2000'
+            });
+
+            const dialog = document.createElement('div');
+            Object.assign(dialog.style, {
+                background: '#111', border: '1px solid #333', borderRadius: '8px',
+                padding: '20px', width: '300px', color: '#ccc', fontFamily: 'monospace'
+            });
+
+            const now = new Date();
+            const defaultName = `Loop_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
+
+            dialog.innerHTML = `
+                <h3 style="margin: 0 0 16px 0; color: #10b981; font-size: 14px;">💾 SAVE LOOP</h3>
+                
+                <label style="display: block; margin-bottom: 4px; font-size: 11px; color: #888;">小節数</label>
+                <select id="save-bars" style="width: 100%; padding: 8px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; margin-bottom: 12px; font-size: 14px;">
+                    <option value="8">8 小節</option>
+                    <option value="16">16 小節</option>
+                    <option value="32" selected>32 小節</option>
+                    <option value="64">64 小節</option>
+                    <option value="128">128 小節</option>
+                </select>
+                
+                <label style="display: block; margin-bottom: 4px; font-size: 11px; color: #888;">名前</label>
+                <input id="save-name" type="text" value="${defaultName}" 
+                       style="width: 100%; padding: 8px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box;">
+                
+                <label style="display: block; margin-bottom: 4px; font-size: 11px; color: #888;">タグ (カンマ区切り)</label>
+                <input id="save-tags" type="text" placeholder="ambient, dark, slow" 
+                       style="width: 100%; padding: 8px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; margin-bottom: 16px; box-sizing: border-box;">
+                
+                <div style="display: flex; gap: 8px;">
+                    <button id="save-cancel" style="flex: 1; padding: 10px; background: #333; border: 1px solid #444; color: #888; border-radius: 4px; cursor: pointer;">CANCEL</button>
+                    <button id="save-confirm" style="flex: 1; padding: 10px; background: #10b981; border: none; color: #000; border-radius: 4px; cursor: pointer; font-weight: bold;">SAVE</button>
+                </div>
+            `;
+
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            const barsSelect = dialog.querySelector('#save-bars') as HTMLSelectElement;
+            const nameInput = dialog.querySelector('#save-name') as HTMLInputElement;
+            const tagsInput = dialog.querySelector('#save-tags') as HTMLInputElement;
+            const cancelBtn = dialog.querySelector('#save-cancel') as HTMLButtonElement;
+            const confirmBtn = dialog.querySelector('#save-confirm') as HTMLButtonElement;
+
+            nameInput.focus();
+            nameInput.select();
+
+            const cleanup = () => overlay.remove();
+
+            cancelBtn.onclick = () => { cleanup(); resolve(null); };
+            overlay.onclick = (e) => { if (e.target === overlay) { cleanup(); resolve(null); } };
+
+            confirmBtn.onclick = () => {
+                const bars = parseInt(barsSelect.value);
+                const name = nameInput.value.trim() || defaultName;
+                const tags = tagsInput.value
+                    ? tagsInput.value.split(',').map(t => t.trim()).filter(t => t.length > 0)
+                    : [];
+                cleanup();
+                resolve({ bars, name, tags });
+            };
+
+            nameInput.onkeydown = (e) => { if (e.key === 'Enter') confirmBtn.click(); };
+            tagsInput.onkeydown = (e) => { if (e.key === 'Enter') confirmBtn.click(); };
+        });
+    };
+
     const handleSaveLoop = async (e: CustomEvent) => {
         const deck = e.detail.deck as 'A' | 'B';
         if (import.meta.env.DEV) console.log(`[SAVE HANDLER] Saving loop from Deck ${deck}`);
 
-        // Ask user for bar count
-        const barOptions = ['8', '16', '32', '64', '128'];
-        const barChoice = window.prompt(
-            '保存する小節数を選択 (8, 16, 32, 64, 128):',
-            '32'
-        );
-        if (!barChoice) {
+        // Show save dialog
+        const result = await showSaveDialog();
+        if (!result) {
             console.log('[SAVE HANDLER] Save cancelled by user');
             return;
         }
-        const bars = barOptions.includes(barChoice) ? parseInt(barChoice) : 32;
+        const { bars, name, tags } = result;
 
         // Extract selected bars from buffer
         const loopData = engine.extractLoopBuffer(deck, bars);
@@ -331,31 +404,13 @@ if (isVizMode) {
         for (let i = 0; i < samples.length; i++) {
             const s = Math.abs(samples[i]);
             energy += s * s;
-            // Simple brightness estimation (higher frequency = more zero crossings)
             if (i > 0 && Math.sign(samples[i]) !== Math.sign(samples[i-1])) {
                 brightness += 1;
             }
         }
         energy = Math.sqrt(energy / samples.length);
-        brightness = brightness / samples.length * 100; // Normalize
-        rhythm = 0.5; // Placeholder - could be derived from beat detection
-
-        // Generate default name from timestamp
-        const now = new Date();
-        const defaultName = `Loop_${deck}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
-
-        // Prompt user for name
-        const name = window.prompt('ループの名前を入力:', defaultName);
-        if (!name) {
-            console.log('[SAVE HANDLER] Save cancelled by user');
-            return;
-        }
-
-        // Prompt user for tags (optional)
-        const tagsInput = window.prompt('タグを入力 (カンマ区切り、省略可):', '');
-        const tags = tagsInput 
-            ? tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0)
-            : [];
+        brightness = brightness / samples.length * 100;
+        rhythm = 0.5;
 
         // Save to library
         try {
