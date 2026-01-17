@@ -709,13 +709,18 @@ if (isVizMode) {
         const { sample, deck } = e.detail;
         console.log(`[LIBRARY] Loading ${sample.name} to Deck ${deck}`);
         
-        // Write sample PCM data to deck buffer
-        // For now, just provide feedback - full playback integration would require
-        // writing to the SharedArrayBuffer which is complex
-        alert(`"${sample.name}" をデッキ ${deck} にロードしました\n(BPM: ${sample.bpm}, ${sample.duration.toFixed(1)}秒)`);
+        // Load sample PCM data into deck buffer
+        engine.loadSampleToBuffer(deck as 'A' | 'B', sample.pcmData, sample.bpm);
+        
+        // Update deck UI - set BPM display
+        const targetDeck = deck === 'A' ? deckA : deckB;
+        (targetDeck as any).bpm = sample.bpm;
+        (targetDeck as any).generatedPrompt = `[LOOP] ${sample.name}`;
         
         // Close panel after load
         toggleLibraryPanel();
+        
+        console.log(`[LIBRARY] Loaded "${sample.name}" to Deck ${deck}`);
     });
     
     shell.appendChild(actionsContainer);

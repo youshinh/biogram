@@ -567,4 +567,49 @@ export class AudioEngine {
           bpm
       };
   }
+
+  /**
+   * Load a sample from library into deck buffer for playback
+   * @param deck Deck to load into
+   * @param pcmData The audio data to load
+   * @param bpm The BPM of the sample (for sync)
+   */
+  loadSampleToBuffer(deck: 'A' | 'B', pcmData: Float32Array, bpm: number) {
+      // Calculate buffer positions
+      const bufferSize = this.audioData.length / 2; // Half buffer per deck
+      const deckOffset = deck === 'A' ? 0 : bufferSize;
+      
+      // Write the sample data to buffer (loop if sample is shorter than buffer)
+      const sampleLength = pcmData.length;
+      for (let i = 0; i < Math.min(sampleLength, bufferSize); i++) {
+          this.audioData[deckOffset + i] = pcmData[i];
+      }
+      
+      // If sample is shorter than buffer, loop it to fill
+      if (sampleLength < bufferSize) {
+          for (let i = sampleLength; i < bufferSize; i++) {
+              this.audioData[deckOffset + i] = pcmData[i % sampleLength];
+          }
+      }
+      
+      // Update write pointer to indicate data is available
+      const writePtrOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
+      Atomics.store(this.headerView, writePtrOffset / 4, sampleLength);
+      
+      // Reset read pointer to start of buffer
+      const readPtrOffset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;
+      Atomics.store(this.headerView, readPtrOffset / 4, 0);
+      
+      // Update BPM for this deck
+      this.setDeckBpm(deck, bpm);
+      
+      // Notify UI of BPM update
+      window.dispatchEvent(new CustomEvent('deck-bpm-update', { 
+          detail: { deck, bpm, offset: 0 } 
+      }));
+      
+      if (import.meta.env.DEV) {
+          console.log(`[Engine] Loaded sample to Deck ${deck}: ${sampleLength} samples (${(sampleLength/44100).toFixed(2)}s) at ${bpm} BPM`);
+      }
+  }
 }
