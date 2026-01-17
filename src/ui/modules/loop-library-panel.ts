@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
-import type { LoopSample } from '../audio/db/library-store';
+import type { LoopSample } from '../../audio/db/library-store';
 
 @customElement('loop-library-panel')
 export class LoopLibraryPanel extends LitElement {
@@ -184,7 +184,7 @@ export class LoopLibraryPanel extends LitElement {
 
   private async loadLibrary() {
     try {
-      const { LibraryStore } = await import('../audio/db/library-store');
+      const { LibraryStore } = await import('../../audio/db/library-store');
       this.libraryStore = new LibraryStore();
       await this.libraryStore.init();
       this.samples = await this.libraryStore.getAllSamples();

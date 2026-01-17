@@ -10,6 +10,7 @@ import './ui/modules/deck-controller';
 import './ui/modules/dj-mixer';
 import './ui/modules/fx-rack';
 import './ui/modules/app-header';
+import './ui/modules/loop-library-panel';
 import type { AppShell } from './ui/shell';
 import type { FxRack } from './ui/modules/fx-rack';
 import type { DeckController } from './ui/modules/deck-controller';
@@ -649,6 +650,49 @@ if (isVizMode) {
 
     actionsContainer.appendChild(slamWrapper);
 
+    // --- LOOP LIBRARY PANEL ---
+    let libraryPanelVisible = false;
+    const libraryPanel = document.createElement('loop-library-panel') as any;
+    const libraryPanelContainer = document.createElement('div');
+    Object.assign(libraryPanelContainer.style, {
+        position: 'fixed',
+        top: '0',
+        right: '-300px', // Start off-screen
+        width: '300px',
+        height: '100vh',
+        background: '#0a0a0a',
+        borderLeft: '1px solid #222',
+        zIndex: '500',
+        transition: 'right 0.3s ease-in-out',
+        boxShadow: '-4px 0 20px rgba(0,0,0,0.5)'
+    });
+    libraryPanelContainer.appendChild(libraryPanel);
+    document.body.appendChild(libraryPanelContainer);
+
+    const toggleLibraryPanel = () => {
+        libraryPanelVisible = !libraryPanelVisible;
+        libraryPanelContainer.style.right = libraryPanelVisible ? '0' : '-300px';
+        if (libraryPanelVisible) {
+            libraryPanel.refresh?.();
+        }
+    };
+
+    // Library Button
+    const libLink = document.createElement('div');
+    libLink.textContent = "💾 LOOP LIBRARY";
+    libLink.style.textAlign = "center";
+    libLink.style.fontSize = "0.6rem";
+    libLink.style.padding = "6px";
+    libLink.style.cursor = "pointer";
+    libLink.style.opacity = "0.7";
+    libLink.style.border = "1px solid #333";
+    libLink.style.borderRadius = "4px";
+    libLink.style.marginTop = "4px";
+    libLink.onmouseenter = () => libLink.style.opacity = "1";
+    libLink.onmouseleave = () => libLink.style.opacity = "0.7";
+    libLink.onclick = toggleLibraryPanel;
+    actionsContainer.appendChild(libLink);
+
     // Open Projector (Small Text Link below Actions)
     const projLink = document.createElement('div');
     projLink.textContent = "> OPEN_PROJECTOR";
@@ -659,6 +703,20 @@ if (isVizMode) {
     projLink.style.opacity = "0.5";
     projLink.onclick = () => window.open('/?mode=viz', 'biogram_viz');
     actionsContainer.appendChild(projLink);
+
+    // Handle Loop Load from Library
+    window.addEventListener('loop-load', (e: any) => {
+        const { sample, deck } = e.detail;
+        console.log(`[LIBRARY] Loading ${sample.name} to Deck ${deck}`);
+        
+        // Write sample PCM data to deck buffer
+        // For now, just provide feedback - full playback integration would require
+        // writing to the SharedArrayBuffer which is complex
+        alert(`"${sample.name}" をデッキ ${deck} にロードしました\n(BPM: ${sample.bpm}, ${sample.duration.toFixed(1)}秒)`);
+        
+        // Close panel after load
+        toggleLibraryPanel();
+    });
     
     shell.appendChild(actionsContainer);
 
