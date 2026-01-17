@@ -83,10 +83,10 @@ export class DjMixer extends LitElement {
 
   render() {
     return html`
-      <div class="h-full w-full flex flex-col items-center justify-between p-2">
+      <div class="h-full w-full flex flex-col items-center p-2 overflow-hidden">
            
-           <!-- MASTER BPM SECTION -->
-           <div class="flex items-center gap-4 mb-2 p-2 rounded-xl bg-black/40 backdrop-blur-md border border-white/5 w-full justify-center shadow-lg">
+           <!-- MASTER BPM SECTION (Fixed) -->
+           <div class="flex-shrink-0 flex items-center gap-4 mb-2 p-2 rounded-xl bg-black/40 backdrop-blur-md border border-white/5 w-full justify-center shadow-lg">
                 <div class="w-2 h-2 rounded-full transition-all duration-75 ${this.beatActive ? 'bg-signal-emerald shadow-[0_0_10px_#10b981] scale-125' : 'bg-zinc-800'}"></div>
                 <div class="font-mono text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-zinc-200 to-zinc-500">
                     ${this.bpm.toFixed(1)} <span class="text-xs text-zinc-600">BPM</span>
@@ -99,8 +99,25 @@ export class DjMixer extends LitElement {
                 </div>
            </div>
 
-           <!-- CHANNELS -->
-           <div class="flex-grow w-full grid grid-cols-2 gap-2 h-full min-h-0">
+           <!-- CROSSFADER (Fixed at top) -->
+           <div class="flex-shrink-0 w-full mb-2 p-2 rounded-xl bg-black/40 backdrop-blur-md border border-white/5 shadow-lg flex flex-col items-center">
+               <div class="text-[8px] tracking-[0.3em] text-zinc-600 mb-2 uppercase">Collider // X-Fader</div>
+               
+               <input type="range" 
+                      class="w-full h-2 bg-zinc-900 rounded-full appearance-none outline-none cursor-ew-resize accent-zinc-400 hover:accent-white active:accent-tech-cyan"
+                      min="0" max="1" step="0.01"
+                      .value="${this.crossfader}"
+                      @input="${this.handleCrossfader}" 
+               />
+               
+               <div class="flex justify-between w-full mt-2 text-[10px] font-bold font-mono opacity-50">
+                   <span class="text-tech-cyan">A</span>
+                   <span class="text-signal-emerald">B</span>
+               </div>
+           </div>
+
+           <!-- CHANNELS (Scrollable EQ Section) -->
+           <div class="flex-grow w-full grid grid-cols-2 gap-2 min-h-0 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-700/50 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600">
                <!-- DECK A STRIP -->
                <div class="rounded-2xl border border-white/5 bg-black/20 p-2 flex flex-col items-center gap-2 group hover:border-tech-cyan/20 transition-colors">
                    <div class="text-[10px] font-mono text-tech-cyan tracking-widest opacity-50 mb-1">CH.A</div>
@@ -139,23 +156,6 @@ export class DjMixer extends LitElement {
                        ${this.renderEqBand('B', 'MID', this.eqB.mid, this.killB.mid)}
                        ${this.renderEqBand('B', 'LOW', this.eqB.low, this.killB.low)}
                    </div>
-               </div>
-           </div>
-
-           <!-- CROSSFADER -->
-           <div class="w-full mt-4 p-2 rounded-xl bg-black/40 backdrop-blur-md border border-white/5 shadow-lg flex flex-col items-center">
-               <div class="text-[8px] tracking-[0.3em] text-zinc-600 mb-2 uppercase">Collider // X-Fader</div>
-               
-               <input type="range" 
-                      class="w-full h-2 bg-zinc-900 rounded-full appearance-none outline-none cursor-ew-resize accent-zinc-400 hover:accent-white active:accent-tech-cyan"
-                      min="0" max="1" step="0.01"
-                      .value="${this.crossfader}"
-                      @input="${this.handleCrossfader}" 
-               />
-               
-               <div class="flex justify-between w-full mt-2 text-[10px] font-bold font-mono opacity-50">
-                   <span class="text-tech-cyan">A</span>
-                   <span class="text-signal-emerald">B</span>
                </div>
            </div>
       </div>
