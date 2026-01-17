@@ -579,26 +579,25 @@ export class AudioEngine {
       const bufferSize = this.audioData.length / 2; // Half buffer per deck
       const deckOffset = deck === 'A' ? 0 : bufferSize;
       
-      // Write the sample data to buffer (loop if sample is shorter than buffer)
+      // Fill entire buffer with looped sample data
       const sampleLength = pcmData.length;
-      for (let i = 0; i < Math.min(sampleLength, bufferSize); i++) {
-          this.audioData[deckOffset + i] = pcmData[i];
+      for (let i = 0; i < bufferSize; i++) {
+          // Loop the sample to fill the entire buffer
+          this.audioData[deckOffset + i] = pcmData[i % sampleLength];
       }
       
-      // If sample is shorter than buffer, loop it to fill
-      if (sampleLength < bufferSize) {
-          for (let i = sampleLength; i < bufferSize; i++) {
-              this.audioData[deckOffset + i] = pcmData[i % sampleLength];
-          }
-      }
-      
-      // Update write pointer to indicate data is available
+      // Set write pointer to a very high value to allow continuous looping
+      // The AudioWorklet processor will read up to writePtr, so we set it very high
       const writePtrOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
-      Atomics.store(this.headerView, writePtrOffset / 4, sampleLength);
+      const loopWritePtr = bufferSize * 1000; // Allow many loops before potential wrap
+      Atomics.store(this.headerView, writePtrOffset / 4, loopWritePtr);
       
       // Reset read pointer to start of buffer
       const readPtrOffset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;
       Atomics.store(this.headerView, readPtrOffset / 4, 0);
+      
+      // Store sample length for potential beat-sync calculations
+      // (The buffer wraps at bufferSize, so pointer % bufferSize gives actual position)
       
       // Update BPM for this deck
       this.setDeckBpm(deck, bpm);
@@ -609,7 +608,7 @@ export class AudioEngine {
       }));
       
       if (import.meta.env.DEV) {
-          console.log(`[Engine] Loaded sample to Deck ${deck}: ${sampleLength} samples (${(sampleLength/44100).toFixed(2)}s) at ${bpm} BPM`);
+          console.log(`[Engine] Loaded sample to Deck ${deck}: ${sampleLength} samples (${(sampleLength/44100).toFixed(2)}s) at ${bpm} BPM, buffer filled with loops`);
       }
   }
 
