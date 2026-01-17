@@ -191,6 +191,7 @@ if (isVizMode) {
         const deck = e.detail.deck as 'A' | 'B';
         if (e.detail.playing) {
              engine.setTapeStop(deck, false);
+             engine.unmute(deck); // Ensure we are unmuted (fixes GEN silence bug)
              engine.resume();
         } else {
              engine.setTapeStop(deck, true);
@@ -283,6 +284,84 @@ if (isVizMode) {
     // Attach specifically to deck instances to avoid global bubbling confusion (though window bubbling should work if deckId is correct)
     deckA.addEventListener('deck-load-random', handleLoadRandom as EventListener);
     deckB.addEventListener('deck-load-random', handleLoadRandom as EventListener);
+    
+    // --- SAVE LOOP HANDLER ---
+    // Import LibraryStore dynamically to avoid circular deps
+    let libraryStore: any = null;
+    const getLibraryStore = async () => {
+        if (!libraryStore) {
+            const { LibraryStore } = await import('./audio/db/library-store');
+            libraryStore = new LibraryStore();
+            await libraryStore.init();
+        }
+        return libraryStore;
+    };
+
+    const handleSaveLoop = async (e: CustomEvent) => {
+        const deck = e.detail.deck as 'A' | 'B';
+        if (import.meta.env.DEV) console.log(`[SAVE HANDLER] Saving loop from Deck ${deck}`);
+
+        // Extract 8 bars from buffer
+        const loopData = engine.extractLoopBuffer(deck, 8);
+        if (!loopData) {
+            console.warn('[SAVE HANDLER] Failed to extract loop data');
+            return;
+        }
+
+        // Get current prompt for metadata
+        const targetDeck = deck === 'A' ? deckA : deckB;
+        const prompt = (targetDeck as any).generatedPrompt || uiState.theme || 'Unknown';
+
+        // Analyze audio for vector (simple RMS-based)
+        let brightness = 0, energy = 0, rhythm = 0;
+        const samples = loopData.pcmData;
+        for (let i = 0; i < samples.length; i++) {
+            const s = Math.abs(samples[i]);
+            energy += s * s;
+            // Simple brightness estimation (higher frequency = more zero crossings)
+            if (i > 0 && Math.sign(samples[i]) !== Math.sign(samples[i-1])) {
+                brightness += 1;
+            }
+        }
+        energy = Math.sqrt(energy / samples.length);
+        brightness = brightness / samples.length * 100; // Normalize
+        rhythm = 0.5; // Placeholder - could be derived from beat detection
+
+        // Generate default name from timestamp
+        const now = new Date();
+        const defaultName = `Loop_${deck}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
+
+        // Prompt user for name
+        const name = window.prompt('ループの名前を入力:', defaultName);
+        if (!name) {
+            console.log('[SAVE HANDLER] Save cancelled by user');
+            return;
+        }
+
+        // Save to library
+        try {
+            const store = await getLibraryStore();
+            await store.saveSample({
+                name,
+                prompt,
+                duration: loopData.duration,
+                bpm: loopData.bpm,
+                tags: [],
+                vector: { brightness, energy, rhythm },
+                pcmData: loopData.pcmData
+            });
+            console.log(`[SAVE HANDLER] Loop saved: ${name} (${loopData.duration.toFixed(1)}s @ ${loopData.bpm} BPM)`);
+            
+            // Visual feedback (could be enhanced with toast notification)
+            alert(`ループを保存しました: ${name}`);
+        } catch (err) {
+            console.error('[SAVE HANDLER] Failed to save loop:', err);
+            alert('保存に失敗しました');
+        }
+    };
+
+    deckA.addEventListener('deck-save-loop', handleSaveLoop as EventListener);
+    deckB.addEventListener('deck-save-loop', handleSaveLoop as EventListener);
     
     // Also keep window listener for other events, but remove the global 'deck-load-random' block.
 

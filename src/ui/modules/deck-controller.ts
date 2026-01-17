@@ -111,7 +111,7 @@ export class DeckController extends LitElement {
         <div class="shrink-0 w-[120px] h-[120px] flex items-center justify-center">
              <button class="w-[100px] h-[100px] rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center shadow-lg active:scale-95 transition-all group hover:text-zinc-300"
                      @click="${this.tapBpm}">
-                  <span class="text-3xl font-bold text-zinc-500 tracking-widest font-mono group-active:text-tech-cyan group-hover:text-zinc-300">TAP</span>
+                  <span class="text-xl font-bold text-zinc-500 tracking-widest font-mono group-active:text-tech-cyan group-hover:text-zinc-300">TAP</span>
              </button>
         </div>
       `;
@@ -168,19 +168,25 @@ export class DeckController extends LitElement {
   }
 
   private renderToolsSection() {
-      // Height 120px, 2 buttons
+      // Height 120px, 3 buttons stacked
       return html`
-        <div class="shrink-0 w-[56px] h-[120px] flex flex-col gap-1 justify-center">
+        <div class="shrink-0 w-[56px] h-[120px] flex flex-col gap-0.5 justify-center">
              <!-- SYNC -->
-             <button class="w-full h-[58px] rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center text-[10px] font-bold font-mono ${this.isSync ? 'text-tech-cyan border-tech-cyan/50 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'text-zinc-500 hover:text-zinc-300'}"
+             <button class="w-full h-[38px] rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center text-[10px] font-bold font-mono ${this.isSync ? 'text-tech-cyan border-tech-cyan/50 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'text-zinc-500 hover:text-zinc-300'}"
                      @click="${this.toggleSync}">
                  SYNC
              </button>
              
              <!-- GEN -->
-             <button class="w-full h-[58px] rounded-full bg-zinc-800 border border-zinc-600 flex items-center justify-center text-[11px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 hover:border-zinc-500 shadow-sm active:scale-95 transition-all"
+             <button class="w-full h-[38px] rounded-lg bg-zinc-800 border border-zinc-600 flex items-center justify-center text-[10px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 hover:border-zinc-500 shadow-sm active:scale-95 transition-all"
                      @click="${this.loadRandom}">
-                 Gen
+                 GEN
+             </button>
+
+             <!-- SAVE -->
+             <button class="w-full h-[38px] rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center text-[10px] font-bold text-signal-emerald/70 hover:text-signal-emerald hover:bg-zinc-800 hover:border-signal-emerald/30 active:scale-95 transition-all"
+                     @click="${this.saveLoop}">
+                 SAVE
              </button>
         </div>
       `;
@@ -263,6 +269,14 @@ export class DeckController extends LitElement {
   
   private loadRandom() {
        this.dispatchEvent(new CustomEvent('deck-load-random', {
+          detail: { deck: this.deckId },
+          bubbles: true,
+          composed: true
+      }));
+  }
+
+  private saveLoop() {
+       this.dispatchEvent(new CustomEvent('deck-save-loop', {
           detail: { deck: this.deckId },
           bubbles: true,
           composed: true

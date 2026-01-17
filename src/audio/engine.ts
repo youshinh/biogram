@@ -133,8 +133,11 @@ export class AudioEngine {
   }
 
   startAI(autoPlay: boolean = true) {
-      this.musicClientA?.start(autoPlay);
-      this.musicClientB?.start(autoPlay);
+      const initPrompt = `${this.masterBpm} BPM, minimal ambient`;
+      this.musicClientA?.start(autoPlay, initPrompt);
+      // Give Deck B a slightly different seed/personality or same? Using same for now.
+      // Maybe vary description slightly to ensure separation? "minimal ambient B"
+      this.musicClientB?.start(autoPlay, initPrompt);
   }
 
   /**
@@ -248,7 +251,8 @@ export class AudioEngine {
   }
   
   getOutputLatency(): number {
-      return this.context.outputLatency || 0.0;
+      // Total Latency = Processing (base) + Hardware (output)
+      return (this.context.baseLatency || 0.0) + (this.context.outputLatency || 0.0);
   }
 
   setBpm(bpm: number) {
@@ -508,5 +512,59 @@ export class AudioEngine {
       // Do NOT jump immediately. 
       // MusicClient will trigger skipToLatest() once it has buffered enough NEW data.
       // this.skipToLatest(deck);
+  }
+
+  /**
+   * Extract audio from deck buffer for saving as loop
+   * @param deck Deck to extract from
+   * @param bars Number of bars to extract (default 8)
+   * @returns Object with PCM data, duration, and BPM
+   */
+  extractLoopBuffer(deck: 'A' | 'B', bars: number = 8): { 
+    pcmData: Float32Array; 
+    duration: number; 
+    bpm: number 
+  } | null {
+      const bpm = deck === 'A' ? this.bpmA : this.bpmB;
+      if (bpm <= 0) {
+          console.warn('[Engine] Cannot extract loop: Invalid BPM');
+          return null;
+      }
+
+      // Calculate samples needed
+      const beatsPerBar = 4;
+      const secondsPerBeat = 60 / bpm;
+      const secondsPerBar = secondsPerBeat * beatsPerBar;
+      const totalSeconds = secondsPerBar * bars;
+      const samplesToExtract = Math.floor(totalSeconds * 44100);
+
+      // Get current read pointer
+      const readPtrOffset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;
+      const currentPtr = Atomics.load(this.headerView, readPtrOffset / 4);
+      
+      // Calculate start position (go back from current position)
+      const bufferSize = this.audioData.length / 2; // Half buffer per deck
+      const deckOffset = deck === 'A' ? 0 : bufferSize;
+      
+      // Extract samples from ring buffer
+      const result = new Float32Array(samplesToExtract);
+      const startPtr = currentPtr - samplesToExtract;
+      
+      for (let i = 0; i < samplesToExtract; i++) {
+          // Handle wrap-around in ring buffer
+          let srcIdx = ((startPtr + i) % bufferSize);
+          if (srcIdx < 0) srcIdx += bufferSize;
+          result[i] = this.audioData[deckOffset + srcIdx];
+      }
+
+      if (import.meta.env.DEV) {
+          console.log(`[Engine] Extracted ${bars} bars (${totalSeconds.toFixed(2)}s) at ${bpm} BPM`);
+      }
+
+      return {
+          pcmData: result,
+          duration: totalSeconds,
+          bpm
+      };
   }
 }

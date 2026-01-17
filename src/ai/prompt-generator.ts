@@ -49,7 +49,8 @@ export const generatePrompt = (state: PromptState): string => {
         ? deckPrompt 
         : "Meditative deep ambient drone";
     
-    const timeContext = `at ${currentBpm} BPM`;
+    // Change format to "X BPM"
+    const timeContext = `${currentBpm} BPM`;
 
     // --- Step 3: Mode & Elements Assembly ---
     
@@ -117,9 +118,9 @@ export const generatePrompt = (state: PromptState): string => {
     // We will combine them.
     
     const parts = [
+        timeContext, // Moved to Start
         theme,
         slamModifier, // Add Modifier here
-        timeContext,
         personality,
         minimalDesc,
         ambientDesc,
