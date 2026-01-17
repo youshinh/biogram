@@ -72,14 +72,8 @@ export class DeckController extends LitElement {
   };
 
   render() {
-      // Layout: Visualizer on top, Controls on bottom
-      // Deck A: Play Right, Deck B: Play Left (as per previous logic, but simplified for cleaner UI? Let's keep symmetry)
-      // Actually, standard DJ layout usually puts Play/CUE at bottom corners closest to mixer or outside.
-      // Let's use a symmetric layout for now using Flexbox order or just Grid.
-      
       const isDeckA = this.deckId === 'A';
-
-    return html`
+      return html`
       <div class="flex flex-col h-full w-full relative">
           <!-- VISUALIZER AREA -->
           <div class="flex-grow relative min-h-0 border-b border-white/5 bg-black/20">
@@ -91,93 +85,118 @@ export class DeckController extends LitElement {
               </div>
           </div>
 
-          <!-- CONTROLS CONTAINER -->
-          <div class="h-[80px] shrink-0 flex gap-1 p-1 bg-black/40 backdrop-blur-md">
+          <!-- CONTROLS CONTAINER (Height 140px) -->
+          <div class="h-[140px] shrink-0 flex gap-2 p-2 bg-[#18181b] border-t border-white/5 items-center justify-center">
               
-              <!-- LEFT GROUP (Outer edge of screen) -->
-              ${isDeckA ? html`` : this.renderTransport()}
+              <!-- DECK A LAYOUT: TAP -> CENTER -> TOOLS -> PLAY -->
+              ${isDeckA ? this.renderTapSection() : this.renderPlaySection()}
 
-              <!-- CENTER-LEFT: Tools for B (closer to mixer) -->
-              ${!isDeckA ? this.renderTools() : html``}
+              <!-- DECK A: CENTER is 2nd. DECK B: TOOLS is 2nd -->
+              ${isDeckA ? this.renderCenterSection() : this.renderToolsSection()}
 
-              <!-- CENTER: BPM & INPUT -->
-              <div class="flex-grow flex flex-col gap-1 min-w-0">
-                  <!-- BPM ROW -->
-                  <div class="flex items-center justify-between bg-black/20 rounded border border-white/5 px-2 h-[34px]">
-                       <button class="text-zinc-500 hover:text-white text-xs px-1" @click="${() => this.adjustBpm(-1.0)}">&laquo;</button>
-                       <button class="text-zinc-500 hover:text-white text-xs px-1" @click="${() => this.adjustBpm(-0.1)}">&lsaquo;</button>
-                       
-                       <div class="font-mono text-lg font-bold tracking-tighter ${this.deckColorClass}">
-                           ${this.bpm.toFixed(1)}
-                       </div>
-                       
-                       <button class="text-zinc-500 hover:text-white text-xs px-1" @click="${() => this.adjustBpm(0.1)}">&rsaquo;</button>
-                       <button class="text-zinc-500 hover:text-white text-xs px-1" @click="${() => this.adjustBpm(1.0)}">&raquo;</button>
-                       <button class="text-[10px] font-mono border border-zinc-700 rounded px-1 ml-1 hover:border-zinc-500 hover:text-white text-zinc-500" @click="${this.tapBpm}">TAP</button>
-                  </div>
+              <!-- DECK A: TOOLS is 3rd. DECK B: CENTER is 3rd -->
+              ${isDeckA ? this.renderToolsSection() : this.renderCenterSection()}
 
-                  <!-- PROMPT/GRID ROW -->
-                  <div class="flex gap-1 h-[34px]">
-                      <!-- GRID SHIFT -->
-                      <div class="flex flex-col justify-center items-center px-1 bg-black/20 rounded border border-white/5 w-[50px]">
-                          <span class="text-[8px] text-zinc-600 font-mono scale-75 origin-center">GRID</span>
-                          <div class="flex w-full justify-between">
-                             <button class="text-zinc-500 hover:text-white text-[10px]" @click="${() => this.adjustGrid(-1)}">&lt;</button>
-                             <button class="text-zinc-500 hover:text-white text-[10px]" @click="${() => this.adjustGrid(1)}">&gt;</button>
-                          </div>
-                      </div>
+              <!-- DECK A: PLAY is 4th. DECK B: TAP is 4th -->
+              ${isDeckA ? this.renderPlaySection() : this.renderTapSection()}
 
-                      <!-- PROMPT INPUT -->
-                      <div class="flex-grow relative bg-black/20 rounded border border-white/5 ${this.borderFocusClass} transition-colors">
-                          <input class="w-full h-full bg-transparent border-none outline-none px-2 text-[10px] font-mono text-zinc-300 placeholder-zinc-700" 
-                                 type="text" 
-                                 placeholder="Enter prompt..." 
-                                 .value="${this.prompt}"
-                                 @change="${this.handlePromptChange}"
-                          />
-                      </div>
-                  </div>
-              </div>
-
-              <!-- CENTER-RIGHT: Tools for A (closer to mixer) -->
-              ${isDeckA ? this.renderTools() : html``}
-
-              <!-- RIGHT GROUP (Outer edge of screen) -->
-              ${isDeckA ? this.renderTransport() : html``}
           </div>
       </div>
     `;
   }
 
-  private renderTransport() {
+  private renderTapSection() {
+      // 120px square container (Invisible, layout only)
       return html`
-        <div class="w-[70px] flex flex-col gap-1 items-center">
-             <button class="btn-3d-round w-14 h-14 flex items-center justify-center ${this.isPlaying ? 'active' : ''}"
-                     @click="${this.togglePlay}">
-                  ${this.isPlaying 
-                    ? html`<div class="w-4 h-4 bg-zinc-300 rounded-sm shadow-[0_0_8px_rgba(255,255,255,0.3)]"></div>`
-                    : html`<div class="w-0 h-0 border-t-[8px] border-t-transparent border-l-[14px] border-l-zinc-400 border-b-[8px] border-b-transparent ml-1"></div>`
-                  }
+        <div class="shrink-0 w-[120px] h-[120px] flex items-center justify-center">
+             <button class="w-[100px] h-[100px] rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center shadow-lg active:scale-95 transition-all group hover:text-zinc-300"
+                     @click="${this.tapBpm}">
+                  <span class="text-3xl font-bold text-zinc-500 tracking-widest font-mono group-active:text-tech-cyan group-hover:text-zinc-300">TAP</span>
              </button>
-             <div class="text-[8px] text-center font-mono text-zinc-600 tracking-widest uppercase">
-                 ${this.isPlaying ? 'PLAYING' : 'STOPPED'}
-             </div>
         </div>
       `;
   }
 
-  private renderTools() {
+  private renderCenterSection() {
+      // Maximize width, 120px height, rounded corners
       return html`
-         <div class="w-[55px] flex flex-col gap-2">
-             <button class="btn-3d flex-1 flex items-center justify-center text-[10px] font-mono ${this.isSync ? 'text-tech-cyan' : 'text-zinc-500'}"
+        <div class="flex-grow h-[120px] flex flex-col bg-black border border-zinc-800 rounded-xl overflow-hidden min-w-[300px]">
+            <!-- ROW 1: BUTTONS & BPM (60px) -->
+            <div class="flex h-[60px] w-full border-b border-zinc-800">
+                <!-- |< -->
+                <button class="shrink-0 w-[42px] h-full border-r border-zinc-800 text-[12px] text-zinc-500 hover:text-white hover:bg-zinc-900" 
+                        @click="${() => this.adjustGrid(-1)}">|&lt;</button>
+                
+                <!-- -1.0 -->
+                <button class="shrink-0 w-[42px] h-full border-r border-zinc-800 text-[14px] text-zinc-500 hover:text-white hover:bg-zinc-900" 
+                        @click="${() => this.adjustBpm(-1.0)}">-</button>
+                
+                <!-- -0.1 -->
+                <button class="shrink-0 w-[42px] h-full border-r border-zinc-800 text-[12px] text-zinc-500 hover:text-white hover:bg-zinc-900" 
+                        @click="${() => this.adjustBpm(-0.1)}">.1</button>
+
+                <!-- BPM DISPLAY (Flex Grow) -->
+                <div class="flex-grow h-full flex items-center justify-center relative bg-black border-r border-zinc-800 group cursor-ns-resize" title="Drag to adjust BPM">
+                     <span class="text-4xl font-bold tracking-tighter text-zinc-400 font-sans">${this.bpm.toFixed(1)}</span>
+                     <span class="absolute top-1 right-2 text-[9px] text-zinc-600 font-mono">BPM</span>
+                </div>
+
+                <!-- +0.1 -->
+                <button class="shrink-0 w-[42px] h-full border-r border-zinc-800 text-[12px] text-zinc-500 hover:text-white hover:bg-zinc-900" 
+                        @click="${() => this.adjustBpm(0.1)}">.1</button>
+
+                <!-- +1.0 -->
+                <button class="shrink-0 w-[42px] h-full border-r border-zinc-800 text-[14px] text-zinc-500 hover:text-white hover:bg-zinc-900" 
+                        @click="${() => this.adjustBpm(1.0)}">+</button>
+
+                <!-- >| -->
+                <button class="shrink-0 w-[42px] h-full text-[12px] text-zinc-500 hover:text-white hover:bg-zinc-900" 
+                        @click="${() => this.adjustGrid(1)}">&gt;|</button>
+            </div>
+
+            <!-- ROW 2: PROMPT INPUT (60px) -->
+            <div class="flex-grow w-full bg-[#0a0a0a]">
+                <input class="w-full h-full bg-transparent border-none outline-none px-4 text-[14px] font-bold font-mono text-zinc-400 placeholder-zinc-800 text-center tracking-wider" 
+                       type="text" 
+                       placeholder="PROMPT" 
+                       .value="${this.prompt}"
+                       @change="${this.handlePromptChange}"
+                />
+            </div>
+        </div>
+      `;
+  }
+
+  private renderToolsSection() {
+      // Height 120px, 2 buttons
+      return html`
+        <div class="shrink-0 w-[56px] h-[120px] flex flex-col gap-1 justify-center">
+             <!-- SYNC -->
+             <button class="w-full h-[58px] rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center text-[10px] font-bold font-mono ${this.isSync ? 'text-tech-cyan border-tech-cyan/50 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'text-zinc-500 hover:text-zinc-300'}"
                      @click="${this.toggleSync}">
                  SYNC
              </button>
-             <button class="btn-3d flex-1 flex items-center justify-center text-[10px] font-mono text-zinc-500 hover:text-signal-emerald"
+             
+             <!-- GEN -->
+             <button class="w-full h-[58px] rounded-full bg-zinc-800 border border-zinc-600 flex items-center justify-center text-[11px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 hover:border-zinc-500 shadow-sm active:scale-95 transition-all"
                      @click="${this.loadRandom}">
-                 GEN
+                 Gen
              </button>
-         </div>
+        </div>
+      `;
+  }
+
+  private renderPlaySection() {
+       return html`
+        <div class="shrink-0 w-[120px] h-[120px] flex items-center justify-center">
+             <button class="w-[100px] h-[100px] rounded-full bg-zinc-800 border border-zinc-600 flex items-center justify-center shadow-lg active:scale-95 transition-all group ${this.isPlaying ? 'border-tech-cyan/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'hover:bg-zinc-700 hover:border-zinc-500'}"
+                     @click="${this.togglePlay}">
+                  ${this.isPlaying 
+                    ? html`<div class="w-8 h-8 bg-zinc-400 rounded-sm"></div>`
+                    : html`<div class="w-0 h-0 border-t-[16px] border-t-transparent border-l-[26px] border-l-zinc-400 border-b-[16px] border-b-transparent ml-3 group-hover:border-l-zinc-300"></div>`
+                  }
+             </button>
+        </div>
       `;
   }
 

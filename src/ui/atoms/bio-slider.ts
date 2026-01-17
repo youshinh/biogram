@@ -94,7 +94,7 @@ export class BioSlider extends LitElement {
                   style="height: calc(${percentage}% - 16px);"></div>
 
              <!-- THUMB (Always visible with glow) -->
-             <div class="absolute w-10 h-1.5 bg-zinc-300 rounded-sm pointer-events-none transition-all duration-100 ease-out ${this.isDragging ? 'bg-white shadow-[0_0_12px_rgba(255,255,255,0.8)] scale-110' : this.isHovered ? 'bg-zinc-200 shadow-[0_0_8px_rgba(255,255,255,0.5)]' : 'shadow-[0_0_4px_rgba(255,255,255,0.3)]'}"
+             <div class="absolute w-8 h-1.5 bg-zinc-300 rounded-sm pointer-events-none transition-all duration-100 ease-out ${this.isDragging ? 'bg-white shadow-[0_0_12px_rgba(255,255,255,0.8)] scale-110' : this.isHovered ? 'bg-zinc-200 shadow-[0_0_8px_rgba(255,255,255,0.5)]' : 'shadow-[0_0_4px_rgba(255,255,255,0.3)]'}"
                   style="bottom: calc(${percentage}% - 3px);">
              </div>
 

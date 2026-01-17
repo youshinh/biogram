@@ -163,14 +163,20 @@ export class DjMixer extends LitElement {
   }
 
   private renderEqBand(deck: 'A'|'B', band: 'HI'|'MID'|'LOW', val: number, isKill: boolean) {
-      // Color based on deck
+      // Color based on deck (Keep deck accents for Kill/Hover to distinguish decks)
       const accent = deck === 'A' ? 'hover:text-tech-cyan hover:border-tech-cyan/50' : 'hover:text-signal-emerald hover:border-signal-emerald/50';
       const killActive = deck === 'A' ? 'bg-tech-cyan text-black border-tech-cyan shadow-[0_0_8px_rgba(6,182,212,0.5)]' : 'bg-signal-emerald text-black border-signal-emerald shadow-[0_0_8px_rgba(16,185,129,0.5)]';
       
+      // Band identification background (Monotone Gradients)
+      // HI: Lighter Grey (visible contrast), MID: Deep Grey, LOW: Black
+      const bgClass = band === 'HI' ? 'bg-gradient-to-b from-zinc-400/30 to-transparent' :
+                      band === 'MID' ? 'bg-gradient-to-b from-zinc-800/60 to-transparent' :
+                      'bg-gradient-to-b from-black to-transparent';
+
       return html`
-         <div class="flex flex-col items-center w-full gap-1 flex-1 min-h-0 border-b border-white/5 last:border-0 py-1">
+         <div class="flex flex-col items-center w-full gap-1 flex-1 min-h-0 border-b border-white/5 last:border-0 py-1 ${bgClass}">
              <!-- Top row: Label + Kill -->
-             <div class="flex items-center justify-between w-full">
+             <div class="flex items-center justify-between w-full px-1">
                  <span class="text-[10px] font-mono text-zinc-400 font-semibold">${band}</span>
                  <button class="btn-3d text-[8px] px-1.5 py-0.5 ${isKill ? killActive : `text-zinc-500 ${accent}`}"
                          @click="${() => this.toggleKill(deck, band)}">

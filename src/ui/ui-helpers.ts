@@ -7,7 +7,7 @@ export const createAiSlider = (label: string, onChange: (val: number) => void) =
     const slider = document.createElement('bio-slider');
     slider.setAttribute('label', label);
     slider.setAttribute('value', "0");
-    slider.className = "w-full h-40"; 
+    slider.className = "w-full h-56"; 
     slider.addEventListener('change', (e: any) => {
         // bio-slider emits 0-100. We pass it directly (or scaled?)
         // Spec says logic uses 0-100.

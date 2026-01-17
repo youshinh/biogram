@@ -135,6 +135,7 @@ export class AppShell extends LitElement {
       display: flex;
       gap: 16px;
       overflow-x: auto;
+      overflow-y: hidden;
       align-items: center;
       justify-content: space-around;
       box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
