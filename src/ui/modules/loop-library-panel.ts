@@ -35,6 +35,33 @@ export class LoopLibraryPanel extends LitElement {
       color: #444;
     }
 
+    .deck-selector {
+      display: flex;
+      gap: 4px;
+    }
+
+    .deck-btn {
+      padding: 2px 8px;
+      background: #222;
+      border: 1px solid #333;
+      color: #666;
+      font-size: 10px;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.15s ease;
+    }
+
+    .deck-btn:hover {
+      background: #333;
+      color: #fff;
+    }
+
+    .deck-btn.active {
+      background: #10b981;
+      border-color: #10b981;
+      color: #000;
+    }
+
     .list {
       height: calc(100% - 40px);
       overflow-y: auto;
@@ -208,9 +235,13 @@ export class LoopLibraryPanel extends LitElement {
     this.selectedId = this.selectedId === id ? null : id;
   }
 
-  private async handleLoad(sample: LoopSample) {
+  private setTargetDeck(deck: 'A' | 'B') {
+    this.targetDeck = deck;
+  }
+
+  private async handleLoad(sample: LoopSample, deck: 'A' | 'B') {
     this.dispatchEvent(new CustomEvent('loop-load', {
-      detail: { sample, deck: this.targetDeck },
+      detail: { sample, deck },
       bubbles: true,
       composed: true
     }));
@@ -290,7 +321,12 @@ export class LoopLibraryPanel extends LitElement {
     return html`
       <div class="header">
         <span class="title">LOOP LIBRARY</span>
-        <span class="count">${this.samples.length} loops</span>
+        <div class="deck-selector">
+          <button class="deck-btn ${this.targetDeck === 'A' ? 'active' : ''}"
+                  @click="${() => this.setTargetDeck('A')}">A</button>
+          <button class="deck-btn ${this.targetDeck === 'B' ? 'active' : ''}"
+                  @click="${() => this.setTargetDeck('B')}">B</button>
+        </div>
       </div>
       
       <div class="list">
@@ -317,8 +353,11 @@ export class LoopLibraryPanel extends LitElement {
               
               ${this.selectedId === sample.id ? html`
                 <div class="item-actions">
-                  <button class="btn load" @click="${() => this.handleLoad(sample)}">
-                    LOAD → ${this.targetDeck}
+                  <button class="btn load" @click="${() => this.handleLoad(sample, 'A')}">
+                    → A
+                  </button>
+                  <button class="btn load" @click="${() => this.handleLoad(sample, 'B')}">
+                    → B
                   </button>
                   <button class="btn" @click="${(e: Event) => this.handleExport(sample, e)}">
                     WAV
