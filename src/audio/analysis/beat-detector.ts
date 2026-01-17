@@ -37,7 +37,7 @@ export class BeatDetector {
                 // Library returns candidates sorted by count (confidence)
                 bpm = candidates[0].tempo;
                 confidence = 0.9; // Library is generally high confidence
-                console.log(`[BeatDetector] Library Detected: ${bpm} BPM (Count: ${candidates[0].count})`);
+                if (import.meta.env.DEV) console.log(`[BeatDetector] Library Detected: ${bpm} BPM (Count: ${candidates[0].count})`);
             }
         } catch (e) {
             console.warn("[BeatDetector] Library analysis failed, falling back/defaulting", e);
@@ -154,12 +154,12 @@ export class BeatDetector {
                 
                 // Return start of the attack
                 const detectedOffset = attackIdx / sr;
-                console.log(`[BeatDetector] Found Offset: ${detectedOffset.toFixed(4)}s (Peak: ${(peakIdx/sr).toFixed(4)}s, Backtrack: ${k} samples, Val: ${data[attackIdx].toFixed(4)})`);
+                if (import.meta.env.DEV) console.log(`[BeatDetector] Found Offset: ${detectedOffset.toFixed(4)}s (Peak: ${(peakIdx/sr).toFixed(4)}s, Backtrack: ${k} samples, Val: ${data[attackIdx].toFixed(4)})`);
                 return detectedOffset;
             }
         }
         
-        console.warn(`[BeatDetector] No clear onset found. MaxVal: ${maxVal}`);
+        if (import.meta.env.DEV) console.warn(`[BeatDetector] No clear onset found. MaxVal: ${maxVal}`);
         return 0; // Default to 0 if no clear peak found
     }
 }

@@ -3,6 +3,17 @@ declare module '*?worker&url' {
   export default content;
 }
 
+// Vite environment types
+interface ImportMetaEnv {
+  readonly DEV: boolean;
+  readonly PROD: boolean;
+  readonly MODE: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 import { AudioEngine } from '../audio/engine';
 import { MidiManager } from '../midi/midi-manager';
 

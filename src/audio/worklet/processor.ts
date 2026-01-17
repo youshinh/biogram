@@ -318,6 +318,13 @@ class GhostProcessor extends AudioWorkletProcessor {
               Atomics.store(this.headerView!, OFFSETS.READ_POINTER_B / 4, newPtr);
           }
       }
+      
+      // Jump to specific position (for new track start)
+      if (event.data.type === 'SKIP_TO_POSITION') {
+          const { deck, position } = event.data;
+          const offset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;
+          Atomics.store(this.headerView!, offset / 4, Math.floor(position));
+      }
 
       if (event.data.type === 'CLEAR_BUFFER') {
           if (!this.audioData) return;
@@ -349,7 +356,8 @@ class GhostProcessor extends AudioWorkletProcessor {
               const absoluteIdx = relativeIdx + offsetStep;
               this.audioData[absoluteIdx] = 0;
           }
-          console.log(`[Processor] Cleared Buffer Tail for Deck ${deck}`);
+          // Performance: Disabled log in production (AudioWorklet doesn't have access to import.meta.env)
+          // console.log(`[Processor] Cleared Buffer Tail for Deck ${deck}`);
       }
     };
   }

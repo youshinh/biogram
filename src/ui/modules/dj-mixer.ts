@@ -29,13 +29,16 @@ export class DjMixer extends LitElement {
 
   connectedCallback() {
       super.connectedCallback();
+      // Performance: Changed from requestAnimationFrame to setInterval (500ms)
+      // Beat blinking doesn't need 60fps
       this.animateValues();
+      this.animId = window.setInterval(this.animateValues, 500);
       window.addEventListener('mixer-update', this.handleMidiUpdate);
   }
 
   disconnectedCallback() {
       super.disconnectedCallback();
-      cancelAnimationFrame(this.animId);
+      window.clearInterval(this.animId);
       window.removeEventListener('mixer-update', this.handleMidiUpdate);
   }
 
@@ -65,8 +68,6 @@ export class DjMixer extends LitElement {
   }
 
   private animateValues = () => {
-      this.animId = requestAnimationFrame(this.animateValues);
-      
       const engine = (window as any).engine;
       if (!engine || !engine.context) return;
       

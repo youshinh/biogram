@@ -12,6 +12,7 @@ export class DeckController extends LitElement {
   @property({ type: Boolean, reflect: true }) isPlaying = false; // Public for external sync
   @state() isSync = false;
   @state() prompt = "";
+  @state() generatedPrompt = ""; // Full prompt sent to AI (displayed on waveform)
   @state() bpm = 120.0;
   @state() isManaul = false;
 
@@ -72,7 +73,7 @@ export class DeckController extends LitElement {
       <div class="flex flex-col h-full w-full relative">
           <!-- VISUALIZER AREA -->
           <div class="flex-grow relative min-h-0 border-b border-white/5 bg-black/20">
-              <hydra-visualizer .deckId="${this.deckId}"></hydra-visualizer>
+              <hydra-visualizer .deckId="${this.deckId}" .currentPrompt="${this.generatedPrompt}"></hydra-visualizer>
               
               <!-- DECK LABEL OVERLAY -->
               <div class="absolute top-10 left-2 text-[4rem] font-black opacity-10 pointer-events-none select-none leading-none ${this.deckColorClass}">

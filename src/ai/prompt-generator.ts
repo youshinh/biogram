@@ -135,6 +135,95 @@ export const generatePrompt = (state: PromptState): string => {
     return parts.filter(p => p && p.trim().length > 0).join(", ");
 };
 
+/**
+ * Returns only the dynamic parameter parts for display (no fixed theme, BPM, or quality tags)
+ */
+export const getDisplayPromptParts = (state: PromptState): string[] => {
+    const {
+        valAmbient, valMinimal, valDub, valImpact, valColor,
+        typeTexture, typePulse,
+        deckId, deckPrompt, isSlamming
+    } = state;
+
+    const parts: string[] = [];
+
+    // SLAM
+    if (isSlamming) {
+        parts.push("SLAM: Distorted, Bitcrushed, Aggressive");
+    }
+
+    // Deck Personality
+    if (deckId === 'A') {
+        parts.push("BASS FOCUS");
+    } else {
+        parts.push("MELODY FOCUS");
+    }
+
+    // Minimal Mode
+    if (valMinimal === 0) {
+        parts.push("Orchestra Mode");
+    } else if (valMinimal <= 40) {
+        parts.push("Sparse clicks");
+    } else if (valMinimal <= 70) {
+        parts.push("Micro-house groove");
+    } else {
+        parts.push("IDM texture");
+    }
+
+    // Ambient
+    if (valAmbient <= 20) {
+        parts.push("Sparse");
+    } else if (valAmbient <= 60) {
+        parts.push("Warm pads");
+    } else {
+        parts.push("Wall of sound");
+    }
+
+    // Dub
+    if (valDub <= 20) {
+        parts.push("Dry");
+    } else if (valDub <= 60) {
+        parts.push("Dub chords");
+    } else {
+        parts.push("Infinite dub");
+    }
+
+    // Color
+    if (valColor <= 30) {
+        parts.push("Dark");
+    } else if (valColor <= 70) {
+        parts.push("Neutral");
+    } else {
+        parts.push("Bright");
+    }
+
+    // Impact/Kick
+    if (valImpact <= 30) {
+        parts.push("Soft kick");
+    } else if (valImpact <= 70) {
+        parts.push("Punchy kick");
+    } else {
+        parts.push("Industrial kick");
+    }
+
+    // Texture type
+    if (typeTexture && typeTexture !== 'Field Recordings Nature') {
+        parts.push(typeTexture);
+    }
+
+    // Pulse type
+    if (typePulse && typePulse !== 'Sub-bass Pulse') {
+        parts.push(typePulse);
+    }
+
+    // User Theme
+    if (deckPrompt && deckPrompt.trim().length > 0) {
+        parts.push(`"${deckPrompt}"`);
+    }
+
+    return parts;
+};
+
 export const generateNegativePrompt = (state: PromptState): string => {
     const { isSlamming, valMinimal, deckId } = state;
     

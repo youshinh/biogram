@@ -9,6 +9,7 @@ export class HydraVisualizer extends LitElement {
 
   @property({ type: String }) deckId = 'A';
   @property({ type: Object }) sab: SharedArrayBuffer | null = null;
+  @property({ type: String }) currentPrompt = ''; // Prompt to display on waveform
   
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
@@ -25,7 +26,13 @@ export class HydraVisualizer extends LitElement {
   
   // Spectrogram History
   private spectrogramHistory: Uint8Array[] = [];
-  private spectrogramWidth = 256; // History depth (columns) 
+  private spectrogramWidth = 256; // History depth (columns)
+  
+  // Performance: Cached ImageData for spectrogram
+  private spectrogramImageData: ImageData | null = null;
+  
+  // Performance: Cached DOM state to avoid unnecessary updates
+  private lastInfoState = { isGenerating: false, isScratching: false, totalTimeSec: 0 };
 
   firstUpdated() {
     this.canvas = this.querySelector('canvas');
@@ -220,15 +227,22 @@ export class HydraVisualizer extends LitElement {
         this.drawSpectrum(w, h, spectrum);
     }
     
-     // Time & Info
+     // Time & Info (Performance: Only update DOM when state changes)
      const totalSamples = w * this.zoomScale;
-     const totalTimeSec = totalSamples / 44100;
+     const totalTimeSec = Math.round(totalSamples / 44100 * 100) / 100; // Round to 2 decimals
      const infoEl = this.querySelector('.info-display');
      
      // Check GEN Status
      const isGenerating = engine.isGenerating(this.deckId) && (Date.now() % 1000 < 500); // Blink
      
-     if (infoEl) {
+     // Performance: Only update DOM if state actually changed
+     const stateChanged = 
+       this.lastInfoState.isGenerating !== isGenerating ||
+       this.lastInfoState.isScratching !== this.isScratching ||
+       Math.abs(this.lastInfoState.totalTimeSec - totalTimeSec) > 0.5; // Only update time display when significant
+     
+     if (infoEl && stateChanged) {
+         this.lastInfoState = { isGenerating, isScratching: this.isScratching, totalTimeSec };
          infoEl.innerHTML = `
             <div class="flex justify-between w-full">
                <span>BIO_WAVE // ${this.deckId}</span>
@@ -280,67 +294,86 @@ export class HydraVisualizer extends LitElement {
 
   private drawSpectrogram(w: number, h: number) {
     if (!this.ctx || this.spectrogramHistory.length === 0) return;
+    
+    // Performance: Use ImageData for batch pixel manipulation instead of fillRect
+    const imgW = Math.floor(w);
+    const imgH = Math.floor(h);
+    
+    // Create or resize ImageData cache
+    if (!this.spectrogramImageData || 
+        this.spectrogramImageData.width !== imgW || 
+        this.spectrogramImageData.height !== imgH) {
+      this.spectrogramImageData = this.ctx.createImageData(imgW, imgH);
+    }
+    
+    const data = this.spectrogramImageData.data;
+    
+    // Clear to transparent
+    data.fill(0);
+    
     const historyLen = this.spectrogramHistory.length;
-    const colWidth = w / this.spectrogramWidth;
+    const colWidth = imgW / this.spectrogramWidth;
     
     // Logarithmic Y-axis setup
-    const numRows = Math.floor(h); // Full resolution
-    const rowHeight = 1; // 1px rows
     const minFreq = 20;
-    const maxFreq = 22050; // Nyquist
+    const maxFreq = 22050;
     const logMin = Math.log10(minFreq);
     const logMax = Math.log10(maxFreq);
-    const scale = (logMax - logMin) / numRows;
-    const totalBins = this.spectrogramHistory[0].length; 
+    const scale = (logMax - logMin) / imgH;
+    const totalBins = this.spectrogramHistory[0].length;
     const freqPerBin = maxFreq / totalBins;
+
+    // Pre-calculate bin mappings (cache for performance)
+    const binMappings: { startBin: number; endBin: number }[] = new Array(imgH);
+    for (let row = 0; row < imgH; row++) {
+      const fStart = Math.pow(10, logMin + row * scale);
+      const fEnd = Math.pow(10, logMin + (row + 1) * scale);
+      let startBin = Math.floor(fStart / freqPerBin);
+      let endBin = Math.floor(fEnd / freqPerBin);
+      if (startBin < 0) startBin = 0;
+      if (endBin >= totalBins) endBin = totalBins - 1;
+      if (startBin > endBin) startBin = endBin;
+      binMappings[row] = { startBin, endBin };
+    }
 
     for (let col = 0; col < historyLen; col++) {
       const spectrum = this.spectrogramHistory[col];
-      const x = col * colWidth;
+      const xStart = Math.floor(col * colWidth);
+      const xEnd = Math.floor((col + 1) * colWidth);
       
-      for (let row = 0; row < numRows; row++) {
-          // Logarithmic Frequency Mapping
-          // row 0 = bottom = minFreq
-          const fStart = Math.pow(10, logMin + row * scale);
-          const fEnd = Math.pow(10, logMin + (row + 1) * scale);
-          
-          let startBin = Math.floor(fStart / freqPerBin);
-          let endBin = Math.floor(fEnd / freqPerBin);
-          
-          // Clamp
-          if (startBin < 0) startBin = 0;
-          if (endBin >= totalBins) endBin = totalBins - 1;
-          if (startBin > endBin) startBin = endBin;
-          
-          let value = 0;
-          
-          if (endBin === startBin) {
-              // Narrow band (Low Freq): Interpolate or take value?
-              // Just take value for crispness
-              value = spectrum[startBin];
-          } else {
-              // Wide band (High Freq): Max Pool (Peak Hold)
-              // To catch harmonics
-              let max = 0;
-              for (let b = startBin; b <= endBin; b++) {
-                  if (spectrum[b] > max) max = spectrum[b];
-              }
-              value = max;
+      for (let row = 0; row < imgH; row++) {
+        const { startBin, endBin } = binMappings[row];
+        
+        let value = 0;
+        if (endBin === startBin) {
+          value = spectrum[startBin];
+        } else {
+          // Max pool
+          let max = 0;
+          for (let b = startBin; b <= endBin; b++) {
+            if (spectrum[b] > max) max = spectrum[b];
           }
-          
-          // Threshold to keep background clean
-          if (value < 5) continue;
-          
-          const norm = value / 255.0;
-          const alpha = norm * 0.8; // Boost visibility
-          
-          this.ctx.fillStyle = `rgba(34, 211, 238, ${alpha})`; 
-          
-          // Draw from bottom up
-          const y = h - (row + 1);
-          this.ctx.fillRect(x, y, colWidth + 0.5, rowHeight + 0.5);
+          value = max;
+        }
+        
+        if (value < 5) continue;
+        
+        const alpha = Math.floor((value / 255.0) * 204); // 0.8 * 255 = 204
+        const y = imgH - 1 - row;
+        
+        // Draw pixels for this cell
+        for (let x = xStart; x < xEnd && x < imgW; x++) {
+          const idx = (y * imgW + x) * 4;
+          // Cyan color: rgb(34, 211, 238)
+          data[idx] = 34;      // R
+          data[idx + 1] = 211; // G
+          data[idx + 2] = 238; // B
+          data[idx + 3] = alpha; // A
+        }
       }
     }
+    
+    this.ctx.putImageData(this.spectrogramImageData, 0, 0);
   }
 
   private drawHead(w: number, h: number, mainHeadPos: number, targetHeadPos: number, color: string, alpha: number) {
@@ -423,6 +456,9 @@ export class HydraVisualizer extends LitElement {
   }
 
   render() {
+    // Display full prompt text, wrap to multiple lines
+    const promptColor = this.deckId === 'A' ? 'text-tech-cyan/60' : 'text-signal-emerald/60';
+    
     return html`
       <div class="relative w-full h-full bg-deep-void/50 overflow-hidden rounded-lg border border-white/5">
          <!-- Overlay Info -->
@@ -431,6 +467,15 @@ export class HydraVisualizer extends LitElement {
          </div>
          
          <canvas class="block w-full h-full touch-none cursor-crosshair"></canvas>
+         
+         <!-- Prompt Display Overlay -->
+         ${this.currentPrompt ? html`
+           <div class="absolute bottom-0 left-0 right-0 px-3 py-2 bg-gradient-to-t from-black/70 via-black/40 to-transparent pointer-events-none">
+             <div class="${promptColor} text-[12px] font-mono leading-relaxed tracking-wide select-none whitespace-pre-wrap">
+               ${this.currentPrompt}
+             </div>
+           </div>
+         ` : ''}
       </div>
     `;
   }

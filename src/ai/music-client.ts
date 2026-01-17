@@ -45,18 +45,22 @@ export class MusicClient {
     private pendingJump = false; // Flag to skip buffer on next chunk
     private isResetBuffering = false; // New: Wait for buffer to fill before jumping
     private resetBufferCount = 0;
-    private readonly RESET_THRESHOLD = 44100 * 3.0; // Wait for 3s of new audio
+    private resetStartWritePtr = 0; // Track where new audio started being written
+    private readonly RESET_THRESHOLD = 44100 * 1.5; // Wait for 1.5s of new audio (reduced from 3s)
+    
+    // Performance: Skip BPM detection if already have high confidence result
+    private hasHighConfidenceBpm = false;
     
     private deckId: 'A' | 'B';
     private onAnalysis?: (bpm: number, offset: number) => void;
-    private onTrackStart?: () => void;
+    private onTrackStart?: (startPosition: number) => void; // Now receives start position
 
     constructor(
         adapter: StreamAdapter, 
         apiKey: string, 
         deckId: 'A' | 'B' = 'A', 
         onAnalysis?: (bpm: number, offset: number) => void,
-        onTrackStart?: () => void
+        onTrackStart?: (startPosition: number) => void // Now receives start position
     ) {
         this.ai = new GoogleGenAI({ apiKey, apiVersion: 'v1alpha' });
         this.adapter = adapter;
@@ -100,10 +104,17 @@ export class MusicClient {
                             
                              // Handle Reset Buffering
                             if (this.isResetBuffering) {
+                                // Record the start position of new audio (first chunk after reset)
+                                if (this.resetBufferCount === 0) {
+                                    this.resetStartWritePtr = this.adapter.getWritePointer(this.deckId) - mono.length;
+                                }
+                                
                                 this.resetBufferCount += mono.length;
-                                // Need ~3s of data to ensure skipToLatest (WritePtr - 2s) lands safely in NEW data layer.
+                                // Wait for enough data to ensure smooth playback start
                                 if (this.resetBufferCount >= this.RESET_THRESHOLD) { 
-                                    console.log(`[MusicClient] Reset Threshold Met (${this.resetBufferCount} samples) -> Jumping`);
+                                    if (import.meta.env.DEV) {
+                                        console.log(`[MusicClient] Reset Threshold Met -> Jumping to start position`);
+                                    }
                                     this.pendingJump = true; 
                                     this.isResetBuffering = false; 
                                 }
@@ -111,7 +122,7 @@ export class MusicClient {
 
                             // Check for Pending Jump (Instant Playback)
                             if (this.pendingJump) {
-                                if (this.onTrackStart) this.onTrackStart();
+                                if (this.onTrackStart) this.onTrackStart(this.resetStartWritePtr);
                                 this.pendingJump = false;
                             }
 
@@ -159,20 +170,21 @@ export class MusicClient {
         this.savedChunksCount++;
 
         // Detect BPM (Experimental)
-        // Only run if simple energy is sufficient to avoid noise AND analysis is enabled
-        if (stats.energy > 0.05 && this.isAnalysisEnabled) {
+        // Performance: Skip if already have high confidence BPM, or low energy
+        if (stats.energy > 0.05 && this.isAnalysisEnabled && !this.hasHighConfidenceBpm) {
             try {
-                // Await the async analysis
                 const analysis = await BeatDetector.analyze(merged, 44100);
                 
-                console.log(`[BPM-DETECT:${this.deckId}] Detected: ${analysis.bpm} (Conf: ${analysis.confidence}) Offset: ${analysis.offset}`);
+                if (import.meta.env.DEV) {
+                    console.log(`[BPM-DETECT:${this.deckId}] Detected: ${analysis.bpm} (Conf: ${analysis.confidence})`);
+                }
                 
-                // Only use high confidence results
                 if (analysis.confidence > 0.5 && analysis.bpm > 0 && this.onAnalysis) {
-                     this.onAnalysis(analysis.bpm, analysis.offset);
+                    this.onAnalysis(analysis.bpm, analysis.offset);
+                    this.hasHighConfidenceBpm = true; // Skip further analysis until reset
                 }
             } catch (err) {
-                console.warn("Analysis failed", err);
+                if (import.meta.env.DEV) console.warn("Analysis failed", err);
             }
         }
     }
@@ -213,7 +225,8 @@ export class MusicClient {
         // Start Reset Mode
         this.isResetBuffering = true;
         this.resetBufferCount = 0;
-        console.log("[MusicClient] Clear Buffer -> Waiting for New Data...");
+        this.hasHighConfidenceBpm = false; // Reset BPM detection state
+        if (import.meta.env.DEV) console.log("[MusicClient] Clear Buffer -> Waiting for New Data...");
     }
 
     pause() {
@@ -245,7 +258,8 @@ export class MusicClient {
 
     private startHealthCheck() {
         if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
-        this.healthCheckInterval = window.setInterval(() => this.checkBufferHealth(), 100);
+        // Performance: Reduced from 100ms to 500ms for mobile
+        this.healthCheckInterval = window.setInterval(() => this.checkBufferHealth(), 500);
     }
 
     private lastPromptChange = 0;
@@ -274,14 +288,13 @@ export class MusicClient {
 
         // Pause Condition: Buffer > 12s AND NOT Bursting
         if (secondsBuffered > 12 && !this.isSmartPaused && !isBursting) {
-            console.log(`[SmartSaver] Buffer Full (${secondsBuffered.toFixed(1)}s). Pausing API.`);
+            if (import.meta.env.DEV) console.log(`[SmartSaver] Buffer Full (${secondsBuffered.toFixed(1)}s). Pausing API.`);
             this.session.pause();
             this.isSmartPaused = true;
         } 
         // Resume Condition: Buffer < 5s OR Bursting (Prompt Updated)
         else if ((secondsBuffered < 5 || isBursting) && this.isSmartPaused) {
-            console.log(`[SmartSaver] Buffer Low/Burst (${secondsBuffered.toFixed(1)}s). Resuming API.`);
-             // Force play call is safe?
+            if (import.meta.env.DEV) console.log(`[SmartSaver] Buffer Low/Burst (${secondsBuffered.toFixed(1)}s). Resuming API.`);
             this.session.play();
             this.isSmartPaused = false;
         }

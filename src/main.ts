@@ -22,7 +22,7 @@ import {
     mkOverlay, 
     mkSliderHelper 
 } from './ui/ui-helpers';
-import { generatePrompt, generateNegativePrompt, PromptState } from './ai/prompt-generator';
+import { generatePrompt, generateNegativePrompt, getDisplayPromptParts, PromptState } from './ai/prompt-generator';
 
 console.log("Prompt-DJ v2.0 'Ghost in the Groove' initializing...");
 
@@ -92,7 +92,7 @@ if (isVizMode) {
         };
         const promptA = generatePrompt(stateA);
         engine.updateAiPrompt('A', promptA, 1.0);
-        console.log(`[GEN A] ${promptA}`);
+        if (import.meta.env.DEV) console.log(`[GEN A] ${promptA}`);
 
         // DECK B
         const stateB = {
@@ -104,7 +104,7 @@ if (isVizMode) {
         };
         const promptB = generatePrompt(stateB);
         engine.updateAiPrompt('B', promptB, 1.0);
-        console.log(`[GEN B] ${promptB}`);
+        if (import.meta.env.DEV) console.log(`[GEN B] ${promptB}`);
     };
     
     // 1. HEADER (Navigation)
@@ -199,7 +199,7 @@ if (isVizMode) {
 
     window.addEventListener('deck-bpm-change', (e:any) => {
         const { deck, bpm } = e.detail;
-        console.log(`Deck ${deck} BPM: ${bpm}`);
+        if (import.meta.env.DEV) console.log(`Deck ${deck} BPM: ${bpm}`);
         engine.setDeckBpm(deck as 'A' | 'B', bpm);
     });
     
@@ -213,7 +213,7 @@ if (isVizMode) {
             // Let's enforce Play state to match user experience & fix UI Sync.
             if (deckEl) {
                 deckEl.isPlaying = true; // Update UI
-                console.log(`[UI SYNC] Set Deck ${deck} UI to PLAYING`);
+                if (import.meta.env.DEV) console.log(`[UI SYNC] Set Deck ${deck} UI to PLAYING`);
             } else {
                 console.warn(`[UI SYNC] Could not find deck element for ${deck}`);
             }
@@ -239,25 +239,25 @@ if (isVizMode) {
     // Shared Handler
     const handleLoadRandom = (e: CustomEvent) => {
         const deck = e.detail.deck as 'A' | 'B';
-        console.log(`[GEN HANDLER] Event received for Deck ${deck}`);
+        if (import.meta.env.DEV) console.log(`[GEN HANDLER] Event received for Deck ${deck}`);
 
         // Instant Reset Logic
         // If Deck is STOPPED, we want to clear the old buffer and start fresh.
         if (engine.isDeckStopped(deck)) {
-             console.log(`[GEN HANDLER] Deck ${deck} is STOPPED -> Clearing Buffer & Visuals`);
+             if (import.meta.env.DEV) console.log(`[GEN HANDLER] Deck ${deck} is STOPPED -> Clearing Buffer & Visuals`);
              engine.mute(deck); // FORCE MUTE
              engine.clearBuffer(deck);
              
              // Visual Clear
              if (deck === 'A') {
-                 console.log('[GEN HANDLER] Clearing Visualizer A');
+                 if (import.meta.env.DEV) console.log('[GEN HANDLER] Clearing Visualizer A');
                  deckA.clearVisualizer();
              } else {
-                 console.log('[GEN HANDLER] Clearing Visualizer B');
+                 if (import.meta.env.DEV) console.log('[GEN HANDLER] Clearing Visualizer B');
                  deckB.clearVisualizer();
              }
         } else {
-             console.log(`[GEN HANDLER] Deck ${deck} is PLAYING -> No forced clear.`);
+             if (import.meta.env.DEV) console.log(`[GEN HANDLER] Deck ${deck} is PLAYING -> No forced clear.`);
         }
         
         // Trigger Generation
@@ -271,7 +271,13 @@ if (isVizMode) {
         };
         const prompt = generatePrompt(state);
         engine.updateAiPrompt(deck, prompt, 1.0);
-        console.log(`[GEN ${deck} (Reset)] ${prompt}`);
+        
+        // Update deck to display the dynamic prompt parts on waveform
+        const targetDeck = deck === 'A' ? deckA : deckB;
+        const displayParts = getDisplayPromptParts(state);
+        targetDeck.generatedPrompt = displayParts.join(' • ');
+        
+        if (import.meta.env.DEV) console.log(`[GEN ${deck} (Reset)] ${prompt}`);
     };
 
     // Attach specifically to deck instances to avoid global bubbling confusion (though window bubbling should work if deckId is correct)

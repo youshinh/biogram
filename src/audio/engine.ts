@@ -44,24 +44,24 @@ export class AudioEngine {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
     
     this.musicClientA = new MusicClient(this.adapter, apiKey, 'A', (bpm, offset) => {
-        console.log(`[Engine] Auto-detected BPM for A: ${bpm}`);
+        if (import.meta.env.DEV) console.log(`[Engine] Auto-detected BPM for A: ${bpm}`);
         this.setDeckBpm('A', bpm);
         // Notify UI
         window.dispatchEvent(new CustomEvent('deck-bpm-update', { 
             detail: { deck: 'A', bpm: bpm, offset: offset } 
         }));
-    }, () => {
-        this.skipToLatest('A');
+    }, (startPosition: number) => {
+        this.skipToPosition('A', startPosition);
         setTimeout(() => this.unmute('A'), 150); // Delay unmute to ensure silence
     });
     this.musicClientB = new MusicClient(this.adapter, apiKey, 'B', (bpm, offset) => {
-        console.log(`[Engine] Auto-detected BPM for B: ${bpm}`);
+        if (import.meta.env.DEV) console.log(`[Engine] Auto-detected BPM for B: ${bpm}`);
         this.setDeckBpm('B', bpm);
         window.dispatchEvent(new CustomEvent('deck-bpm-update', { 
             detail: { deck: 'B', bpm: bpm, offset: offset } 
         }));
-    }, () => {
-        this.skipToLatest('B');
+    }, (startPosition: number) => {
+        this.skipToPosition('B', startPosition);
         setTimeout(() => this.unmute('B'), 150);
     });
   }
@@ -72,7 +72,7 @@ export class AudioEngine {
         await this.context.resume();
       }
 
-      console.log('Loading AudioWorklet from:', processorUrl);
+      if (import.meta.env.DEV) console.log('Loading AudioWorklet from:', processorUrl);
       await this.context.audioWorklet.addModule(processorUrl);
 
       this.workletNode = new AudioWorkletNode(this.context, 'ghost-processor', {
@@ -120,7 +120,7 @@ export class AudioEngine {
       // Output 2 -> Deck B Analyser
       this.workletNode.connect(this.analyserB, 2, 0);
 
-      console.log('AudioEngine Initialized');
+      if (import.meta.env.DEV) console.log('AudioEngine Initialized');
       
       // Start AI Connection
       // Note: Concurrent connections might be rate-limited, but let's try.
@@ -267,20 +267,20 @@ export class AudioEngine {
   private handleMessage(msg: MainThreadMessage) {
     switch (msg.type) {
         case 'INIT_COMPLETE':
-            console.log('Worklet confirmed initialization');
+            if (import.meta.env.DEV) console.log('Worklet confirmed initialization');
             break;
         case 'BUFFER_UNDERRUN':
             console.warn('Audio Buffer Underrun');
             break;
         default:
-            console.log('Worklet Message:', msg);
+            if (import.meta.env.DEV) console.log('Worklet Message:', msg);
             break;
     }
   }
 
   // Debug Method to write noise into buffer to verify playback
   testAudio() {
-    console.log('Injecting test noise into buffer...');
+    if (import.meta.env.DEV) console.log('Injecting test noise into buffer...');
     for (let i = 0; i < this.audioData.length; i += 100) {
         // Create a blip every 100 samples - Reduced volume
         this.audioData[i] = (Math.random() * 2 - 1) * 0.1;
@@ -327,7 +327,7 @@ export class AudioEngine {
       else this.syncB = true;
       
       const ratio = this.masterBpm / sourceBpm;
-      console.log(`Syncing Deck ${deck}: Source=${sourceBpm} -> Master=${this.masterBpm} (Speed=${ratio.toFixed(3)})`);
+      if (import.meta.env.DEV) console.log(`Syncing Deck ${deck}: Source=${sourceBpm} -> Master=${this.masterBpm} (Speed=${ratio.toFixed(3)})`);
       this.updateDspParam('SPEED', ratio, deck);
       
       // PHASE SYNC (Align to nearest beat)
@@ -367,7 +367,7 @@ export class AudioEngine {
       let targetPtr = currentBarStartSelf + (samplesPerBarSelf * barProgressOther);
       
       if (!isNaN(targetPtr)) {
-           console.log(`Bar Sync ${deck}: Ptr ${ptrSelf} -> ${targetPtr} (Phase ${barProgressOther.toFixed(2)})`);
+           if (import.meta.env.DEV) console.log(`Bar Sync ${deck}: Ptr ${ptrSelf} -> ${targetPtr} (Phase ${barProgressOther.toFixed(2)})`);
            Atomics.store(this.headerView, (deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B) / 4, Math.floor(targetPtr));
       }
   }
@@ -377,8 +377,18 @@ export class AudioEngine {
    */
   skipToLatest(deck: 'A' | 'B') {
       if (this.workletNode) {
-          console.log(`[Engine] Requesting Skip to Latest for ${deck}`);
+          if (import.meta.env.DEV) console.log(`[Engine] Requesting Skip to Latest for ${deck}`);
           this.workletNode.port.postMessage({ type: 'SKIP_TO_LATEST', deck });
+      }
+  }
+  
+  /**
+   * Jumps the playhead to a specific position (for new track start)
+   */
+  skipToPosition(deck: 'A' | 'B', position: number) {
+      if (this.workletNode) {
+          if (import.meta.env.DEV) console.log(`[Engine] Requesting Skip to Position ${position} for ${deck}`);
+          this.workletNode.port.postMessage({ type: 'SKIP_TO_POSITION', deck, position });
       }
   }
 
@@ -397,7 +407,7 @@ export class AudioEngine {
           this.offsetB = (this.offsetB + (beats * beatDur));
       }
       
-      console.log(`Grid Shift ${deck}: ${beats > 0 ? '+' : ''}${beats} beat(s)`);
+      if (import.meta.env.DEV) console.log(`Grid Shift ${deck}: ${beats > 0 ? '+' : ''}${beats} beat(s)`);
       
       // Notify UI for redraw
       window.dispatchEvent(new CustomEvent('deck-bpm-update', { 
@@ -408,7 +418,7 @@ export class AudioEngine {
   tapBpm(deck: 'A' | 'B') {
       // Basic TAP Logic placeholder
       // Could maintain a list of tap times
-      console.log(`TAP ${deck}`);
+      if (import.meta.env.DEV) console.log(`TAP ${deck}`);
   }
   
   unsyncDeck(deck: 'A' | 'B') {
@@ -486,7 +496,7 @@ export class AudioEngine {
   }
   
   clearBuffer(deck: 'A' | 'B') {
-      console.log(`[Engine] Clearing Buffer for Deck ${deck}`);
+      if (import.meta.env.DEV) console.log(`[Engine] Clearing Buffer for Deck ${deck}`);
       if (deck === 'A') this.musicClientA?.clearBuffer();
       else this.musicClientB?.clearBuffer();
       
