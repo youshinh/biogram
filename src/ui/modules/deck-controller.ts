@@ -83,6 +83,17 @@ export class DeckController extends LitElement {
               <div class="absolute top-10 left-2 text-[4rem] font-black opacity-10 pointer-events-none select-none leading-none ${this.deckColorClass}">
                   ${this.deckId}
               </div>
+              
+              <!-- SAVE ICON (bottom-right of waveform) -->
+              <button class="absolute bottom-2 right-2 w-8 h-8 rounded bg-zinc-900/80 border border-zinc-700 flex items-center justify-center hover:bg-zinc-800 hover:border-signal-emerald/50 active:scale-95 transition-all"
+                      @click="${this.saveLoop}"
+                      title="Save Loop">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-signal-emerald/70">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                      <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                      <polyline points="7 3 7 8 15 8"></polyline>
+                  </svg>
+              </button>
           </div>
 
           <!-- CONTROLS CONTAINER (Height 140px) -->
@@ -168,25 +179,19 @@ export class DeckController extends LitElement {
   }
 
   private renderToolsSection() {
-      // Height 120px, 3 buttons stacked
+      // Height 120px, 2 buttons stacked (SYNC square, GEN circle)
       return html`
-        <div class="shrink-0 w-[56px] h-[120px] flex flex-col gap-0.5 justify-center">
-             <!-- SYNC -->
-             <button class="w-full h-[38px] rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center text-[10px] font-bold font-mono ${this.isSync ? 'text-tech-cyan border-tech-cyan/50 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'text-zinc-500 hover:text-zinc-300'}"
+        <div class="shrink-0 w-[56px] h-[120px] flex flex-col gap-1 justify-center items-center">
+             <!-- SYNC (rounded square) -->
+             <button class="w-[52px] h-[52px] rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center text-[10px] font-bold font-mono ${this.isSync ? 'text-tech-cyan border-tech-cyan/50 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'text-zinc-500 hover:text-zinc-300'}"
                      @click="${this.toggleSync}">
                  SYNC
              </button>
              
-             <!-- GEN -->
-             <button class="w-full h-[38px] rounded-lg bg-zinc-800 border border-zinc-600 flex items-center justify-center text-[10px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 hover:border-zinc-500 shadow-sm active:scale-95 transition-all"
+             <!-- GEN (round button) -->
+             <button class="w-[52px] h-[52px] rounded-full bg-zinc-800 border border-zinc-600 flex items-center justify-center text-[10px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 hover:border-zinc-500 shadow-sm active:scale-95 transition-all"
                      @click="${this.loadRandom}">
                  GEN
-             </button>
-
-             <!-- SAVE -->
-             <button class="w-full h-[38px] rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center text-[10px] font-bold text-signal-emerald/70 hover:text-signal-emerald hover:bg-zinc-800 hover:border-signal-emerald/30 active:scale-95 transition-all"
-                     @click="${this.saveLoop}">
-                 SAVE
              </button>
         </div>
       `;
