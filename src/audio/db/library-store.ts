@@ -147,4 +147,75 @@ export class LibraryStore {
         if (!this.db) await this.init();
         return (await this.db?.count(this.SAMPLES_STORE)) || 0;
     }
+
+    // ============================================
+    // Tag Management
+    // ============================================
+
+    async updateSampleTags(id: string, tags: string[]): Promise<void> {
+        if (!this.db) await this.init();
+        const sample = await this.getSample(id);
+        if (!sample) return;
+        
+        sample.tags = tags;
+        await this.db?.put(this.SAMPLES_STORE, sample);
+        console.log(`[LoopLibrary] Updated tags for ${id}: ${tags.join(', ')}`);
+    }
+
+    async getAllTags(): Promise<string[]> {
+        if (!this.db) await this.init();
+        const samples = await this.getAllSamples();
+        const tagSet = new Set<string>();
+        samples.forEach(s => s.tags.forEach(t => tagSet.add(t)));
+        return Array.from(tagSet).sort();
+    }
+
+    // ============================================
+    // Recommendation (Vector Similarity)
+    // ============================================
+
+    /**
+     * Find samples similar to the given vector using Euclidean distance
+     * @param vector Target feature vector
+     * @param limit Max results to return
+     * @param excludeId Optional ID to exclude (e.g., currently playing sample)
+     * @param complementary If true, find opposite characteristics
+     */
+    async findSimilar(
+        vector: { brightness: number; energy: number; rhythm: number },
+        limit: number = 5,
+        excludeId?: string,
+        complementary: boolean = false
+    ): Promise<LoopSample[]> {
+        if (!this.db) await this.init();
+        const samples = await this.getAllSamples();
+        
+        // Calculate distance for each sample
+        const withDistance = samples
+            .filter(s => s.id !== excludeId)
+            .map(sample => {
+                let distance: number;
+                if (complementary) {
+                    // For complementary: look for opposite characteristics
+                    distance = Math.sqrt(
+                        Math.pow((1 - sample.vector.brightness) - vector.brightness, 2) +
+                        Math.pow((1 - sample.vector.energy) - vector.energy, 2) +
+                        Math.pow(sample.vector.rhythm - vector.rhythm, 2) // Keep rhythm similar
+                    );
+                } else {
+                    // Standard Euclidean distance
+                    distance = Math.sqrt(
+                        Math.pow(sample.vector.brightness - vector.brightness, 2) +
+                        Math.pow(sample.vector.energy - vector.energy, 2) +
+                        Math.pow(sample.vector.rhythm - vector.rhythm, 2)
+                    );
+                }
+                return { sample, distance };
+            });
+        
+        // Sort by distance (closest first)
+        withDistance.sort((a, b) => a.distance - b.distance);
+        
+        return withDistance.slice(0, limit).map(w => w.sample);
+    }
 }

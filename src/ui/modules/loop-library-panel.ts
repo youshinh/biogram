@@ -63,9 +63,65 @@ export class LoopLibraryPanel extends LitElement {
     }
 
     .list {
-      height: calc(100% - 40px);
+      height: calc(100% - 80px);
       overflow-y: auto;
       padding: 4px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 4px;
+      padding: 4px 8px;
+      background: #111;
+      border-bottom: 1px solid #222;
+    }
+
+    .toolbar-btn {
+      padding: 4px 8px;
+      background: #222;
+      border: 1px solid #333;
+      color: #666;
+      font-size: 9px;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.15s ease;
+    }
+
+    .toolbar-btn:hover {
+      background: #333;
+      color: #fff;
+    }
+
+    .toolbar-btn.active {
+      background: #10b981;
+      border-color: #10b981;
+      color: #000;
+    }
+
+    .tag-select {
+      flex: 1;
+      padding: 4px;
+      background: #222;
+      border: 1px solid #333;
+      color: #888;
+      font-size: 9px;
+      border-radius: 2px;
+    }
+
+    .item-tags {
+      display: flex;
+      gap: 4px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+
+    .tag {
+      padding: 1px 4px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 2px;
+      font-size: 8px;
+      color: #888;
     }
 
     .item {
@@ -199,7 +255,11 @@ export class LoopLibraryPanel extends LitElement {
   `;
 
   @state() private samples: LoopSample[] = [];
+  @state() private filteredSamples: LoopSample[] = [];
   @state() private selectedId: string | null = null;
+  @state() private availableTags: string[] = [];
+  @state() private selectedTag: string = '';
+  @state() private isRecommendMode: boolean = false;
   @property({ type: String }) targetDeck: 'A' | 'B' = 'A';
 
   private libraryStore: any = null;
@@ -215,8 +275,37 @@ export class LoopLibraryPanel extends LitElement {
       this.libraryStore = new LibraryStore();
       await this.libraryStore.init();
       this.samples = await this.libraryStore.getAllSamples();
+      this.filteredSamples = this.samples;
+      this.availableTags = await this.libraryStore.getAllTags();
     } catch (e) {
       console.error('[LoopLibrary] Failed to load:', e);
+    }
+  }
+
+  private filterByTag(tag: string) {
+    this.selectedTag = tag;
+    this.isRecommendMode = false;
+    if (!tag) {
+      this.filteredSamples = this.samples;
+    } else {
+      this.filteredSamples = this.samples.filter(s => s.tags.includes(tag));
+    }
+  }
+
+  private async showRecommendations() {
+    this.isRecommendMode = !this.isRecommendMode;
+    this.selectedTag = '';
+    
+    if (this.isRecommendMode) {
+      // Get current deck vector from engine
+      const engine = (window as any).engine;
+      if (engine && engine.getCurrentVector) {
+        const vector = engine.getCurrentVector(this.targetDeck);
+        this.filteredSamples = await this.libraryStore.findSimilar(vector, 10);
+        console.log('[LoopLibrary] Showing recommendations based on deck', this.targetDeck);
+      }
+    } else {
+      this.filteredSamples = this.samples;
     }
   }
 
@@ -329,16 +418,30 @@ export class LoopLibraryPanel extends LitElement {
         </div>
       </div>
       
+      <!-- TOOLBAR: Tag Filter + Recommend -->
+      <div class="toolbar">
+        <select class="tag-select" @change="${(e: any) => this.filterByTag(e.target.value)}">
+          <option value="">All Tags</option>
+          ${this.availableTags.map(tag => html`
+            <option value="${tag}" ?selected="${tag === this.selectedTag}">${tag}</option>
+          `)}
+        </select>
+        <button class="toolbar-btn ${this.isRecommendMode ? 'active' : ''}" 
+                @click="${this.showRecommendations}">
+          ✨ REC
+        </button>
+      </div>
+      
       <div class="list">
-        ${this.samples.length === 0 
+        ${this.filteredSamples.length === 0 
           ? html`
             <div class="empty">
-              <div class="empty-icon">💾</div>
-              <div>ライブラリが空です</div>
-              <div style="font-size: 9px; margin-top: 4px;">SAVEボタンでループを保存</div>
+              <div class="empty-icon">${this.isRecommendMode ? '✨' : '💾'}</div>
+              <div>${this.isRecommendMode ? '推薦なし' : 'ライブラリが空です'}</div>
+              <div style="font-size: 9px; margin-top: 4px;">${this.isRecommendMode ? 'デッキを再生してください' : 'SAVEボタンでループを保存'}</div>
             </div>
           `
-          : this.samples.map(sample => html`
+          : this.filteredSamples.map(sample => html`
             <div class="item ${this.selectedId === sample.id ? 'selected' : ''}"
                  @click="${() => this.handleSelect(sample.id)}">
               <div class="item-header">
@@ -349,6 +452,11 @@ export class LoopLibraryPanel extends LitElement {
                 <span>${this.formatDuration(sample.duration)}</span>
                 <span>${this.formatDate(sample.createdAt)}</span>
               </div>
+              ${sample.tags.length > 0 ? html`
+                <div class="item-tags">
+                  ${sample.tags.map(t => html`<span class="tag">${t}</span>`)}
+                </div>
+              ` : ''}
               <div class="item-prompt">${sample.prompt}</div>
               
               ${this.selectedId === sample.id ? html`

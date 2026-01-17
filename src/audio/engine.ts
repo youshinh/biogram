@@ -612,4 +612,47 @@ export class AudioEngine {
           console.log(`[Engine] Loaded sample to Deck ${deck}: ${sampleLength} samples (${(sampleLength/44100).toFixed(2)}s) at ${bpm} BPM`);
       }
   }
+
+  /**
+   * Get current audio characteristics from deck (for recommendation matching)
+   * Analyzes recent audio from the read buffer to extract features
+   */
+  getCurrentVector(deck: 'A' | 'B'): { brightness: number; energy: number; rhythm: number } {
+      const bufferSize = this.audioData.length / 2;
+      const deckOffset = deck === 'A' ? 0 : bufferSize;
+      const readPtrOffset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;
+      const currentPtr = Atomics.load(this.headerView, readPtrOffset / 4);
+      
+      // Analyze last ~2 seconds of audio
+      const samplesToAnalyze = Math.min(44100 * 2, bufferSize);
+      const startPtr = Math.max(0, currentPtr - samplesToAnalyze);
+      
+      let energy = 0;
+      let brightness = 0;
+      let zeroCrossings = 0;
+      
+      for (let i = 0; i < samplesToAnalyze; i++) {
+          const idx = ((startPtr + i) % bufferSize);
+          const sample = this.audioData[deckOffset + idx];
+          const absSample = Math.abs(sample);
+          
+          energy += absSample * absSample;
+          
+          // Count zero crossings for brightness estimation
+          if (i > 0) {
+              const prevIdx = ((startPtr + i - 1) % bufferSize);
+              const prevSample = this.audioData[deckOffset + prevIdx];
+              if (Math.sign(sample) !== Math.sign(prevSample)) {
+                  zeroCrossings++;
+              }
+          }
+      }
+      
+      // Normalize values to 0-1 range
+      energy = Math.min(1, Math.sqrt(energy / samplesToAnalyze) * 3); // Amplify for visibility
+      brightness = Math.min(1, (zeroCrossings / samplesToAnalyze) * 20); // Normalize
+      const rhythm = 0.5; // Placeholder - would need beat detection
+      
+      return { brightness, energy, rhythm };
+  }
 }

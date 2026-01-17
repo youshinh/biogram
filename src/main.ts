@@ -339,6 +339,12 @@ if (isVizMode) {
             return;
         }
 
+        // Prompt user for tags (optional)
+        const tagsInput = window.prompt('タグを入力 (カンマ区切り、省略可):', '');
+        const tags = tagsInput 
+            ? tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0)
+            : [];
+
         // Save to library
         try {
             const store = await getLibraryStore();
@@ -347,14 +353,14 @@ if (isVizMode) {
                 prompt,
                 duration: loopData.duration,
                 bpm: loopData.bpm,
-                tags: [],
+                tags,
                 vector: { brightness, energy, rhythm },
                 pcmData: loopData.pcmData
             });
-            console.log(`[SAVE HANDLER] Loop saved: ${name} (${loopData.duration.toFixed(1)}s @ ${loopData.bpm} BPM)`);
+            console.log(`[SAVE HANDLER] Loop saved: ${name} (${loopData.duration.toFixed(1)}s @ ${loopData.bpm} BPM) [Tags: ${tags.join(', ')}]`);
             
             // Visual feedback (could be enhanced with toast notification)
-            alert(`ループを保存しました: ${name}`);
+            alert(`ループを保存しました: ${name}${tags.length > 0 ? `\nタグ: ${tags.join(', ')}` : ''}`);
         } catch (err) {
             console.error('[SAVE HANDLER] Failed to save loop:', err);
             alert('保存に失敗しました');
