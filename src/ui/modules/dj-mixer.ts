@@ -175,9 +175,12 @@ export class DjMixer extends LitElement {
 
       return html`
          <div class="flex flex-col items-center w-full gap-1 flex-1 min-h-0 border-b border-white/5 last:border-0 py-1 ${bgClass}">
-             <!-- Top row: Label + Kill -->
+             <!-- Top row: Reset + Kill -->
              <div class="flex items-center justify-between w-full px-1">
-                 <span class="text-[10px] font-mono text-zinc-400 font-semibold">${band}</span>
+                 <button class="text-[8px] font-mono px-1 py-0.5 text-zinc-500 hover:text-white hover:bg-zinc-600 rounded transition-all"
+                         @click="${() => this.resetEq(deck, band)}">
+                     RESET
+                 </button>
                  <button class="btn-3d text-[8px] px-1.5 py-0.5 ${isKill ? killActive : `text-zinc-500 ${accent}`}"
                          @click="${() => this.toggleKill(deck, band)}">
                      KILL
@@ -206,6 +209,10 @@ export class DjMixer extends LitElement {
       this.requestUpdate();
       
       this.dispatchParam(`EQ_${deck}_${band}`, val);
+  }
+
+  private resetEq(deck: string, band: 'HI'|'MID'|'LOW') {
+      this.handleEq(deck, band, 1.0);
   }
 
   private toggleKill(deck: string, band: 'HI'|'MID'|'LOW') {
