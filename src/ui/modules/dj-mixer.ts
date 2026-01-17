@@ -167,11 +167,11 @@ export class DjMixer extends LitElement {
       const accent = deck === 'A' ? 'hover:text-tech-cyan hover:border-tech-cyan/50' : 'hover:text-signal-emerald hover:border-signal-emerald/50';
       const killActive = deck === 'A' ? 'bg-tech-cyan text-black border-tech-cyan shadow-[0_0_8px_rgba(6,182,212,0.5)]' : 'bg-signal-emerald text-black border-signal-emerald shadow-[0_0_8px_rgba(16,185,129,0.5)]';
       
-      // Band identification background (Monotone Gradients)
-      // HI: Lighter Grey (visible contrast), MID: Deep Grey, LOW: Black
-      const bgClass = band === 'HI' ? 'bg-gradient-to-b from-zinc-400/30 to-transparent' :
-                      band === 'MID' ? 'bg-gradient-to-b from-zinc-800/60 to-transparent' :
-                      'bg-gradient-to-b from-black to-transparent';
+      // Band identification background (Solid Gray - 3 distinct shades)
+      // HI: Light Gray, MID: Medium Gray, LOW: Dark Gray
+      const bgClass = band === 'HI' ? 'bg-zinc-600/40' :
+                      band === 'MID' ? 'bg-zinc-700/40' :
+                      'bg-zinc-800/40';
 
       return html`
          <div class="flex flex-col items-center w-full gap-1 flex-1 min-h-0 border-b border-white/5 last:border-0 py-1 ${bgClass}">
