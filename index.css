@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Oswald:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,7 +7,7 @@
 :root {
   background-color: #0a0a0c;
   color: #d4d4d8;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Comfortaa', sans-serif;
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -19,4 +19,73 @@ body {
   height: 100%;
   width: 100%;
   background: #0a0a0c;
+}
+
+/* Slider value font - bold, no slashed zeros */
+.slider-value {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 500;
+}
+
+/* OP-1 Style 3D Buttons */
+.btn-3d {
+  background: linear-gradient(180deg, #3a3a3a 0%, #252525 100%);
+  border: 1px solid #1a1a1a;
+  border-radius: 6px;
+  box-shadow: 
+    0 4px 0 #1a1a1a,
+    0 6px 10px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.1s ease;
+  cursor: pointer;
+}
+
+.btn-3d:hover {
+  background: linear-gradient(180deg, #454545 0%, #2a2a2a 100%);
+  box-shadow: 
+    0 4px 0 #1a1a1a,
+    0 6px 12px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.btn-3d:active {
+  transform: translateY(3px);
+  box-shadow: 
+    0 1px 0 #1a1a1a,
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Round 3D Button (Play/Stop style) */
+.btn-3d-round {
+  background: linear-gradient(180deg, #3a3a3a 0%, #1f1f1f 100%);
+  border: 2px solid #1a1a1a;
+  border-radius: 50%;
+  box-shadow: 
+    0 4px 0 #0f0f0f,
+    0 6px 12px rgba(0, 0, 0, 0.5),
+    inset 0 2px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+  transition: all 0.1s ease;
+  cursor: pointer;
+}
+
+.btn-3d-round:hover {
+  background: linear-gradient(180deg, #454545 0%, #252525 100%);
+}
+
+.btn-3d-round:active {
+  transform: translateY(3px);
+  box-shadow: 
+    0 1px 0 #0f0f0f,
+    0 2px 4px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.btn-3d-round.active {
+  background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%);
+  box-shadow: 
+    0 1px 0 #0f0f0f,
+    0 2px 4px rgba(0, 0, 0, 0.4),
+    inset 0 2px 4px rgba(0, 0, 0, 0.3);
 }

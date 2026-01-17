@@ -109,10 +109,18 @@ export class HydraVisualizer extends LitElement {
       if(engine) {
           if (this.wasPlaying) {
               engine.updateDspParam('SPEED', 1.0, this.deckId as 'A'|'B');
+              // Dispatch UI sync event to update deck controller
+              window.dispatchEvent(new CustomEvent('deck-play-sync', { 
+                  detail: { deck: this.deckId, playing: true }
+              }));
           } else {
               engine.updateDspParam('SCRATCH_SPEED', 0.0, this.deckId as 'A'|'B');
               // Ensure we stay stopped, forcing Engine to Stopped state
-              engine.setTapeStop(this.deckId as 'A'|'B', true); 
+              engine.setTapeStop(this.deckId as 'A'|'B', true);
+              // Dispatch UI sync event to update deck controller
+              window.dispatchEvent(new CustomEvent('deck-play-sync', { 
+                  detail: { deck: this.deckId, playing: false }
+              }));
           }
       }
   }
@@ -244,14 +252,8 @@ export class HydraVisualizer extends LitElement {
      if (infoEl && stateChanged) {
          this.lastInfoState = { isGenerating, isScratching: this.isScratching, totalTimeSec };
          infoEl.innerHTML = `
-            <div class="flex justify-between w-full">
-               <span>BIO_WAVE // ${this.deckId}</span>
-               <span>WIN: ${totalTimeSec.toFixed(2)}s</span>
-               <div class="flex gap-2">
-                   ${isGenerating ? '<span class="text-signal-emerald">GENERATING</span>' : ''}
-                   <span class="${this.isScratching ? 'text-signal-emerald animate-pulse' : ''}">${this.isScratching ? 'SCRATCHING' : 'MONITORING'}</span>
-               </div>
-            </div>
+            <span>WIN: ${totalTimeSec.toFixed(2)}s</span>
+            ${isGenerating ? '<span class="text-signal-emerald">GENERATING</span>' : ''}
          `;
      }
 
@@ -364,10 +366,10 @@ export class HydraVisualizer extends LitElement {
         // Draw pixels for this cell
         for (let x = xStart; x < xEnd && x < imgW; x++) {
           const idx = (y * imgW + x) * 4;
-          // Cyan color: rgb(34, 211, 238)
-          data[idx] = 34;      // R
-          data[idx + 1] = 211; // G
-          data[idx + 2] = 238; // B
+          // Dark gray color: rgb(60, 60, 60)
+          data[idx] = 60;      // R
+          data[idx + 1] = 60;  // G
+          data[idx + 2] = 60;  // B
           data[idx + 3] = alpha; // A
         }
       }
@@ -461,9 +463,8 @@ export class HydraVisualizer extends LitElement {
     
     return html`
       <div class="relative w-full h-full bg-deep-void/50 overflow-hidden rounded-lg border border-white/5">
-         <!-- Overlay Info -->
          <div class="info-display absolute top-0 left-0 right-0 p-2 text-[10px] font-mono text-zinc-500 bg-black/50 backdrop-blur-sm z-10 flex justify-between border-b border-white/5">
-            <span>initializing...</span>
+            <span></span>
          </div>
          
          <canvas class="block w-full h-full touch-none cursor-crosshair"></canvas>

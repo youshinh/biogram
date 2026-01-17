@@ -86,52 +86,52 @@ export class DjMixer extends LitElement {
       <div class="h-full w-full flex flex-col items-center p-2 overflow-hidden">
            
            <!-- MASTER BPM SECTION (Fixed) -->
-           <div class="flex-shrink-0 flex items-center gap-4 mb-2 p-2 rounded-xl bg-black/40 backdrop-blur-md border border-white/5 w-full justify-center shadow-lg">
-                <div class="w-2 h-2 rounded-full transition-all duration-75 ${this.beatActive ? 'bg-signal-emerald shadow-[0_0_10px_#10b981] scale-125' : 'bg-zinc-800'}"></div>
-                <div class="font-mono text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-zinc-200 to-zinc-500">
-                    ${this.bpm.toFixed(1)} <span class="text-xs text-zinc-600">BPM</span>
+           <div class="flex-shrink-0 flex items-center gap-4 mb-2 p-3 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 w-full justify-center shadow-lg">
+                <div class="w-3 h-3 rounded-full transition-all duration-75 ${this.beatActive ? 'bg-signal-emerald shadow-[0_0_12px_#10b981] scale-125' : 'bg-zinc-700'}"></div>
+                <div class="slider-value text-3xl text-white">
+                    ${Math.round(this.bpm)} <span class="text-sm text-zinc-400 font-sans font-normal">BPM</span>
                 </div>
                 <div class="flex flex-col gap-1">
-                    <button class="w-4 h-4 rounded-full border border-zinc-700 flex items-center justify-center text-[10px] text-zinc-500 hover:text-white hover:border-white transition-colors"
+                    <button class="w-6 h-6 rounded-full border border-zinc-600 flex items-center justify-center text-sm text-zinc-400 hover:text-white hover:border-white hover:bg-white/10 transition-all active:scale-95"
                             @click="${() => this.changeBpm(1)}">+</button>
-                    <button class="w-4 h-4 rounded-full border border-zinc-700 flex items-center justify-center text-[10px] text-zinc-500 hover:text-white hover:border-white transition-colors"
+                    <button class="w-6 h-6 rounded-full border border-zinc-600 flex items-center justify-center text-sm text-zinc-400 hover:text-white hover:border-white hover:bg-white/10 transition-all active:scale-95"
                             @click="${() => this.changeBpm(-1)}">-</button>
                 </div>
            </div>
 
            <!-- CROSSFADER (Fixed at top) -->
-           <div class="flex-shrink-0 w-full mb-2 p-2 rounded-xl bg-black/40 backdrop-blur-md border border-white/5 shadow-lg flex flex-col items-center">
-               <div class="text-[8px] tracking-[0.3em] text-zinc-600 mb-2 uppercase">Collider // X-Fader</div>
+           <div class="flex-shrink-0 w-full mb-2 p-3 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 shadow-lg flex flex-col items-center">
+               <div class="text-[10px] tracking-[0.3em] text-zinc-400 mb-2 uppercase font-semibold">Collider // X-Fader</div>
                
                <input type="range" 
-                      class="w-full h-2 bg-zinc-900 rounded-full appearance-none outline-none cursor-ew-resize accent-zinc-400 hover:accent-white active:accent-tech-cyan"
+                      class="w-full h-3 bg-zinc-800 rounded-full appearance-none outline-none cursor-ew-resize accent-zinc-300 hover:accent-white active:accent-tech-cyan [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(255,255,255,0.6)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-ew-resize"
                       min="0" max="1" step="0.01"
                       .value="${this.crossfader}"
                       @input="${this.handleCrossfader}" 
                />
                
-               <div class="flex justify-between w-full mt-2 text-[10px] font-bold font-mono opacity-50">
+               <div class="flex justify-between w-full mt-2 text-sm font-bold font-mono">
                    <span class="text-tech-cyan">A</span>
                    <span class="text-signal-emerald">B</span>
                </div>
            </div>
 
-           <!-- CHANNELS (Scrollable EQ Section) -->
-           <div class="flex-grow w-full grid grid-cols-2 gap-2 min-h-0 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-700/50 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600">
+           <!-- CHANNELS (Fixed width, no horizontal scroll) -->
+           <div class="flex-grow w-full grid grid-cols-2 gap-2 min-h-0 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-700/50 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600">
                <!-- DECK A STRIP -->
-               <div class="rounded-2xl border border-white/5 bg-black/20 p-2 flex flex-col items-center gap-2 group hover:border-tech-cyan/20 transition-colors">
-                   <div class="text-[10px] font-mono text-tech-cyan tracking-widest opacity-50 mb-1">CH.A</div>
+               <div class="rounded-2xl border border-tech-cyan/20 bg-black/30 p-2 flex flex-col items-center gap-1 group hover:border-tech-cyan/40 transition-colors min-w-0">
+                   <div class="text-xs font-mono text-tech-cyan tracking-widest font-bold">CH.A</div>
                    
-                   <!-- PRE-AMP -->
-                   <div class="flex gap-2 w-full justify-center border-b border-white/5 pb-2 mb-1">
-                       <bio-slider label="TRIM" .value="${this.trimA}" min="0" max="2" step="0.01" class="h-24 w-8"
+                   <!-- PRE-AMP Section -->
+                   <div class="flex gap-2 w-full justify-center border-b-2 border-white/10 pb-2 mb-2">
+                       <bio-slider label="TRIM" .value="${this.trimA}" min="0" max="2" step="0.01" class="h-24"
                                    @change="${(e: CustomEvent) => this.handlePreAmp('A', 'TRIM', e.detail)}"></bio-slider>
-                       <bio-slider label="DRV" .value="${this.driveA}" min="0" max="1" step="0.01" class="h-24 w-8"
+                       <bio-slider label="DRV" .value="${this.driveA}" min="0" max="1" step="0.01" class="h-24"
                                    @change="${(e: CustomEvent) => this.handlePreAmp('A', 'DRIVE', e.detail)}"></bio-slider>
                    </div>
                    
-                   <!-- EQ -->
-                   <div class="flex-grow flex flex-col justify-between w-full items-center gap-1">
+                   <!-- EQ Section -->
+                   <div class="flex-grow flex flex-col justify-start w-full items-center gap-2">
                        ${this.renderEqBand('A', 'HI', this.eqA.hi, this.killA.hi)}
                        ${this.renderEqBand('A', 'MID', this.eqA.mid, this.killA.mid)}
                        ${this.renderEqBand('A', 'LOW', this.eqA.low, this.killA.low)}
@@ -139,19 +139,19 @@ export class DjMixer extends LitElement {
                </div>
 
                <!-- DECK B STRIP -->
-               <div class="rounded-2xl border border-white/5 bg-black/20 p-2 flex flex-col items-center gap-2 group hover:border-signal-emerald/20 transition-colors">
-                   <div class="text-[10px] font-mono text-signal-emerald tracking-widest opacity-50 mb-1">CH.B</div>
+               <div class="rounded-2xl border border-signal-emerald/20 bg-black/30 p-2 flex flex-col items-center gap-1 group hover:border-signal-emerald/40 transition-colors min-w-0">
+                   <div class="text-xs font-mono text-signal-emerald tracking-widest font-bold">CH.B</div>
                    
-                   <!-- PRE-AMP -->
-                   <div class="flex gap-2 w-full justify-center border-b border-white/5 pb-2 mb-1">
-                       <bio-slider label="TRIM" .value="${this.trimB}" min="0" max="2" step="0.01" class="h-24 w-8"
+                   <!-- PRE-AMP Section -->
+                   <div class="flex gap-2 w-full justify-center border-b-2 border-white/10 pb-2 mb-2">
+                       <bio-slider label="TRIM" .value="${this.trimB}" min="0" max="2" step="0.01" class="h-24"
                                    @change="${(e: CustomEvent) => this.handlePreAmp('B', 'TRIM', e.detail)}"></bio-slider>
-                       <bio-slider label="DRV" .value="${this.driveB}" min="0" max="1" step="0.01" class="h-24 w-8"
+                       <bio-slider label="DRV" .value="${this.driveB}" min="0" max="1" step="0.01" class="h-24"
                                    @change="${(e: CustomEvent) => this.handlePreAmp('B', 'DRIVE', e.detail)}"></bio-slider>
                    </div>
                    
-                   <!-- EQ -->
-                   <div class="flex-grow flex flex-col justify-between w-full items-center gap-1">
+                   <!-- EQ Section -->
+                   <div class="flex-grow flex flex-col justify-start w-full items-center gap-2">
                        ${this.renderEqBand('B', 'HI', this.eqB.hi, this.killB.hi)}
                        ${this.renderEqBand('B', 'MID', this.eqB.mid, this.killB.mid)}
                        ${this.renderEqBand('B', 'LOW', this.eqB.low, this.killB.low)}
@@ -164,19 +164,21 @@ export class DjMixer extends LitElement {
 
   private renderEqBand(deck: 'A'|'B', band: 'HI'|'MID'|'LOW', val: number, isKill: boolean) {
       // Color based on deck
-      const accent = deck === 'A' ? 'hover:text-tech-cyan' : 'hover:text-signal-emerald';
-      const killActive = deck === 'A' ? 'bg-tech-cyan text-black border-tech-cyan' : 'bg-signal-emerald text-black border-signal-emerald';
+      const accent = deck === 'A' ? 'hover:text-tech-cyan hover:border-tech-cyan/50' : 'hover:text-signal-emerald hover:border-signal-emerald/50';
+      const killActive = deck === 'A' ? 'bg-tech-cyan text-black border-tech-cyan shadow-[0_0_8px_rgba(6,182,212,0.5)]' : 'bg-signal-emerald text-black border-signal-emerald shadow-[0_0_8px_rgba(16,185,129,0.5)]';
       
       return html`
-         <div class="flex flex-col items-center w-full gap-1 flex-1 min-h-0 border-b border-white/5 last:border-0 pb-1">
-             <div class="flex items-center justify-between w-full px-2">
-                 <span class="text-[8px] font-mono text-zinc-500 w-6 text-left">${band}</span>
-                 <button class="text-[8px] px-1 rounded border border-zinc-800 text-zinc-600 transition-colors ${isKill ? killActive : `hover:border-zinc-500 ${accent} hover:text-white`}"
+         <div class="flex flex-col items-center w-full gap-1 flex-1 min-h-0 border-b border-white/5 last:border-0 py-1">
+             <!-- Top row: Label + Kill -->
+             <div class="flex items-center justify-between w-full">
+                 <span class="text-[10px] font-mono text-zinc-400 font-semibold">${band}</span>
+                 <button class="btn-3d text-[8px] px-1.5 py-0.5 ${isKill ? killActive : `text-zinc-500 ${accent}`}"
                          @click="${() => this.toggleKill(deck, band)}">
-                     K
+                     KILL
                  </button>
              </div>
-             <bio-slider label="" .value="${val}" min="0" max="1.5" step="0.01" class="w-8 flex-grow"
+             <!-- Slider -->
+             <bio-slider label="" .value="${val}" min="0" max="1.5" step="0.01" class="w-full h-32"
                          @change="${(e: CustomEvent) => this.handleEq(deck, band, e.detail)}"></bio-slider>
          </div>
       `;

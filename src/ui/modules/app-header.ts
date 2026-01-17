@@ -13,8 +13,7 @@ export class AppHeader extends LitElement {
     return html`
       <div class="flex justify-between items-center border-b border-white/10 px-4 py-2 bg-black/90 backdrop-blur z-50 h-[40px]">
           <div class="flex items-baseline">
-              <h1 class="text-sm font-bold text-white tracking-[0.2em]">BIO:GRAM</h1>
-              <span class="text-[10px] text-zinc-500 ml-2 font-mono">v2.1</span>
+              <h1 class="text-sm font-bold text-white tracking-[0.2em]">Bio:gram</h1>
           </div>
           <div class="flex gap-2">
               <button 

@@ -67,14 +67,16 @@ export class BioSlider extends LitElement {
 
   render() {
     const percentage = ((this.value - this.min) / (this.max - this.min)) * 100;
+    // Normalize value to 0-100 range based on max
+    const displayValue = Math.round((this.value / this.max) * 100);
 
     return html`
-      <div class="flex flex-col items-center h-full min-h-[160px] w-12 group select-none touch-none"
+      <div class="flex flex-col items-center h-full w-full group select-none touch-none"
            @mouseenter=${() => this.isHovered = true}
            @mouseleave=${() => this.isHovered = false}>
            
         <!-- LABEL -->
-        <div class="text-[10px] font-mono text-zinc-500 mb-2 tracking-wider opacity-60 group-hover:opacity-100 transition-opacity uppercase text-center w-full truncate">
+        <div class="text-[11px] font-mono text-zinc-400 mb-2 tracking-wider opacity-80 group-hover:opacity-100 transition-opacity uppercase text-center w-full truncate font-semibold">
             ${this.label}
         </div>
 
@@ -85,15 +87,15 @@ export class BioSlider extends LitElement {
              @pointerup="${this.handlePointerUp}">
              
              <!-- Track Line -->
-             <div class="h-full w-[2px] bg-zinc-800 rounded-full bg-opacity-50"></div>
+             <div class="h-full w-[3px] bg-zinc-700/60 rounded-full"></div>
 
-             <!-- Active Fill (Optional, maybe for EQ) -->
-             <div class="absolute bottom-2 w-[2px] bg-zinc-600 rounded-full pointer-events-none transition-all duration-75 ease-out"
+             <!-- Active Fill -->
+             <div class="absolute bottom-2 w-[3px] bg-gradient-to-t from-zinc-500 to-zinc-400 rounded-full pointer-events-none transition-all duration-75 ease-out shadow-[0_0_6px_rgba(161,161,170,0.4)]"
                   style="height: calc(${percentage}% - 16px);"></div>
 
-             <!-- THUMB (Hidden by default, visible on hover/drag) -->
-             <div class="absolute w-8 h-1 bg-zinc-400 group-hover:bg-white rounded-sm shadow-[0_0_10px_rgba(255,255,255,0.5)] pointer-events-none transition-all duration-150 ease-out ${this.isDragging || this.isHovered ? 'scale-110 opacity-100' : 'opacity-0 scale-75'}"
-                  style="bottom: calc(${percentage}% - 0.5px);">
+             <!-- THUMB (Always visible with glow) -->
+             <div class="absolute w-10 h-1.5 bg-zinc-300 rounded-sm pointer-events-none transition-all duration-100 ease-out ${this.isDragging ? 'bg-white shadow-[0_0_12px_rgba(255,255,255,0.8)] scale-110' : this.isHovered ? 'bg-zinc-200 shadow-[0_0_8px_rgba(255,255,255,0.5)]' : 'shadow-[0_0_4px_rgba(255,255,255,0.3)]'}"
+                  style="bottom: calc(${percentage}% - 3px);">
              </div>
 
              <!-- HIT AREA (Invisible, wider) -->
@@ -101,8 +103,8 @@ export class BioSlider extends LitElement {
         </div>
 
         <!-- VALUE -->
-        <div class="mt-2 text-[10px] font-mono ${this.isDragging ? 'text-white' : 'text-zinc-600'} transition-colors">
-            ${this.value.toString().padStart(3, '0')}
+        <div class="slider-value mt-2 text-[14px] ${this.isDragging ? 'text-white' : 'text-zinc-400'} transition-colors">
+            ${displayValue.toString().padStart(3, '0')}
         </div>
       </div>
     `;

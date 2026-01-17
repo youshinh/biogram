@@ -36,12 +36,14 @@ export class DeckController extends LitElement {
       super.connectedCallback();
       window.addEventListener('deck-bpm-update', this.onBpmUpdate);
       window.addEventListener('deck-action', this.handleMidiAction);
+      window.addEventListener('deck-play-sync', this.onPlaySync);
   }
 
   disconnectedCallback() {
       super.disconnectedCallback();
       window.removeEventListener('deck-bpm-update', this.onBpmUpdate);
       window.removeEventListener('deck-action', this.handleMidiAction);
+      window.removeEventListener('deck-play-sync', this.onPlaySync);
   }
 
   private handleMidiAction = (e: any) => {
@@ -57,6 +59,14 @@ export class DeckController extends LitElement {
       const { deck, bpm } = e.detail;
       if (deck === this.deckId) {
           this.bpm = parseFloat(bpm.toFixed(1));
+          this.requestUpdate();
+      }
+  };
+
+  private onPlaySync = (e: any) => {
+      const { deck, playing } = e.detail;
+      if (deck === this.deckId) {
+          this.isPlaying = playing;
           this.requestUpdate();
       }
   };
@@ -84,8 +94,11 @@ export class DeckController extends LitElement {
           <!-- CONTROLS CONTAINER -->
           <div class="h-[80px] shrink-0 flex gap-1 p-1 bg-black/40 backdrop-blur-md">
               
-              <!-- LEFT GROUP (Transport or Tools based on Deck) -->
-              ${!isDeckA ? this.renderTransport() : this.renderTools()}
+              <!-- LEFT GROUP (Outer edge of screen) -->
+              ${isDeckA ? html`` : this.renderTransport()}
+
+              <!-- CENTER-LEFT: Tools for B (closer to mixer) -->
+              ${!isDeckA ? this.renderTools() : html``}
 
               <!-- CENTER: BPM & INPUT -->
               <div class="flex-grow flex flex-col gap-1 min-w-0">
@@ -126,8 +139,11 @@ export class DeckController extends LitElement {
                   </div>
               </div>
 
-              <!-- RIGHT GROUP (Tools or Transport based on Deck) -->
-              ${isDeckA ? this.renderTransport() : this.renderTools()}
+              <!-- CENTER-RIGHT: Tools for A (closer to mixer) -->
+              ${isDeckA ? this.renderTools() : html``}
+
+              <!-- RIGHT GROUP (Outer edge of screen) -->
+              ${isDeckA ? this.renderTransport() : html``}
           </div>
       </div>
     `;
@@ -135,12 +151,12 @@ export class DeckController extends LitElement {
 
   private renderTransport() {
       return html`
-        <div class="w-[70px] flex flex-col gap-1">
-             <button class="flex-grow flex items-center justify-center border border-white/10 rounded overflow-hidden transition-all duration-150 active:scale-95 ${this.isPlaying ? 'bg-white/10 border-white/20' : 'bg-black/30 hover:bg-white/5'}"
+        <div class="w-[70px] flex flex-col gap-1 items-center">
+             <button class="btn-3d-round w-14 h-14 flex items-center justify-center ${this.isPlaying ? 'active' : ''}"
                      @click="${this.togglePlay}">
                   ${this.isPlaying 
-                    ? html`<div class="w-3 h-3 bg-white shadow-[0_0_10px_white]"></div>` // Stop Square? Or Pause. Let's do Stop/Pause aesthetic
-                    : html`<div class="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-zinc-400 border-b-[6px] border-b-transparent ml-1 group-hover:border-l-white"></div>` // Play Triangle
+                    ? html`<div class="w-4 h-4 bg-zinc-300 rounded-sm shadow-[0_0_8px_rgba(255,255,255,0.3)]"></div>`
+                    : html`<div class="w-0 h-0 border-t-[8px] border-t-transparent border-l-[14px] border-l-zinc-400 border-b-[8px] border-b-transparent ml-1"></div>`
                   }
              </button>
              <div class="text-[8px] text-center font-mono text-zinc-600 tracking-widest uppercase">
@@ -152,12 +168,12 @@ export class DeckController extends LitElement {
 
   private renderTools() {
       return html`
-         <div class="w-[50px] flex flex-col gap-1">
-             <button class="flex-1 border border-white/10 rounded text-[10px] font-mono transition-colors ${this.isSync ? 'bg-tech-cyan/20 text-tech-cyan border-tech-cyan/50 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'}"
+         <div class="w-[55px] flex flex-col gap-2">
+             <button class="btn-3d flex-1 flex items-center justify-center text-[10px] font-mono ${this.isSync ? 'text-tech-cyan' : 'text-zinc-500'}"
                      @click="${this.toggleSync}">
                  SYNC
              </button>
-             <button class="flex-1 border border-white/10 rounded text-[10px] font-mono text-zinc-500 hover:text-signal-emerald hover:border-signal-emerald/50 transition-colors"
+             <button class="btn-3d flex-1 flex items-center justify-center text-[10px] font-mono text-zinc-500 hover:text-signal-emerald"
                      @click="${this.loadRandom}">
                  GEN
              </button>
