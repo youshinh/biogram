@@ -39,14 +39,30 @@ export class MusicClient {
     private archiveSampleCount = 0;
     private readonly ARCHIVE_THRESHOLD = 44100 * 4; // ~4 seconds chunk size
     private savedChunksCount = 0;
+    
+    // Control Flags
+    public isAnalysisEnabled = true; // Gate BPM detection (only analyze when playing)
+    private pendingJump = false; // Flag to skip buffer on next chunk
+    private isResetBuffering = false; // New: Wait for buffer to fill before jumping
+    private resetBufferCount = 0;
+    private readonly RESET_THRESHOLD = 44100 * 3.0; // Wait for 3s of new audio
+    
     private deckId: 'A' | 'B';
     private onAnalysis?: (bpm: number, offset: number) => void;
+    private onTrackStart?: () => void;
 
-    constructor(adapter: StreamAdapter, apiKey: string, deckId: 'A' | 'B' = 'A', onAnalysis?: (bpm: number, offset: number) => void) {
+    constructor(
+        adapter: StreamAdapter, 
+        apiKey: string, 
+        deckId: 'A' | 'B' = 'A', 
+        onAnalysis?: (bpm: number, offset: number) => void,
+        onTrackStart?: () => void
+    ) {
         this.ai = new GoogleGenAI({ apiKey, apiVersion: 'v1alpha' });
         this.adapter = adapter;
         this.deckId = deckId;
         this.onAnalysis = onAnalysis;
+        this.onTrackStart = onTrackStart;
         this.library = new LibraryStore();
         this.library.init().then(() => {
              this.library.getCount().then(c => this.savedChunksCount = c || 0);
@@ -81,6 +97,23 @@ export class MusicClient {
                             
                             // 1. Playback
                             this.adapter.writeChunk(mono, this.deckId);
+                            
+                             // Handle Reset Buffering
+                            if (this.isResetBuffering) {
+                                this.resetBufferCount += mono.length;
+                                // Need ~3s of data to ensure skipToLatest (WritePtr - 2s) lands safely in NEW data layer.
+                                if (this.resetBufferCount >= this.RESET_THRESHOLD) { 
+                                    console.log(`[MusicClient] Reset Threshold Met (${this.resetBufferCount} samples) -> Jumping`);
+                                    this.pendingJump = true; 
+                                    this.isResetBuffering = false; 
+                                }
+                            }
+
+                            // Check for Pending Jump (Instant Playback)
+                            if (this.pendingJump) {
+                                if (this.onTrackStart) this.onTrackStart();
+                                this.pendingJump = false;
+                            }
 
                             // 2. Ghost System Archiving
                             this.archiveBuffer.push(mono);
@@ -126,14 +159,20 @@ export class MusicClient {
         this.savedChunksCount++;
 
         // Detect BPM (Experimental)
-        // Only run if simple energy is sufficient to avoid noise
-        if (stats.energy > 0.05) {
-            const beatInfo = BeatDetector.analyze(merged);
-            console.log(`[BPM-DETECT:${this.deckId}] Detected: ${beatInfo.bpm} (Conf: ${beatInfo.confidence}) Offset: ${beatInfo.offset}`);
-            
-            // Invoke callback if confidence is decent
-            if (beatInfo.bpm > 60 && beatInfo.bpm < 200 && this.onAnalysis) {
-                this.onAnalysis(beatInfo.bpm, beatInfo.offset);
+        // Only run if simple energy is sufficient to avoid noise AND analysis is enabled
+        if (stats.energy > 0.05 && this.isAnalysisEnabled) {
+            try {
+                // Await the async analysis
+                const analysis = await BeatDetector.analyze(merged, 44100);
+                
+                console.log(`[BPM-DETECT:${this.deckId}] Detected: ${analysis.bpm} (Conf: ${analysis.confidence}) Offset: ${analysis.offset}`);
+                
+                // Only use high confidence results
+                if (analysis.confidence > 0.5 && analysis.bpm > 0 && this.onAnalysis) {
+                     this.onAnalysis(analysis.bpm, analysis.offset);
+                }
+            } catch (err) {
+                console.warn("Analysis failed", err);
             }
         }
     }
@@ -161,9 +200,20 @@ export class MusicClient {
                 weightedPrompts: [{ text, weight }]
             });
             console.log(`MusicClient: Prompt updated: ${text}`);
+            this.lastPromptChange = Date.now(); // Trigger Burst Mode
+            // We rely on onTrackStart to jump, but if we want strictly "Reset" behavior, 
+            // we will handle it in clearBuffer via Engine.
+            // this.pendingJump = true; // REMOVED to prevent clicking on slider drag 
         } catch(e) {
             console.warn("MusicClient: Failed to update prompt", e);
         }
+    }
+    
+    clearBuffer() {
+        // Start Reset Mode
+        this.isResetBuffering = true;
+        this.resetBufferCount = 0;
+        console.log("[MusicClient] Clear Buffer -> Waiting for New Data...");
     }
 
     pause() {
@@ -198,6 +248,8 @@ export class MusicClient {
         this.healthCheckInterval = window.setInterval(() => this.checkBufferHealth(), 100);
     }
 
+    private lastPromptChange = 0;
+
     private checkBufferHealth() {
         if (!this.isConnected || !this.session) return;
 
@@ -205,20 +257,31 @@ export class MusicClient {
         const read = this.adapter.getReadPointer(this.deckId);
         
         // Assuming linear pointers (safe for long duration)
+        // Note: write/read are strictly increasing in AudioEngine/Adapter logic?
+        // Let's verify: AudioEngine uses modulo for audioData access, but the pointers in SAB (header) are monotonic?
+        // Yes, processor.ts increments them monotonically: ptrA += velA.
+        // So subtraction is valid.
         const samplesBuffered = write - read;
         const secondsBuffered = samplesBuffered / 44100; // Mono
         
         // Target: 12s = 100% (User requested lower latency)
-        // Ideally 10-15s is good balance between responsiveness and safety.
         this.bufferHealth = Math.min(100, Math.max(0, (secondsBuffered / 12) * 100));
 
         // Logic
-        if (secondsBuffered > 12 && !this.isSmartPaused) {
+        const now = Date.now();
+        const timeSincePrompt = now - this.lastPromptChange;
+        const isBursting = timeSincePrompt < 5000; // Allow 5s burst after prompt change including GEN button
+
+        // Pause Condition: Buffer > 12s AND NOT Bursting
+        if (secondsBuffered > 12 && !this.isSmartPaused && !isBursting) {
             console.log(`[SmartSaver] Buffer Full (${secondsBuffered.toFixed(1)}s). Pausing API.`);
             this.session.pause();
             this.isSmartPaused = true;
-        } else if (secondsBuffered < 5 && this.isSmartPaused) {
-            console.log(`[SmartSaver] Buffer Low (${secondsBuffered.toFixed(1)}s). Resuming API.`);
+        } 
+        // Resume Condition: Buffer < 5s OR Bursting (Prompt Updated)
+        else if ((secondsBuffered < 5 || isBursting) && this.isSmartPaused) {
+            console.log(`[SmartSaver] Buffer Low/Burst (${secondsBuffered.toFixed(1)}s). Resuming API.`);
+             // Force play call is safe?
             this.session.play();
             this.isSmartPaused = false;
         }

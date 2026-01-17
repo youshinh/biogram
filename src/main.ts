@@ -22,6 +22,7 @@ import {
     mkOverlay, 
     mkSliderHelper 
 } from './ui/ui-helpers';
+import { generatePrompt, generateNegativePrompt, PromptState } from './ai/prompt-generator';
 
 console.log("Prompt-DJ v2.0 'Ghost in the Groove' initializing...");
 
@@ -59,6 +60,52 @@ if (isVizMode) {
     viewContainer.style.overflow = 'hidden';
     viewContainer.style.display = 'flex';
     viewContainer.style.flexDirection = 'column';
+
+    // --- PROMPT STATE MANAGEMENT (Centralized) ---
+    // Central State (UI Values are shared, Context is per-deck)
+    const uiState = {
+        valAmbient: 0,
+        valMinimal: 0,
+        valDub: 0,
+        valImpact: 0,
+        valColor: 0,
+        typeTexture: 'Field Recordings Nature', 
+        valTexture: 0, 
+        typePulse: 'Sub-bass Pulse',
+        valPulse: 0,
+        theme: ""
+    };
+
+    let isSlamming = false;
+
+    // Helper to Regenerate and Send
+    const updatePrompts = () => {
+        const currentBpm = engine.masterBpm; 
+
+        // DECK A
+        const stateA = {
+            ...uiState,
+            deckId: 'A' as const,
+            deckPrompt: uiState.theme,
+            currentBpm,
+            isSlamming
+        };
+        const promptA = generatePrompt(stateA);
+        engine.updateAiPrompt('A', promptA, 1.0);
+        console.log(`[GEN A] ${promptA}`);
+
+        // DECK B
+        const stateB = {
+            ...uiState,
+            deckId: 'B' as const,
+            deckPrompt: uiState.theme,
+            currentBpm,
+            isSlamming
+        };
+        const promptB = generatePrompt(stateB);
+        engine.updateAiPrompt('B', promptB, 1.0);
+        console.log(`[GEN B] ${promptB}`);
+    };
     
     // 1. HEADER (Navigation)
     const header = document.createElement('app-header');
@@ -96,7 +143,7 @@ if (isVizMode) {
     // -- Mount UI Modules (to shell) --
 
     // 0. Deck A
-    const deckA = document.createElement('deck-controller');
+    const deckA = document.createElement('deck-controller') as DeckController;
     deckA.deckId = "A";
     deckA.slot = 'deck-a';
     shell.appendChild(deckA);
@@ -133,7 +180,7 @@ if (isVizMode) {
     shell.appendChild(mixer);
 
     // 2. Deck B
-    const deckB = document.createElement('deck-controller');
+    const deckB = document.createElement('deck-controller') as DeckController;
     deckB.deckId = "B";
     deckB.slot = 'deck-b';
     shell.appendChild(deckB);
@@ -158,10 +205,23 @@ if (isVizMode) {
     
     window.addEventListener('deck-sync-toggle', (e:any) => {
         const { deck, sync } = e.detail;
+        // Access specific instances directly to guarantee correctness
+        const deckEl = deck === 'A' ? deckA : deckB;
+        
         if (sync) {
+            // Sync implies Play in this workflow? User says "auto plays".
+            // Let's enforce Play state to match user experience & fix UI Sync.
+            if (deckEl) {
+                deckEl.isPlaying = true; // Update UI
+                console.log(`[UI SYNC] Set Deck ${deck} UI to PLAYING`);
+            } else {
+                console.warn(`[UI SYNC] Could not find deck element for ${deck}`);
+            }
+            engine.setTapeStop(deck as 'A' | 'B', false); // Update Engine check
             engine.syncDeck(deck as 'A' | 'B');
         } else {
             engine.unsyncDeck(deck as 'A' | 'B');
+            // Do we stop on unsync? Usually no, just decouple.
         }
     });
 
@@ -172,38 +232,53 @@ if (isVizMode) {
 
     window.addEventListener('deck-prompt-change', (e: any) => {
         const { deck, prompt } = e.detail;
-        engine.updateAiPrompt(deck as 'A' | 'B', prompt, 1.0);
+        uiState.theme = prompt; // Use as theme
+        updatePrompts();
     });
 
-    window.addEventListener('deck-load-random', (e: any) => {
-        const { deck } = e.detail;
-        
-        // Debug: Check API Key
-        // @ts-ignore
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-            alert("⚠️ API KEY MISSING\n\nPlease set VITE_GEMINI_API_KEY in .env.local to generate audio.");
-            console.error("GEN Error: No API Key found.");
-            return;
-        }
+    // Shared Handler
+    const handleLoadRandom = (e: CustomEvent) => {
+        const deck = e.detail.deck as 'A' | 'B';
+        console.log(`[GEN HANDLER] Event received for Deck ${deck}`);
 
-        const genres = [
-            "Acid Techno 135BPM", "Deep House 122BPM", "Drum and Bass 174BPM", 
-            "Dub Techno 120BPM", "Industrial Techno 140BPM", "Minimal Microhouse 125BPM",
-            "Ambient Drone", "Lo-Fi Hip Hop", "Breakbeat Hardcore"
-        ];
-        const randomGenre = genres[Math.floor(Math.random() * genres.length)];
-        console.log(`Deck ${deck} Random Load: ${randomGenre}`);
-        
-        // Parse BPM if present to pre-set Deck BPM
-        const bpmMatch = randomGenre.match(/(\d+)BPM/);
-        if (bpmMatch) {
-            const bpm = parseInt(bpmMatch[1]);
-            engine.setDeckBpm(deck as 'A' | 'B', bpm);
+        // Instant Reset Logic
+        // If Deck is STOPPED, we want to clear the old buffer and start fresh.
+        if (engine.isDeckStopped(deck)) {
+             console.log(`[GEN HANDLER] Deck ${deck} is STOPPED -> Clearing Buffer & Visuals`);
+             engine.mute(deck); // FORCE MUTE
+             engine.clearBuffer(deck);
+             
+             // Visual Clear
+             if (deck === 'A') {
+                 console.log('[GEN HANDLER] Clearing Visualizer A');
+                 deckA.clearVisualizer();
+             } else {
+                 console.log('[GEN HANDLER] Clearing Visualizer B');
+                 deckB.clearVisualizer();
+             }
+        } else {
+             console.log(`[GEN HANDLER] Deck ${deck} is PLAYING -> No forced clear.`);
         }
         
-        engine.updateAiPrompt(deck as 'A' | 'B', randomGenre, 1.0);
-    });
+        // Trigger Generation
+        const currentBpm = engine.masterBpm;
+        const state = {
+            ...uiState,
+            deckId: deck,
+            deckPrompt: uiState.theme,
+            currentBpm,
+            isSlamming
+        };
+        const prompt = generatePrompt(state);
+        engine.updateAiPrompt(deck, prompt, 1.0);
+        console.log(`[GEN ${deck} (Reset)] ${prompt}`);
+    };
+
+    // Attach specifically to deck instances to avoid global bubbling confusion (though window bubbling should work if deckId is correct)
+    deckA.addEventListener('deck-load-random', handleLoadRandom as EventListener);
+    deckB.addEventListener('deck-load-random', handleLoadRandom as EventListener);
+    
+    // Also keep window listener for other events, but remove the global 'deck-load-random' block.
 
 
 
@@ -211,38 +286,85 @@ if (isVizMode) {
     const controlsContainer = document.createElement('div');
     controlsContainer.slot = 'controls';
     controlsContainer.style.display = 'grid';
-    controlsContainer.style.gridTemplateColumns = 'repeat(6, 1fr)';
-    controlsContainer.style.gap = '8px';
-    controlsContainer.style.height = '100%';
-    
-    // --- AI PARAMETER GRID (6 SLOTS) ---
-    // Slot 1: AMBIENT
-    controlsContainer.appendChild(createAiSlider('AMBIENT', 'Deep Ambient Drone Atmosphere', engine));
-    
-    // Slot 2: MINIMAL
-    controlsContainer.appendChild(createAiSlider('MINIMAL', 'Minimal Tech Micro-house Glitch', engine));
-    
-    // Slot 3: DUB
-    controlsContainer.appendChild(createAiSlider('DUB', 'Basic Channel Dub Techno Chords', engine));
+    // (State definitions moved to top)
 
-    // Slot 4: TEXTURE
+
+
+    // --- AI PARAMETER GRID (7 SLOTS + Custom) ---
+    // Grid Need: 8 slots? 
+    // Current layout: 'repeat(6, 1fr)'. We need more space or redefine.
+    // User asked for "7 UI parameters" + Custom.
+    // Ambient, Minimal, Dub, Impact, Color (5 Sliders)
+    // Texture (Combo)
+    // Pulse (Combo)
+    // Custom (Combo/Input)
+    // Total 8 slots. 4 columns x 2 rows? Or 8 columns?
+    // Let's try 8 columns for now to fit wide.
+    controlsContainer.style.gridTemplateColumns = 'repeat(8, 1fr)';
+
+    // 1. AMBIENT
+    controlsContainer.appendChild(createAiSlider('AMBIENT', (v) => {
+        uiState.valAmbient = v;
+        updatePrompts();
+    }));
+    
+    // 2. MINIMAL
+    controlsContainer.appendChild(createAiSlider('MINIMAL', (v) => {
+        uiState.valMinimal = v;
+        updatePrompts();
+    }));
+    
+    // 3. DUB
+    controlsContainer.appendChild(createAiSlider('DUB', (v) => {
+        uiState.valDub = v;
+        updatePrompts();
+    }));
+
+    // 4. IMPACT (New)
+    controlsContainer.appendChild(createAiSlider('IMPACT', (v) => {
+        uiState.valImpact = v;
+        updatePrompts();
+    }));
+
+    // 5. COLOR (New)
+    controlsContainer.appendChild(createAiSlider('COLOR', (v) => {
+        uiState.valColor = v;
+        updatePrompts();
+    }));
+
+    // 6. TEXTURE (Combo)
     controlsContainer.appendChild(createComboSlot('TEXTURE', [
         'Field Recordings Nature', 
         'Industrial Factory Drone', 
         'Tape Hiss Lo-Fi', 
         'Underwater Hydrophone'
-    ], engine));
+    ], (sel, val) => {
+        uiState.typeTexture = sel;
+        uiState.valTexture = val; // Note: Spec says Ambient overrides intensity in text, but we store it just in case logic needs it
+        updatePrompts();
+    }));
 
-    // Slot 5: RHYTHM
-    controlsContainer.appendChild(createComboSlot('RHYTHM', [
+    // 7. PULSE (Renamed from RHYTHM)
+    controlsContainer.appendChild(createComboSlot('PULSE', [
         'Sub-bass Pulse', 
         'Granular Clicks', 
         'Deep Dub Tech Rhythm', 
         'Industrial Micro-beats'
-    ], engine));
+    ], (sel, val) => {
+        uiState.typePulse = sel;
+        uiState.valPulse = val;
+        updatePrompts();
+    }));
 
-    // Slot 6: CUSTOM INPUT
-    controlsContainer.appendChild(createCustomSlot(engine));
+    // 8. CUSTOM
+    controlsContainer.appendChild(createCustomSlot((text, val) => {
+        uiState.theme = text;
+        // val is 0-100, might imply theme weight?
+        // Spec says "deckPrompt (Theme)" is strictly the text.
+        // We'll ignore val for text generation logic for now, or use it?
+        // For now just text triggers update.
+        updatePrompts();
+    }));
 
     shell.appendChild(controlsContainer);
 
@@ -377,7 +499,7 @@ if (isVizMode) {
     };
     
     // RELEASE: Return to Clean / Safe State
-    let isSlamming = false;
+    // let isSlamming = false; // (Defined at top)
     const releaseSlam = () => {
         if (!isSlamming) return; // Only release if actually slamming
         isSlamming = false;
@@ -397,6 +519,7 @@ if (isVizMode) {
 
     slamBtn.addEventListener('slam-start', (e: Event) => {
         isSlamming = true;
+        updatePrompts(); // Trigger Slam Prompt
         handleSlamMove(e as CustomEvent); // Trigger immediately
     });
     
@@ -406,6 +529,8 @@ if (isVizMode) {
 
     slamBtn.addEventListener('slam-end', () => {
         releaseSlam();
+        isSlamming = false;
+        updatePrompts(); // Revert Prompt
     });
 
     // SLAM Wrapper to hold Button + Edit Overlay
@@ -474,6 +599,9 @@ if (isVizMode) {
         // Explicitly Stop Both Decks
         engine.setTapeStop('A', true);
         engine.setTapeStop('B', true);
+
+        // Lyria: Send Initial Prompts (Ensures BPM 120 is set)
+        updatePrompts();
         
         // Notify UI components
         window.dispatchEvent(new CustomEvent('playback-toggled', { detail: false }));

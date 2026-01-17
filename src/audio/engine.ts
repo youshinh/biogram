@@ -23,14 +23,15 @@ export class AudioEngine {
   constructor() {
     this.context = new AudioContext({ 
         sampleRate: 44100,
-        latencyHint: 'playback' 
+        latencyHint: 'interactive' 
     });
     
     // Initialize Memory
     this.sab = new SharedArrayBuffer(SAB_SIZE_BYTES + HEADER_SIZE_BYTES);
     this.headerView = new Int32Array(this.sab, 0, HEADER_SIZE_BYTES / 4);
     this.floatView = new Float32Array(this.sab, 0, HEADER_SIZE_BYTES / 4);
-    this.audioData = new Float32Array(this.sab, HEADER_SIZE_BYTES / 4);
+    // Fix: Constructor takes BYTE offset.
+    this.audioData = new Float32Array(this.sab, HEADER_SIZE_BYTES);
     
     // Init Defaults
     this.floatView[OFFSETS.TAPE_VELOCITY / 4] = 1.0;
@@ -49,6 +50,9 @@ export class AudioEngine {
         window.dispatchEvent(new CustomEvent('deck-bpm-update', { 
             detail: { deck: 'A', bpm: bpm, offset: offset } 
         }));
+    }, () => {
+        this.skipToLatest('A');
+        setTimeout(() => this.unmute('A'), 150); // Delay unmute to ensure silence
     });
     this.musicClientB = new MusicClient(this.adapter, apiKey, 'B', (bpm, offset) => {
         console.log(`[Engine] Auto-detected BPM for B: ${bpm}`);
@@ -56,6 +60,9 @@ export class AudioEngine {
         window.dispatchEvent(new CustomEvent('deck-bpm-update', { 
             detail: { deck: 'B', bpm: bpm, offset: offset } 
         }));
+    }, () => {
+        this.skipToLatest('B');
+        setTimeout(() => this.unmute('B'), 150);
     });
   }
 
@@ -93,7 +100,7 @@ export class AudioEngine {
       // Wire up Analyser for Visualization
       const setupAnalyser = () => {
           const a = this.context.createAnalyser();
-          a.fftSize = 2048;
+          a.fftSize = 4096; // Better low-end resolution
           a.smoothingTimeConstant = 0.85;
           return a;
       }
@@ -149,6 +156,14 @@ export class AudioEngine {
   setCrossfader(value: number) {
       this.updateDspParam('CROSSFADER', value);
   }
+  
+  setDeckVolume(deck: 'A' | 'B', value: number) {
+      this.updateDspParam('VOLUME', value, deck);
+  }
+  
+  setBiFilter(deck: 'A' | 'B', value: number) {
+       this.updateDspParam('FILTER', value, deck);
+  }
 
   setEq(deck: 'A' | 'B', band: 'HI' | 'MID' | 'LOW', value: number) {
       this.updateDspParam(`EQ_${band}`, value, deck);
@@ -158,8 +173,27 @@ export class AudioEngine {
       this.updateDspParam(`KILL_${band}`, value ? 1.0 : 0.0, deck);
   }
 
-  setTapeStop(deck: 'A' | 'B', stop: boolean) {
-      this.updateDspParam('TAPE_STOP', stop ? 1.0 : 0.0, deck);
+  // Track stopped state for "Reset on Gen" feature
+  private deckStopped = { A: true, B: true };
+
+  mute(deck: 'A' | 'B') {
+      this.updateDspParam(`MUTE_${deck}`, 1.0);
+  }
+
+  unmute(deck: 'A' | 'B') {
+      this.updateDspParam(`MUTE_${deck}`, 0.0);
+  }
+  
+  setTapeStop(deck: 'A' | 'B', isStopped: boolean) {
+      this.deckStopped[deck] = isStopped;
+      this.updateDspParam('TAPE_STOP', isStopped ? 1.0 : 0.0, deck);
+      
+      // Toggle Analysis based on Play State (Stop = Disable Analysis)
+      if (deck === 'A' && this.musicClientA) {
+          this.musicClientA.isAnalysisEnabled = !isStopped;
+      } else if (deck === 'B' && this.musicClientB) {
+          this.musicClientB.isAnalysisEnabled = !isStopped;
+      }
   }
 
   setScratch(deck: 'A' | 'B', speed: number) {
@@ -211,6 +245,10 @@ export class AudioEngine {
 
   getIsPlaying(): boolean {
       return this.isPlaying;
+  }
+  
+  getOutputLatency(): number {
+      return this.context.outputLatency || 0.0;
   }
 
   setBpm(bpm: number) {
@@ -266,6 +304,10 @@ export class AudioEngine {
       // Send to processor for SLICER sync
       this.updateDspParam('MASTER_BPM', bpm);
       
+      // Enforce AI Generation BPM to match Master
+      this.musicClientA?.setConfig({ bpm: bpm });
+      this.musicClientB?.setConfig({ bpm: bpm });
+      
       // Auto-update synced decks when Master BPM changes
       if (this.syncA) this.syncDeck('A');
       if (this.syncB) this.syncDeck('B');
@@ -297,9 +339,7 @@ export class AudioEngine {
       
       const targetBpm = this.masterBpm;
       
-      // Let's align to the "Other" deck if it is playing
       const otherDeck = deck === 'A' ? 'B' : 'A';
-      
       const offsetSelf = deck === 'A' ? this.offsetA : this.offsetB;
       const offsetOther = deck === 'A' ? this.offsetB : this.offsetA;
       
@@ -312,35 +352,33 @@ export class AudioEngine {
       // Valid BPM check
       if (bpmSelf < 1 || bpmOther < 1) return;
       
-      // BAR Sync Logic (Assuming 4/4 time signature)
+      // BAR Phase Logic
       const beatsPerBar = 4;
-      
-      // Samples per beat & bar
       const spbOther = (44100 * 60) / bpmOther;
       const samplesPerBarOther = spbOther * beatsPerBar;
       
-      // Calculate Phase of Other relative to BAR (0..1)
-      // Phase = How far into the BAR are we?
       const barProgressOther = ((ptrOther - (offsetOther * 44100)) % samplesPerBarOther) / samplesPerBarOther;
       
-      // We want Self to have the same BAR phase
       const spbSelf = (44100 * 60) / bpmSelf;
       const samplesPerBarSelf = spbSelf * beatsPerBar;
       
       const currentBarStartSelf = ptrSelf - ((ptrSelf - (offsetSelf * 44100)) % samplesPerBarSelf);
       
-      // Target position = Current Bar Start + (samplesPerBarSelf * barProgressOther)
-      // This matches the relative position within the BAR
       let targetPtr = currentBarStartSelf + (samplesPerBarSelf * barProgressOther);
       
-      // NOTE: Because we are jumping to a specific phase in the bar, 
-      // the target pointer might be BEHIND the current pointer (rewind) or AHEAD (skip).
-      // This creates the "Cueing" effect.
-      
-      // Write back
       if (!isNaN(targetPtr)) {
-           console.log(`Bar Sync ${deck}: Ptr ${ptrSelf} -> ${targetPtr} (Match ${otherDeck} Bar Phase ${barProgressOther.toFixed(2)})`);
+           console.log(`Bar Sync ${deck}: Ptr ${ptrSelf} -> ${targetPtr} (Phase ${barProgressOther.toFixed(2)})`);
            Atomics.store(this.headerView, (deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B) / 4, Math.floor(targetPtr));
+      }
+  }
+
+  /**
+   * Jumps the playhead close to the write head to minimize latency
+   */
+  skipToLatest(deck: 'A' | 'B') {
+      if (this.workletNode) {
+          console.log(`[Engine] Requesting Skip to Latest for ${deck}`);
+          this.workletNode.port.postMessage({ type: 'SKIP_TO_LATEST', deck });
       }
   }
 
@@ -383,12 +421,11 @@ export class AudioEngine {
   public masterAnalyser: AnalyserNode | null = null;
   public analyserA: AnalyserNode | null = null;
   public analyserB: AnalyserNode | null = null;
-  private spectrumData: Uint8Array = new Uint8Array(128);
+  private spectrumData: Uint8Array = new Uint8Array(2048); // Match 4096 / 2
 
   getSpectrum(deck: 'A' | 'B' | 'MASTER' = 'MASTER'): Uint8Array {
       const target = deck === 'A' ? this.analyserA : deck === 'B' ? this.analyserB : this.masterAnalyser;
       if (!target) return this.spectrumData;
-      // @ts-ignore
       target.getByteFrequencyData(this.spectrumData);
       return this.spectrumData;
   }
@@ -418,6 +455,10 @@ export class AudioEngine {
       return `A:${a} B:${b}`; 
   }
 
+  isDeckStopped(deck: 'A' | 'B'): boolean {
+      return this.deckStopped[deck];
+  }
+
   isGenerating(deck: 'A'|'B'): boolean {
       if (deck === 'A') return this.musicClientA?.isGenerating() || false;
       return this.musicClientB?.isGenerating() || false;
@@ -442,5 +483,20 @@ export class AudioEngine {
       const countA = this.musicClientA ? this.musicClientA.getArchiveCount() : 0;
       const countB = this.musicClientB ? this.musicClientB.getArchiveCount() : 0;
       return countA + countB;
+  }
+  
+  clearBuffer(deck: 'A' | 'B') {
+      console.log(`[Engine] Clearing Buffer for Deck ${deck}`);
+      if (deck === 'A') this.musicClientA?.clearBuffer();
+      else this.musicClientB?.clearBuffer();
+      
+      // Silence the audio buffer to prevent "Old Tail" pops
+      if (this.workletNode) {
+          this.workletNode.port.postMessage({ type: 'CLEAR_BUFFER', deck });
+      }
+
+      // Do NOT jump immediately. 
+      // MusicClient will trigger skipToLatest() once it has buffered enough NEW data.
+      // this.skipToLatest(deck);
   }
 }

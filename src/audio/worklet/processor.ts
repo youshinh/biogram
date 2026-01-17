@@ -138,6 +138,18 @@ class GhostProcessor extends AudioWorkletProcessor {
   private driveA: number = 0.0;
   private driveB: number = 0.0;
   
+  // Smooth Mute State (1.0 = Unmuted, 0.0 = Muted)
+  private muteTargetA: number = 1.0;
+  private muteCurrentA: number = 1.0;
+  private muteTargetB: number = 1.0;
+  private muteCurrentB: number = 1.0;
+
+  // DC Blocker State
+  private dcPrevInA: number = 0;
+  private dcPrevOutA: number = 0;
+  private dcPrevInB: number = 0;
+  private dcPrevOutB: number = 0;
+  
   // EQ (Multipliers 0-1.5)
   private eqAHi: number = 1.0;
   private eqAMid: number = 1.0;
@@ -203,6 +215,10 @@ class GhostProcessor extends AudioWorkletProcessor {
           if (param === 'TRIM_B') this.trimB = value;
           if (param === 'DRIVE_A') this.driveA = value;
           if (param === 'DRIVE_B') this.driveB = value;
+
+          if (param === 'MUTE_A') this.muteTargetA = (value > 0.5) ? 0.0 : 1.0; // 1=Mute(Silence) or 1=Active? Logic: value 1 = MUTE ON = Gain 0. 
+          if (param === 'MUTE_A') this.muteTargetA = (value > 0.5) ? 0.0 : 1.0; // Logic: Mute=1.0 -> Gain=0.0
+          if (param === 'MUTE_B') this.muteTargetB = (value > 0.5) ? 0.0 : 1.0;
 
           if (param === 'FILTER_ACTIVE') this.filterActive = value > 0.5;
           if (param === 'DECIMATOR_ACTIVE') this.decimatorActive = value > 0.5;
@@ -274,6 +290,67 @@ class GhostProcessor extends AudioWorkletProcessor {
           if (param === 'EQ_B_MID') this.eqB.gainMid = value;
           if (param === 'EQ_B_LOW') this.eqB.gainLow = value;
       }
+      
+      if (event.data.type === 'SKIP_TO_LATEST') {
+          const { deck } = event.data;
+          // Safe jump logic inside Audio Thread
+          const writeOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
+          const writePtr = Atomics.load(this.headerView!, writeOffset / 4);
+          
+          const safetySamples = 44100 * 2.0; 
+          const newPtr = Math.max(0, writePtr - safetySamples);
+          
+          if (deck === 'A') {
+              // Update Internal State
+              // Assuming tapeA.process() uses internal state, we might need to reset it? 
+              // TapeTransport doesn't track position, it returns velocity.
+              // But we maintain `ptrA` variable in `process` loop.
+              // Wait, `ptrA` is a local variable in `process`?
+              // NO! `ptrA` must be persistent?
+              // Checked code: `const readPtrA = Atomics.load(...)`.
+              // `let ptrA = readPtrA`.
+              // It loads from Shared Atomic every block.
+              // So updating Atomic here is sufficient because `process` runs AFTER `onmessage`?
+              // Messages are processed before `process` callback in the render quantum?
+              // YES.
+              Atomics.store(this.headerView!, OFFSETS.READ_POINTER_A / 4, newPtr);
+          } else {
+              Atomics.store(this.headerView!, OFFSETS.READ_POINTER_B / 4, newPtr);
+          }
+      }
+
+      if (event.data.type === 'CLEAR_BUFFER') {
+          if (!this.audioData) return;
+          
+          const { deck } = event.data;
+          const writeOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
+          const writePtr = Atomics.load(this.headerView!, writeOffset / 4);
+          
+          const totalSize = this.audioData.length;
+          const halfSize = Math.floor(totalSize / 2);
+          const offsetStep = deck === 'A' ? 0 : halfSize;
+          
+          // Use a smaller relative buffer for silence to avoid expensive loops? 
+          // 4s silence
+          const silenceLen = 44100 * 4;
+          
+          for(let i=1; i<silenceLen; i++) {
+              // Calculate relative index within the deck's half-buffer
+              // Logic: Read ptr wraps around 0..halfSize. 
+              // Write ptr is global index? No, writePtr is 0..totalSize?
+              // StreamAdapter writes: `Atomics.load(...)`. 
+              // Stream adapter logic: `offset = deck=='A'?0:halfSize`. `idx = (writePtr + i) % halfSize`. 
+              // So pointers are 0..halfSize.
+              
+              let relativeIdx = writePtr - i;
+              while (relativeIdx < 0) relativeIdx += halfSize;
+              relativeIdx = relativeIdx % halfSize;
+              
+              const absoluteIdx = relativeIdx + offsetStep;
+              this.audioData[absoluteIdx] = 0;
+          }
+          console.log(`[Processor] Cleared Buffer Tail for Deck ${deck}`);
+      }
     };
   }
 
@@ -322,11 +399,29 @@ class GhostProcessor extends AudioWorkletProcessor {
             const dbIdx = idxB + offsetB;
             let sampleB = this.audioData[dbIdx] || 0;
 
+            // Smooth Mute Ramp (Apply fade to avoid pops)
+            this.muteCurrentA += (this.muteTargetA - this.muteCurrentA) * 0.01; // ~100-200 samples fade
+            this.muteCurrentB += (this.muteTargetB - this.muteCurrentB) * 0.01;
+
             sampleA = sampleA * this.trimA;
             if (this.driveA > 0) sampleA = Math.tanh(sampleA * (1.0 + this.driveA * 4.0));
+            sampleA *= this.muteCurrentA;
+            
+            // DC Blocker A (Removes Low Freq / Static Offset when stopped)
+            const dcOutA = sampleA - this.dcPrevInA + (0.995 * this.dcPrevOutA);
+            this.dcPrevInA = sampleA; // Store INPUT
+            this.dcPrevOutA = dcOutA; // Store OUTPUT
+            sampleA = dcOutA;
 
             sampleB = sampleB * this.trimB;
             if (this.driveB > 0) sampleB = Math.tanh(sampleB * (1.0 + this.driveB * 4.0));
+            sampleB *= this.muteCurrentB;
+            
+            // DC Blocker B
+            const dcOutB = sampleB - this.dcPrevInB + (0.995 * this.dcPrevOutB);
+            this.dcPrevInB = sampleB;
+            this.dcPrevOutB = dcOutB;
+            sampleB = dcOutB;
 
             const [eqAL, eqAR] = this.eqA.process(sampleA, sampleA); 
             const [eqBL, eqBR] = this.eqB.process(sampleB, sampleB);

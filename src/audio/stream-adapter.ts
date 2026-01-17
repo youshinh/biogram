@@ -12,9 +12,16 @@ export class StreamAdapter {
     constructor(sab: SharedArrayBuffer) {
         this.sab = sab;
         // Re-construct views on Main Thread side
+        // Re-construct views on Main Thread side
+        // HEADER_SIZE_BYTES is 128.
         this.headerView = new Int32Array(this.sab, 0, 32);
         this.floatView = new Float32Array(this.sab, 0, 32);
-        this.audioData = new Float32Array(this.sab, 128 / 4);
+        
+        // Fix: Float32Array constructor takes BYTE offset, not ELEMENT offset.
+        // We want to start at byte 128 (after header). 
+        // passing 128 / 4 = 32 meant we started at byte 32 (inside header).
+        // Correct is 128.
+        this.audioData = new Float32Array(this.sab, 128);
     }
 
     /**
@@ -69,5 +76,18 @@ export class StreamAdapter {
     getBufferSize(): number {
         // Return size PER DECK (half buffer)
         return Math.floor(this.audioData.length / 2);
+    }
+    
+    /**
+     * Jumps the read pointer to the latest write position minus safety buffer
+     */
+    skipToLatest(deck: 'A' | 'B') {
+        const readOffset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;
+        const writeOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
+        const writePtr = Atomics.load(this.headerView, writeOffset / 4);
+        const safetySamples = 44100 * 2.0; // 2s Safety
+        const newReadPtr = Math.max(0, writePtr - safetySamples);
+        console.log(`[StreamAdapter] Skipping ${deck} to latest.`);
+        Atomics.store(this.headerView, readOffset / 4, newReadPtr);
     }
 }

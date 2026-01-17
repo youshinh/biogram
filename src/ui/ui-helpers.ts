@@ -3,20 +3,20 @@ import './atoms/bio-slider'; // Ensure custom elements are registered
 
 // --- UI Helper Functions ---
 
-export const createAiSlider = (label: string, prompt: string, engine: AudioEngine) => {
+export const createAiSlider = (label: string, onChange: (val: number) => void) => {
     const slider = document.createElement('bio-slider');
     slider.setAttribute('label', label);
     slider.setAttribute('value', "0");
-    slider.className = "w-full h-40"; // Height defined by class
+    slider.className = "w-full h-40"; 
     slider.addEventListener('change', (e: any) => {
-        const val = e.detail / 100.0;
-        engine.updateAiPrompt('A', prompt, val);
-        engine.updateAiPrompt('B', prompt, val);
+        // bio-slider emits 0-100. We pass it directly (or scaled?)
+        // Spec says logic uses 0-100.
+        onChange(e.detail); 
     });
     return slider;
 };
 
-export const createComboSlot = (label: string, options: string[], engine: AudioEngine) => {
+export const createComboSlot = (label: string, options: string[], onChange: (selected: string, intens: number) => void) => {
     const wrapper = document.createElement('div');
     wrapper.className = "flex flex-col flex-1 border border-white/20 bg-black/40 rounded-lg overflow-hidden";
     
@@ -27,7 +27,7 @@ export const createComboSlot = (label: string, options: string[], engine: AudioE
     options.forEach(opt => {
         const el = document.createElement('option');
         el.value = opt;
-        el.textContent = opt.split(' ').slice(0, 2).join(' ').toUpperCase(); // Short label
+        el.textContent = opt.split(' ').slice(0, 2).join(' ').toUpperCase(); 
         select.appendChild(el);
     });
     wrapper.appendChild(select);
@@ -36,30 +36,32 @@ export const createComboSlot = (label: string, options: string[], engine: AudioE
     slider.setAttribute('label', ''); 
     slider.className = "flex-1 border-none";
     
-    let currentPrompt = options[0];
+    let currentSelection = options[0];
+    let currentValue = 0; // 0-100
+
+    const emit = () => onChange(currentSelection, currentValue);
     
     select.onchange = (e: any) => {
-        currentPrompt = e.target.value;
-        const val = Number(slider.getAttribute('value')) / 100.0;
-        if (val > 0) engine.updateAiPrompt('A', currentPrompt, val);
+        currentSelection = e.target.value;
+        emit();
     };
     
     slider.addEventListener('change', (e: any) => {
-         const val = e.detail / 100.0;
-         engine.updateAiPrompt('A', currentPrompt, val);
+         currentValue = e.detail;
+         emit();
     });
     
     wrapper.appendChild(slider);
     return wrapper;
 };
 
-export const createCustomSlot = (engine: AudioEngine) => {
+export const createCustomSlot = (onChange: (text: string, intens: number) => void) => {
     const wrapper = document.createElement('div');
     wrapper.className = "flex flex-col flex-1 border border-white/20 bg-black/40 rounded-lg overflow-hidden";
     
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = 'CUSTOM PROMPT';
+    input.placeholder = 'THEME / PROMPT';
     input.className = "bg-black text-tech-cyan border-b border-white/20 text-[11px] p-1.5 font-mono outline-none placeholder-zinc-700";
     wrapper.appendChild(input);
     
@@ -67,15 +69,19 @@ export const createCustomSlot = (engine: AudioEngine) => {
     slider.setAttribute('label', '');
     slider.className = "flex-1 border-none";
     
-    let prompt = "";
+    let text = "";
+    let val = 0;
+
+    const emit = () => onChange(text, val);
     
     input.onchange = (e: any) => {
-        prompt = e.target.value;
+        text = e.target.value;
+        emit();
     };
     
     slider.addEventListener('change', (e: any) => {
-         const val = e.detail / 100.0;
-         if (prompt) engine.updateAiPrompt('A', prompt, val);
+         val = e.detail;
+         emit();
     });
     
     wrapper.appendChild(slider);

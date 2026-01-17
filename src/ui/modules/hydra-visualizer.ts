@@ -104,8 +104,23 @@ export class HydraVisualizer extends LitElement {
               engine.updateDspParam('SPEED', 1.0, this.deckId as 'A'|'B');
           } else {
               engine.updateDspParam('SCRATCH_SPEED', 0.0, this.deckId as 'A'|'B');
+              // Ensure we stay stopped, forcing Engine to Stopped state
+              engine.setTapeStop(this.deckId as 'A'|'B', true); 
           }
       }
+  }
+
+  public clear() {
+      if (this.ctx && this.canvas) {
+          this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      }
+      // Reset Spectrogram
+      if(this.spectrogramHistory) {
+        for (let i = 0; i < this.spectrogramHistory.length; i++) {
+          if (this.spectrogramHistory[i]) this.spectrogramHistory[i].fill(0);
+        }
+      }
+      this.zoomScale = 1.0; 
   }
 
   private runLoop = () => {
@@ -124,12 +139,23 @@ export class HydraVisualizer extends LitElement {
         return;
     }
 
-    const spectrum = engine.getSpectrum(this.deckId as 'A' | 'B'); 
+    let spectrum = engine.getSpectrum(this.deckId as 'A' | 'B'); 
+    
+    // User requested to NOT hide spectrum.
+    // DC Offset/Low Freq visual will be fixed in Audio Processor via DC Blocker.
+
     const audioData = engine.getAudioData(); 
     
     // Select Head based on Deck ID
     const isDeckB = this.deckId === 'B';
-    const headPos = isDeckB ? engine.getHeadB() : engine.getReadPointer();
+    let headPos = isDeckB ? engine.getHeadB() : engine.getReadPointer();
+    
+    // Latency Compensation
+    // headPos is where the processor IS. Output is where the speaker WAS.
+    // robust visual sync: subtract output latency
+    const latencySec = engine.getOutputLatency ? engine.getOutputLatency() : 0.0;
+    const latencySamples = Math.floor(latencySec * 44100);
+    headPos -= latencySamples;
     
     // Draw Spectrogram (Behind Waveform)
     this.updateSpectrogram(spectrum);
@@ -194,19 +220,26 @@ export class HydraVisualizer extends LitElement {
         this.drawSpectrum(w, h, spectrum);
     }
     
-    // Time & Info
-    const totalSamples = w * this.zoomScale;
-    const totalTimeSec = totalSamples / 44100;
-    const infoEl = this.querySelector('.info-display');
-    if (infoEl) {
-        infoEl.innerHTML = `
-           <div class="flex justify-between w-full">
-              <span>BIO_WAVE // ${this.deckId}</span>
-              <span>WIN: ${totalTimeSec.toFixed(2)}s</span>
-              <span class="${this.isScratching ? 'text-signal-emerald animate-pulse' : ''}">${this.isScratching ? 'SCRATCHING' : 'MONITORING'}</span>
-           </div>
-        `;
-    }
+     // Time & Info
+     const totalSamples = w * this.zoomScale;
+     const totalTimeSec = totalSamples / 44100;
+     const infoEl = this.querySelector('.info-display');
+     
+     // Check GEN Status
+     const isGenerating = engine.isGenerating(this.deckId) && (Date.now() % 1000 < 500); // Blink
+     
+     if (infoEl) {
+         infoEl.innerHTML = `
+            <div class="flex justify-between w-full">
+               <span>BIO_WAVE // ${this.deckId}</span>
+               <span>WIN: ${totalTimeSec.toFixed(2)}s</span>
+               <div class="flex gap-2">
+                   ${isGenerating ? '<span class="text-signal-emerald">GENERATING</span>' : ''}
+                   <span class="${this.isScratching ? 'text-signal-emerald animate-pulse' : ''}">${this.isScratching ? 'SCRATCHING' : 'MONITORING'}</span>
+               </div>
+            </div>
+         `;
+     }
 
     // Bar Markers
     this.drawBarMarkers(w, h, headPos);
@@ -214,10 +247,10 @@ export class HydraVisualizer extends LitElement {
     // Loop Seam
     this.drawHead(w, h, headPos, 0, '#fbbf24', 0.8); // Amber
 
-    // GEN Indicator
-    if (this.deckId && engine.isGenerating(this.deckId)) {
-       this.drawGenIndicator(w, h);
-    }
+    // GEN Indicator (Moved to HTML Overlay)
+    // if (this.deckId && engine.isGenerating(this.deckId)) {
+    //    this.drawGenIndicator(w, h);
+    // }
 
     // Broadcast
     this.vjChannel.postMessage({ type: 'FRAME', headPos: headPos, spectrum: spectrum });  
@@ -248,24 +281,64 @@ export class HydraVisualizer extends LitElement {
   private drawSpectrogram(w: number, h: number) {
     if (!this.ctx || this.spectrogramHistory.length === 0) return;
     const historyLen = this.spectrogramHistory.length;
-    const binCount = this.spectrogramHistory[0].length;
     const colWidth = w / this.spectrogramWidth;
-    const rowHeight = h / binCount;
     
+    // Logarithmic Y-axis setup
+    const numRows = Math.floor(h); // Full resolution
+    const rowHeight = 1; // 1px rows
+    const minFreq = 20;
+    const maxFreq = 22050; // Nyquist
+    const logMin = Math.log10(minFreq);
+    const logMax = Math.log10(maxFreq);
+    const scale = (logMax - logMin) / numRows;
+    const totalBins = this.spectrogramHistory[0].length; 
+    const freqPerBin = maxFreq / totalBins;
+
     for (let col = 0; col < historyLen; col++) {
       const spectrum = this.spectrogramHistory[col];
       const x = col * colWidth;
-      for (let bin = 0; bin < binCount; bin++) {
-        const value = spectrum[bin] / 255.0;
-        if (value < 0.05) continue; 
-        
-        // BIO:GRAM Palette: Darker, cleaner
-        const alpha = value * 0.5;
-        // Cyan-ish tint
-        this.ctx.fillStyle = `rgba(34, 211, 238, ${alpha})`; 
-        
-        const y = h - ((bin + 1) * rowHeight);
-        this.ctx.fillRect(x, y, colWidth + 1, rowHeight + 1);
+      
+      for (let row = 0; row < numRows; row++) {
+          // Logarithmic Frequency Mapping
+          // row 0 = bottom = minFreq
+          const fStart = Math.pow(10, logMin + row * scale);
+          const fEnd = Math.pow(10, logMin + (row + 1) * scale);
+          
+          let startBin = Math.floor(fStart / freqPerBin);
+          let endBin = Math.floor(fEnd / freqPerBin);
+          
+          // Clamp
+          if (startBin < 0) startBin = 0;
+          if (endBin >= totalBins) endBin = totalBins - 1;
+          if (startBin > endBin) startBin = endBin;
+          
+          let value = 0;
+          
+          if (endBin === startBin) {
+              // Narrow band (Low Freq): Interpolate or take value?
+              // Just take value for crispness
+              value = spectrum[startBin];
+          } else {
+              // Wide band (High Freq): Max Pool (Peak Hold)
+              // To catch harmonics
+              let max = 0;
+              for (let b = startBin; b <= endBin; b++) {
+                  if (spectrum[b] > max) max = spectrum[b];
+              }
+              value = max;
+          }
+          
+          // Threshold to keep background clean
+          if (value < 5) continue;
+          
+          const norm = value / 255.0;
+          const alpha = norm * 0.8; // Boost visibility
+          
+          this.ctx.fillStyle = `rgba(34, 211, 238, ${alpha})`; 
+          
+          // Draw from bottom up
+          const y = h - (row + 1);
+          this.ctx.fillRect(x, y, colWidth + 0.5, rowHeight + 0.5);
       }
     }
   }
@@ -326,7 +399,9 @@ export class HydraVisualizer extends LitElement {
 
   private drawSpectrum(w: number, h: number, spectrum: Uint8Array) {
     if (!this.ctx) return;
-    const bands = [40, 63, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10000, 16000];
+    // Adjusted bands: Removed 40Hz (often empty), Added more mid-high detail
+    // 60, 100, 160, 250, 400, 630, 1k, 1.6k, 2.5k, 4k, 6.3k, 10k, 16k
+    const bands = [60, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10000, 16000];
     const bandWidth = w / bands.length;
     const nyquist = 22050;
     

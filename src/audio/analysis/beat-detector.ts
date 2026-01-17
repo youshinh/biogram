@@ -1,3 +1,5 @@
+import { analyzeFullBuffer } from 'realtime-bpm-analyzer';
+
 export interface BeatInfo {
     bpm: number;
     offset: number; // Seconds to first beat
@@ -6,29 +8,65 @@ export interface BeatInfo {
 
 export class BeatDetector {
     /**
-     * Advanced Beat Detection using Autocorrelation & Phase Alignment
+     * Advanced Beat Detection using 'realtime-bpm-analyzer'
      * @param data AudioBuffer or Float32Array (Mono)
      * @param sampleRate Sample Rate (default 44100)
      */
-    static analyze(data: Float32Array, sampleRate: number = 44100): BeatInfo {
-        // 1. Pre-processing: Low Pass Filter & Downsampling
-        // Isolate kick drums (< 150Hz) and reduce data size for correlation speed
-        const downsampleRatio = 10;
-        const targetSr = sampleRate / downsampleRatio; // ~4410Hz
-        const envelope = this.getLowPassEnvelope(data, sampleRate, downsampleRatio);
+    static async analyze(data: Float32Array, sampleRate: number = 44100): Promise<BeatInfo> {
+        // 1. Wrap Float32Array into AudioBuffer
+        // We use the AudioBuffer constructor which is supported in all modern browsers
+        const audioBuffer = new AudioBuffer({
+            length: data.length,
+            numberOfChannels: 1,
+            sampleRate: sampleRate
+        });
         
-        // 2. Tempo Estimation via Autocorrelation
-        const bpm = this.estimateTempo(envelope, targetSr);
+        // Fix: Explicitly create a standard Float32Array/ArrayBuffer copy to avoid SharedArrayBuffer issues
+        // and ensure type compatibility with copyToChannel
+        const dataCopy = new Float32Array(data);
+        audioBuffer.copyToChannel(dataCopy, 0);
+
+        // 2. BPM Estimation via Library
+        // This handles low-pass filtering and peak counting more robustly than my custom logic
+        let bpm = 0;
+        let confidence = 0;
+
+        try {
+            const candidates = await analyzeFullBuffer(audioBuffer);
+            if (candidates.length > 0) {
+                // Library returns candidates sorted by count (confidence)
+                bpm = candidates[0].tempo;
+                confidence = 0.9; // Library is generally high confidence
+                console.log(`[BeatDetector] Library Detected: ${bpm} BPM (Count: ${candidates[0].count})`);
+            }
+        } catch (e) {
+            console.warn("[BeatDetector] Library analysis failed, falling back/defaulting", e);
+        }
+
         if (bpm === 0) return { bpm: 0, offset: 0, confidence: 0 };
 
         // 3. Phase Alignment (Offset Correlator)
         // Find best offset that aligns grid with actual peaks in the envelope
+        // For offset detection, we still need an envelope. 
+        // We can reuse the lowpass envelope logic from before or just use raw data (findBestOffset handles raw somewhat)
+        // But findBestOffset expects an envelope or raw? It takes 'data'.
+        // In previous code:
+        // const envelope = this.getLowPassEnvelope(data, sampleRate, downsampleRatio);
+        // const offset = this.findBestOffset(envelope, bpm, targetSr);
+        
+        // Let's use the raw data on findBestOffset but maybe doing the lowpass first is better?
+        // The original code did LowPass+Downsample before offset search.
+        // Let's keep the LowPass/Downsample logic JUST for offset finding to ensure consistency with previous phase logic.
+        
+        const downsampleRatio = 10;
+        const targetSr = sampleRate / downsampleRatio; 
+        const envelope = this.getLowPassEnvelope(data, sampleRate, downsampleRatio);
         const offset = this.findBestOffset(envelope, bpm, targetSr);
 
         return {
             bpm: bpm,
             offset: offset,
-            confidence: 0.9
+            confidence: confidence
         };
     }
 
@@ -55,79 +93,8 @@ export class BeatDetector {
         return envelope;
     }
 
-    private static estimateTempo(data: Float32Array, sr: number): number {
-        // BPM Range: 70 - 180 (Relaxed from 105-165)
-        // Lag Range in samples
-        const minLag = Math.floor(60 * sr / 180); 
-        const maxLag = Math.floor(60 * sr / 70);
-        
-        // We calculate ACF for lags in range
-        // Just store them to find peak and neighbors
-        // Since lag range is large (~3000 samples @ 4410Hz), we just iterate.
-        
-        let maxCorr = -1;
-        let bestLag = 0;
-        
-        // We need the correlation array to do interpolation, or at least neighbors of max
-        // Let's store neighbors of the current max found.
-        let prevCorr = 0; // corr at bestLag - 1
-        let nextCorr = 0; // corr at bestLag + 1 (will check during search? No, need random access)
-        
-        // Optimization: Full array is needed for interpolation if we don't know where peak is.
-        // But we can just find integer peak first.
-        
-        const stride = 1; // Use stride 1 for accuracy (low SR is cheap enough)
-        
-        // Calculate ACF for range
-        // Note: For parabolic interpolation, we need the value at bestLag-1 and bestLag+1.
-        // We will just re-calculate those specific lags after finding the integer peak.
-        
-        for (let lag = minLag; lag <= maxLag; lag += stride) {
-            let corr = 0;
-            // Shorter loop for speed
-            for (let i = 0; i < data.length - lag; i += 4) {
-                corr += data[i] * data[i + lag];
-            }
-            
-            if (corr > maxCorr) {
-                maxCorr = corr;
-                bestLag = lag;
-            }
-        }
-        
-        if (bestLag === 0) return 120; // Fail safe
-        
-        // --- Parabolic Interpolation ---
-        // Refine peak estimation: f(x) = a(x-p)^2 + b
-        // delta = (y_left - y_right) / (2 * (y_left - 2*y_center + y_right))
-        // We need correlations at bestLag-1 and bestLag+1
-        
-        const calcLagCorr = (l: number) => {
-            let c = 0;
-            for (let i = 0; i < data.length - l; i += 4) c += data[i] * data[i + l];
-            return c;
-        };
-        
-        const yCenter = maxCorr;
-        const yLeft = calcLagCorr(bestLag - 1);
-        const yRight = calcLagCorr(bestLag + 1);
-        
-        let delta = 0;
-        const denominator = 2 * (yLeft - 2 * yCenter + yRight);
-        if (denominator !== 0) {
-             delta = (yLeft - yRight) / denominator;
-        }
-        
-        const trueLag = bestLag + delta;
-        let bpm = 60 * sr / trueLag;
-        
-        // Relaxed Constraint (70-180) - Allow Halftime/Doubletime if strong
-        // Only clamp extreme values
-        while (bpm < 70) bpm *= 2;
-        while (bpm > 180) bpm /= 2;
-        
-        return Math.round(bpm * 100) / 100; // 2 decimal places
-    }
+    // estimateTempo is no longer used, replaced by library
+    // private static estimateTempo... (Removed)
 
     private static findBestOffset(data: Float32Array, bpm: number, sr: number): number {
         const samplesPerBeat = (60 * sr) / bpm;
@@ -171,7 +138,8 @@ export class BeatDetector {
                 const backtrackLimit = Math.floor(sr * 0.08); // Max 80ms backtrack (Wide search)
                 const attackThreshold = peakVal * 0.15; // Lower threshold (Catch early attack)
 
-                for (let k = 0; k < backtrackLimit && (peakIdx - k) > 0; k++) {
+                let k = 0;
+                for (; k < backtrackLimit && (peakIdx - k) > 0; k++) {
                     const idx = peakIdx - k;
                     if (data[idx] < attackThreshold) {
                         attackIdx = idx;

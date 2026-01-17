@@ -8,12 +8,19 @@ export class DeckController extends LitElement {
     return this; // Enable Light DOM
   }
 
-  @property({ type: String }) deckId = "A"; 
-  @state() isPlaying = false;
+  @property({ type: String, reflect: true }) deckId = "A"; 
+  @property({ type: Boolean, reflect: true }) isPlaying = false; // Public for external sync
   @state() isSync = false;
   @state() prompt = "";
   @state() bpm = 120.0;
   @state() isManaul = false;
+
+  public clearVisualizer() {
+      const viz = this.shadowRoot?.querySelector('hydra-visualizer') as any;
+      if (viz && viz.clear) {
+          viz.clear();
+      }
+  }
   
   // Custom Color per deck for accents
   get deckColorClass() {
@@ -68,7 +75,7 @@ export class DeckController extends LitElement {
               <hydra-visualizer .deckId="${this.deckId}"></hydra-visualizer>
               
               <!-- DECK LABEL OVERLAY -->
-              <div class="absolute top-2 left-2 text-[2rem] font-black opacity-10 pointer-events-none select-none ${this.deckColorClass}">
+              <div class="absolute top-10 left-2 text-[4rem] font-black opacity-10 pointer-events-none select-none leading-none ${this.deckColorClass}">
                   ${this.deckId}
               </div>
           </div>
