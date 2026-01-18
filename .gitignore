@@ -27,3 +27,4 @@ updateDEV/
 *.njsproj
 *.sln
 *.sw?
+legacy/
