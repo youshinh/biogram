@@ -522,7 +522,7 @@ class GhostProcessor extends AudioWorkletProcessor {
         
         // FRAME MATH: 1 Frame = 2 Floats (L, R)
         const maxFrames = Math.floor(halfSize / 2); // Frames per deck
-        const offsetB = halfSize; // Decks are split by halfSize in ARRAY, not frames
+        const offsetB = halfSize & ~1; // Ensure even alignment for stereo pairs
 
         const readPtrA = Atomics.load(this.headerView, OFFSETS.READ_POINTER_A / 4);
         const readPtrB = Atomics.load(this.headerView, OFFSETS.READ_POINTER_B / 4);
@@ -585,10 +585,14 @@ class GhostProcessor extends AudioWorkletProcessor {
 
             // --- READ B (Stereo) ---
             const localFrameB = ((Math.floor(ptrB) % maxFrames) + maxFrames) % maxFrames;
-            const idxB = (localFrameB * 2) + offsetB;
+            const idxB = (localFrameB * 2 + offsetB) & ~1; // Force align
             
-            let sampleBL = this.audioData[idxB] || 0;
-            let sampleBR = this.audioData[idxB + 1] || 0;
+            let sampleBL = this.audioData[idxB];
+            let sampleBR = this.audioData[idxB + 1];
+
+            // NaN Safety Rail
+            if (!Number.isFinite(sampleBL)) sampleBL = 0;
+            if (!Number.isFinite(sampleBR)) sampleBR = 0;
 
             // Crossfade Logic B
             if (this.loopActiveB && this.loopCrossfadeB > 0) {
@@ -662,10 +666,13 @@ class GhostProcessor extends AudioWorkletProcessor {
                 this.ghostPtr = gP;
                 
                 const localFrameG = ((Math.floor(gP) % maxFrames) + maxFrames) % maxFrames;
-                const baseIdxG = (localFrameG * 2) + ((this.ghostTarget === 'B') ? offsetB : 0);
+                const baseIdxG = ((localFrameG * 2) + ((this.ghostTarget === 'B') ? offsetB : 0)) & ~1;
                 
-                const rawGhostL = this.audioData[baseIdxG] || 0;
-                const rawGhostR = this.audioData[baseIdxG + 1] || 0;
+                let rawGhostL = this.audioData[baseIdxG];
+                let rawGhostR = this.audioData[baseIdxG + 1];
+                
+                if (!Number.isFinite(rawGhostL)) rawGhostL = 0;
+                if (!Number.isFinite(rawGhostR)) rawGhostR = 0;
                 
                 // Apply Ghost EQ (L/R)
                 this.ghostLpfStateL += this.ghostLpfCoeff * (rawGhostL - this.ghostLpfStateL);

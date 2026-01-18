@@ -31,7 +31,7 @@ export class StreamAdapter {
     writeChunk(chunk: Float32Array, deck: 'A' | 'B' = 'A') {
         const totalSize = this.audioData.length;
         const halfSize = Math.floor(totalSize / 2);
-        const offset = deck === 'A' ? 0 : halfSize;
+        const offset = deck === 'A' ? 0 : (halfSize & ~1); // Align to stereo pairs
         const writePtrOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
         
         // Get Write Pointer
