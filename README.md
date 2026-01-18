@@ -42,7 +42,7 @@ It generates musical instructions from text prompts, performing real-time mixing
 ### 2. Installation
 
 ```bash
-git clone https://github.com/your-username/biogram.git
+git clone https://github.com/youshinh/biogram.git
 cd biogram
 npm install
 ```
