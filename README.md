@@ -60,7 +60,7 @@ GEMINI_API_KEY=your_api_key_here
 ```bash
 npm run dev
 ```
-Open `http://localhost:5173` in your browser.
+Open `http://localhost:3000` in your browser.
 
 ## 🎮 Usage
 
