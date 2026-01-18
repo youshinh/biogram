@@ -2,7 +2,7 @@
 
 > "Noise is where the universe resides. (ノイズこそが、宇宙の所在である)"
 
-**Bio:gram** は、**Google Gemini Flash** を搭載した実験的な AI DJ システムであり、「Prompt-DJ」プラットフォームです。従来の線形的なオートミックスを超越し、**Deep Spectral Architect (深層スペクトル設計)** を採用することで、AI が「Ghost (幽霊)」のようなパートナーとして振る舞い、周波数帯域の譲り合い、有機的なパラメータ操作、そして物語性のあるトランジションをリアルタイムに実行します。
+**Bio:gram** は、**Google Gemini Flash** と高忠実度音楽生成モデル **Lyria** を搭載した実験的な AI DJ システムであり、「Prompt-DJ」プラットフォームです。従来の線形的なオートミックスを超越し、**Deep Spectral Architect (深層スペクトル設計)** を採用することで、AI が「Ghost (幽霊)」のようなパートナーとして振る舞い、周波数帯域の譲り合い、有機的なパラメータ操作、そして物語性のあるトランジションをリアルタイムに実行します。
 
 [🇺🇸 English](README.md)
 
@@ -21,37 +21,49 @@ Bio:gram は DJ ミックスを単なるイベントの連鎖ではなく、**�
 
 ## ✨ Features
 
+### 🎹 Generative Audio Engine (Lyria)
+Google の音楽生成モデル **Lyria** (`lyria-realtime-exp`) を搭載し、Bio:gram は単にファイルを再生するだけでなく、リアルタイムにオーディオを生成します。
+-   **Prompt-to-Music**: "Acid Techno 135BPM" と入力するだけで、スタジオ品質のループが即座に生成されます。
+-   **Infinite Extension**: 4小節のループを、終わりのない進化し続けるストリームへと拡張できます。
+
 ### 🎛️ AI Mix Phase Architecture
-AI は、以下の4つの物語的フェーズを通じてミックスを指揮します。進行状況はインターフェース上で可視化されます。
+AI は、以下の4つの物語的フェーズを通じてミックスを指揮します。
+1.  **Presence (予兆)**: 次の曲はまだ実体を持たず、リバーブの残響やハイパスフィルタを通した「気配」としてのみ漂います。
+2.  **Spectral Handoff (交換)**: シグモイド曲線を用いて低域（Bass）を滑らかに入れ替え、エネルギーの主導権を有機的に移行させます。
+3.  **Wash Out (風化)**: 去りゆく曲はテープディレイやフィードバックループによって「風化」し、記憶の彼方へ溶けていきます。
+4.  **Silent Reset (浄化)**: ユーザーには見えない舞台裏で行われるパラメータのリセットフェーズです。
 
-1.  **Presence (予兆 - The Omen)**: 次の曲はまだ実体を持たず、リバーブの残響やハイパスフィルタを通した「気配 (Ghost)」としてのみ空間に漂います。
-2.  **Spectral Handoff (交換 - The Exchange)**: 核となるメカニズムです。シグモイド曲線を用いて低域（Bass）を滑らかに入れ替え、エネルギーの主導権を有機的に移行させます。
-3.  **Wash Out (風化 - The Echo)**: 去りゆく曲は単にミュートされるのではなく、テープディレイやフィードバックループによって積極的に「風化」させられ、記憶の彼方へと溶けていきます。
-4.  **Silent Reset (浄化 - The Purification)**: ユーザーには見えない舞台裏で、AI がすべてのパラメータを初期値に戻し、次の演奏（転生）に備えるクリーンアップフェーズです。
-
-### 👻 Ghost Faders
-画面上のスライダーやノブが勝手に動く様子をご覧ください。これは録画されたアニメーションではなく、**Gemini Flash** モデルがリアルタイムに生成した「オートメーション・スコア（楽譜）」に基づいて、AI が実際に操作を行っている姿です。
-
-### 🧠 Generative Modes
-AI の性格（Persona）を選択し、物語をコントロールできます。
--   **Deep Blend**: アンビエントやディープテクノ向け。64〜128小節かけた長く流動的なトランジション。
--   **Rhythmic Swap**: ハウスやハードテクノ向け。ゲートやスライサーを使用し、リズムを刻みながら鋭くカットインします。
--   **Chaos Gen**: エクスペリメンタル向け。フィードバックループやビットクラッシャーを多用し、破壊と再生を繰り返します。
--   **Cinema**: サウンドトラック向け。無限のフリーズ（Eternal Freeze）とドローンレイヤーを用いた音響風景。
+### 👻 Ghost Faders & Vector Library
+-   **Ghost Faders**: **Gemini Flash** が生成した「オートメーション・スコア」に基づき、画面上のスライダーやノブがまるで幽霊が触れているかのように自律的に動きます。
+-   **Vector Loop Library**: 保存されたループは「Energy (エネルギー)」「Brightness (明るさ)」「Rhythm (リズム)」といった特徴ベクトルとして解析されます。システムはローカルのベクトルデータベース (IndexedDB) を使用し、単なるBPMの一致ではなく、音楽的な意味合いでの「類似性」や「相補性」に基づいたトラックの推薦を行います。
 
 ### 🧬 Visual Matrix (Hydra)
 内蔵された **Hydra-Synth** がオーディオの帯域にリアルタイムで反応し、ミックスのスペクトル変化を鏡のように映し出すコード駆動のビジュアルを生成します。
 
 ---
 
+## 🎚️ Effects & DSP
+
+Bio:gram は AudioWorklet 上に構築されたカスタムオーディオエンジンにより、サンプル単位の正確な処理を実現しています。
+
+-   **Slicer**: BPMに同期してオーディオを切り刻み、持続音からリズミカルなパターンを生成するゲートエフェクト。
+-   **Tape Echo**: ダブスタイルのディレイ。フィードバックを上げることで「Wash Out」効果を生み出します。
+-   **SLAM**: コンプレッサー、リミッター、ピンクノイズジェネレーターを統合したマスターバス用のエナジーライザー。劇的なビルドアップを作ります。
+-   **Cloud Grain**: オーディオを微細な粒子（グレイン）へと分解し、雲のようなテクスチャに変えるグラニュラーエフェクト。
+-   **Isolator EQ**: 特定の帯域を完全に消音（Kill）できるDJ仕様の3バンドEQ。
+
+---
+
 ## 🛠️ Tech Stack
 
 -   **Framework**: Vite + TypeScript
--   **AI Model**: Google Gemini Flash (via `@google/genai`)
--   **Audio Engine**: Web Audio API + AudioWorklet (サンプル単位の精密なタイミング制御)
--   **UI**: Lit (Web Components) + TailwindCSS
+-   **Generative AI**: 
+    -   **Logic**: Google Gemini 1.5 Flash (via `@google/genai`)
+    -   **Audio**: Google Lyria (`lyria-realtime-exp`)
+-   **Audio Engine**: Web Audio API + AudioWorklet (DSP)
+-   **Database**: IndexedDB + Vector Search (Local-First)
 -   **Visuals**: Hydra-Synth + p5.js
--   **Data Consistency**: IndexedDB を使用した "Local-First" アーキテクチャ
+-   **UI**: Lit (Web Components) + TailwindCSS
 
 ---
 
