@@ -213,7 +213,7 @@ export class HydraVisualizer extends LitElement {
       if (!this.isScratching) return;
       const deltaX = e.clientX - this.lastX;
       this.lastX = e.clientX;
-      const speed = deltaX * -0.15; 
+      const speed = deltaX * -0.1; 
       const engine = (window as any).engine;
       if(engine) engine.updateDspParam('SCRATCH_SPEED', speed, this.deckId as 'A'|'B');
   }

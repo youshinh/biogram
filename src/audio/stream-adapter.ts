@@ -45,7 +45,7 @@ export class StreamAdapter {
 
         for (let i = 0; i < chunk.length; i += 2) {
              const left = chunk[i];
-             const right = chunk[i+1] || left; // Safety fallback
+             const right = chunk[i+1] ?? left; // Use nullish coalescing - don't replace 0 values!
 
              // Circular buffer within the half-zone
              const localFrameIndex = writePtr % maxFrames; 

@@ -855,7 +855,7 @@ class GhostProcessor extends AudioWorkletProcessor {
 
             // Output to AudioContext
             leftChannel[i] = sampleL;
-            if (rightChannel) rightChannel[i] = sampleR;
+            if (rightChannel) rightChannel[i] = sampleR; // Normal stereo output
             
              // Viz Outputs. Use eqAL_Out etc.
             if (outputs[1] && outputs[1].length >= 2) {
