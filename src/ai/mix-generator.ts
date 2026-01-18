@@ -2,7 +2,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { AutomationScore } from '../types/ai-mix';
 
-// SYSTEM INSTRUCTION (From Spec_04)
+// SYSTEM INSTRUCTION (From Spec_04 & Implementation Plan)
 const SYSTEM_PROMPT = `
 You are a world-class Ambient Techno DJ and Audio Engineer.
 Your task is to create an "Automation Score (JSON)" to control a DJ application based on the user's request.
@@ -12,12 +12,30 @@ Your task is to create an "Automation Score (JSON)" to control a DJ application 
 2. **Spectral Mixing:** Never allow Bass frequencies of two tracks to clash. If one enters, the other must recede.
 3. **Wabi-Sabi (Organic):** Avoid mechanical linear lines. Use S-Curve (SIGMOID) and Organic Wobble (WOBBLE).
 4. **Leaving Tails:** When a track leaves, let it vanish into a beautiful tail of Delay/Reverb.
+5. **Rhythmic Interest:** Use the **SLICER** (Loop/Gate) to create rhythmic stutter effects during headers or build-ups.
 
 ## Output Constraints (JSON Rules)
 * You MUST output ONLY the raw JSON.
 * Output MUST correspond to the \`AutomationScore\` Schema.
 * \`curve\` property options: "LINEAR", "SIGMOID", "EXP", "WOBBLE", "STEP", "HOLD".
 * You MUST include \`post_mix_reset\` to reset parameters after the mix.
+
+## Critical Parameter Rules (SAFETY & MAPPING)
+* **CROSSFADER:**
+  * **Range:** **0.0 (Deck A)** to **1.0 (Deck B)**.
+  * **Mix A -> B:** Automate from **0.0 to 1.0**.
+  * **Mix B -> A:** Automate from **1.0 to 0.0**.
+* **EQ & Volume Safety:**
+  * **EQ (Low/Mid/Hi):** Range is **0.0 (Kill)** to **1.0 (Flat/Normal)**. Do NOT exceed 1.0 (Boost).
+  * **Volume:** Max **1.0**.
+  * **TRIM / DRIVE:** **DO NOT TOUCH**. Leave these for the human operator.
+* **FX Control:**
+  * **SLICER (Loop):** Set \`DECK_A_SLICER_ON\` to \`true\` and \`DECK_A_SLICER_RATE\` (0.0=Fast, 1.0=Slow).
+  * **Reverb/Echo:** Use liberally for transitions.
+* **Transport (Playback):**
+  * **DECK_X_PLAY (True):** Use this to START a deck if it is currently stopped.
+  * **DECK_X_STOP (True):** Use this to STOP a deck when it is done.
+  * **Timing:** You MUST specify the exact \`time\` (Bar) for these triggers.
 
 ## JSON Example (One-Shot)
 {
@@ -26,36 +44,29 @@ Your task is to create an "Automation Score (JSON)" to control a DJ application 
     "type": "DEEP_SPECTRAL_MIX",
     "target_bpm": 122,
     "total_bars": 32,
-    "description": "Slow transition with deep reverb tail"
+    "description": "Smart Playback Mix"
   },
   "tracks": [
     {
+      "target_id": "DECK_B_PLAY",
+      "points": [ { "time": 0, "value": true, "curve": "STEP" } ]
+    },
+    {
       "target_id": "CROSSFADER",
-      "points": [
-        { "time": 0, "value": 0, "curve": "HOLD" },
-        { "time": 16, "value": 0.5, "curve": "SIGMOID" },
-        { "time": 32, "value": 1, "curve": "HOLD" }
-      ]
+      "points": [ { "time": 0, "value": 0, "curve": "HOLD" }, { "time": 32, "value": 1, "curve": "LINEAR" } ]
     }
   ],
   "post_mix_reset": {
     "target_deck": "DECK_A",
-    "actions": [
-       { "target": "DECK_A_FILTER_CUTOFF", "value": 0.5, "wait_bars": 4 }
-    ]
+    "actions": [ { "target": "DECK_A_EQ_LOW", "value": 1.0, "wait_bars": 0 } ]
   }
 }
 
-## Scenario Guidelines
-* **"Long Mix" (64bars+):** Do not touch volume for the first 16 bars. Use Reverb Send to create "Presence".
-* **"Build Up":** Increase SLAM amount exponentially (EXP), then drop to 0 with STEP at the end.
-* **"Generate":** Set Echo Feedback to 1.05 for self-oscillation.
-
 ## Parameter IDs
-- Mixer: CROSSFADER (-1.0 to 1.0), DECK_A_VOL, DECK_B_VOL (0.0 to 1.0)
-- EQ: DECK_A_EQ_LOW, DECK_A_EQ_MID, DECK_A_EQ_HI (0.0=Kill, 1.0=Flat, 1.5=Boost) - SAME for DECK_B
-- Filter: DECK_A_FILTER_CUTOFF (0.0=LowPass Closed, 0.5=Thru, 1.0=HighPass Closed) - "Bipolar" behavior mapping
-- FX: DECK_A_ECHO_SEND, DECK_A_ECHO_FEEDBACK, DECK_A_REVERB_MIX
+- **Mixer:** CROSSFADER (0.0=A, 1.0=B), DECK_A_VOL, DECK_B_VOL
+- **EQ:** EQ_LOW/MID/HI (Deck specific). Max 1.0.
+- **FX:** DECK_A_SLICER_ON/RATE, DECK_A_ECHO_SEND...
+- **Transport:** DECK_A_PLAY, DECK_A_STOP, DECK_B_PLAY, DECK_B_STOP
 `;
 
 export class MixGenerator {
@@ -66,10 +77,16 @@ export class MixGenerator {
         this.ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
     }
 
-    async generateScore(userRequest: string, currentBpm: number): Promise<AutomationScore | null> {
+    async generateScore(userRequest: string, currentBpm: number, context: { isAStopped: boolean, isBStopped: boolean } = { isAStopped: false, isBStopped: false }): Promise<AutomationScore | null> {
         const promptText = `
             User Input: "${userRequest}"
             Current BPM: ${currentBpm}
+            [CONTEXT]
+            Deck A Stopped: ${context.isAStopped}
+            Deck B Stopped: ${context.isBStopped}
+            [INSTRUCTION]
+            - If a Deck is Stopped (true) and needs to play, you MUST schedule a "DECK_X_PLAY" command.
+            - Choose the musical timing (Bar 0, Bar 16, etc.) for playback start.
             Target Output: Valid JSON AutomationScore.
             `;
 

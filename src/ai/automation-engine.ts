@@ -166,9 +166,7 @@ export class AutomationEngine {
 
   private applyParam(id: ParameterID, val: number | boolean) {
       if (typeof val === 'boolean') {
-          // Handle Booleans
-           if (id.includes('SLICER_ON')) this.engine.updateDspParam('SLICER_ACTIVE', val ? 1.0 : 0.0);
-           // TODO: Handle others
+          this.applyBooleanParam(id, val);
            return;
       }
       
@@ -250,15 +248,26 @@ export class AutomationEngine {
           // FX
           case 'DECK_A_ECHO_SEND': 
              this.engine.updateDspParam('DUB', v); 
-             // Toggle Tape Active if send is > 0
+             // Toggle Tape Active automatically if send is > 0
              if (v > 0.05) this.engine.updateDspParam('TAPE_ACTIVE', 1.0);
-             else this.engine.updateDspParam('TAPE_ACTIVE', 0.0);
+             break;
+          case 'DECK_B_ECHO_SEND': 
+             this.engine.updateDspParam('DUB', v); 
+             if (v > 0.05) this.engine.updateDspParam('TAPE_ACTIVE', 1.0);
              break;
 
-          case 'DECK_A_ECHO_FEEDBACK':
-             // Echo Feedback logic not fully mapped to UI slider in this codebase yet
-             // Just Engine update
-             this.engine.updateDspParam('DUB', v);
+          case 'DECK_A_REVERB_MIX':
+          case 'DECK_B_REVERB_MIX':
+             this.engine.updateDspParam('BLOOM_WET', v);
+             if (v > 0.05) this.engine.updateDspParam('REVERB_ACTIVE', 1.0);
+             break;
+
+          case 'DECK_A_SLICER_RATE':
+          case 'DECK_B_SLICER_RATE':
+             // Map 0.0-1.0 to Slicer Pattern (1/16 to 1/2)
+             // 0.0 = Fast (1/16 = 0.0625), 1.0 = Slow (1/2 = 0.5)
+             const pattern = 0.0625 + (v * (0.5 - 0.0625));
+             this.engine.updateDspParam('SLICER_PATTERN', pattern);
              break;
           
           case 'MASTER_SLAM_AMOUNT':
@@ -266,6 +275,45 @@ export class AutomationEngine {
              break;
       }
   }
+
+  // Handle Boolean Parameters separately or in applyParam check
+  // See line 167 in original file
+  private applyBooleanParam(id: ParameterID, val: boolean) {
+       if (id === 'DECK_A_SLICER_ON') {
+           this.engine.updateDspParam('SLICER_TARGET', 0.0); // A
+           this.engine.updateDspParam('SLICER_ACTIVE', val ? 1.0 : 0.0);
+       } else if (id === 'DECK_B_SLICER_ON') {
+           this.engine.updateDspParam('SLICER_TARGET', 1.0); // B
+           this.engine.updateDspParam('SLICER_ACTIVE', val ? 1.0 : 0.0);
+       }
+       
+       // --- Transport (Smart Playback) ---
+       // Only act if value is TRUE (Trigger)
+       else if (val === true) {
+           if (id === 'DECK_A_PLAY') {
+               if (this.engine.isDeckStopped('A')) this.dispatchToggle('A');
+           }
+           else if (id === 'DECK_B_PLAY') {
+               if (this.engine.isDeckStopped('B')) this.dispatchToggle('B');
+           }
+           else if (id === 'DECK_A_STOP') {
+               if (!this.engine.isDeckStopped('A')) this.dispatchToggle('A');
+           }
+           else if (id === 'DECK_B_STOP') {
+               if (!this.engine.isDeckStopped('B')) this.dispatchToggle('B');
+           }
+       }
+  }
+
+  private dispatchToggle(deckId: 'A' | 'B') {
+        console.log(`[AutomationEngine] Triggering Play/Stop for Deck ${deckId}`);
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('deck-play-toggle', {
+                detail: { deckId }
+            }));
+        }
+  }
+
   
   private updateSlam(intensity: number) {
         // Simple macro based on main.ts logic

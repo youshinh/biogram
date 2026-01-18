@@ -262,12 +262,29 @@ if (isVizMode) {
         const { direction, duration, mood } = e.detail;
         if (superCtrl.isGenerating || superCtrl.isPlaying) return;
 
+        // 1. Identify Decks
+        // Direction is "A -> B" or "B -> A"
+        const sourceId = direction.includes("A ->") ? "A" : "B";
+        const targetId = sourceId === "A" ? "B" : "A";
+        
+        // 2. Playback Check
+        // Inspect engine state but DON'T auto-start blindly. Let AI decide.
+        const isAStopped = engine.isDeckStopped('A');
+        const isBStopped = engine.isDeckStopped('B');
+
+        // Verify audio context
+        if (engine['context'].state === 'suspended') {
+            await engine['context'].resume();
+        }
+
         superCtrl.isGenerating = true;
         superCtrl.addLog(`ARCHITECTING MIX: ${direction} (${duration} Bars)`);
         
-        // Construct Prompt
+        // Construct Prompt & Inject Context
         const req = `Mix from ${direction}. Duration: ${duration} Bars. Mood: ${mood}.`;
-        const score = await mixGen.generateScore(req, engine.masterBpm);
+        
+        // Pass Context to MixGenerator
+        const score = await mixGen.generateScore(req, engine.masterBpm, { isAStopped, isBStopped });
         
         superCtrl.isGenerating = false;
         
@@ -277,12 +294,23 @@ if (isVizMode) {
             
             autoEngine.setOnProgress((bar, phase) => {
                  superCtrl.updateStatus(bar, phase, duration);
-                 // If mix is done (callback might not signal completion explicitly other than phase)
+                 // If mix is done
                  if (bar >= duration) {
                      superCtrl.isPlaying = false;
                      superCtrl.addLog(`MIX COMPLETE.`);
+                     // Auto-Stop logic is now handled by AI (DECK_X_STOP)
+                     // or can be re-enabled here as safety fallback if desired.
+                     // For now, removing hardcoded logic to trust "Smart Playback".
                  }
             });
+            
+            // 3. Start Playing Target Deck IMMEDIATELY (Sync Start)
+            if (engine.isDeckStopped(targetId as "A" | "B")) {
+                console.log(`[AI Mix] Starting Target Deck ${targetId}...`);
+                window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: targetId } }));
+            }
+            // Ensure Volume is down? Automation should handle it, but initial state matters.
+            //Ideally Automation Engine applies first frame immediately upon loadScore/start.
             
             superCtrl.isPlaying = true;
             autoEngine.start();

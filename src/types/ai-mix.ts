@@ -85,4 +85,10 @@ export type ParameterID =
 
   // --- Master FX ---
   | "MASTER_SLAM_AMOUNT"   // 0.0 ~ 1.0
-  | "MASTER_COMP_THRESH";  // 0.0 ~ 1.0
+  | "MASTER_COMP_THRESH"   // 0.0 ~ 1.0
+
+  // --- Transport (Triggers) ---
+  | "DECK_A_PLAY"          // Boolean (True = Trigger Play)
+  | "DECK_A_STOP"          // Boolean (True = Trigger Stop)
+  | "DECK_B_PLAY"
+  | "DECK_B_STOP";
