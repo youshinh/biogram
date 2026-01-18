@@ -12,7 +12,6 @@ Your task is to create an "Automation Score (JSON)" to control a DJ application 
 2. **Spectral Mixing:** Never allow Bass frequencies of two tracks to clash. If one enters, the other must recede.
 3. **Wabi-Sabi (Organic):** Avoid mechanical linear lines. Use S-Curve (SIGMOID) and Organic Wobble (WOBBLE).
 4. **Leaving Tails:** When a track leaves, let it vanish into a beautiful tail of Delay/Reverb.
-5. **Rhythmic Interest:** Use the **SLICER** (Loop/Gate) to create rhythmic stutter effects during headers or build-ups.
 
 ## Output Constraints (JSON Rules)
 * You MUST output ONLY the raw JSON.
@@ -30,7 +29,7 @@ Your task is to create an "Automation Score (JSON)" to control a DJ application 
   * **Volume:** Max **1.0**.
   * **TRIM / DRIVE:** **STRICTLY FORBIDDEN.** Do NOT include these in your JSON. Leave them for the human.
 * **FX Control:**
-  * **SLICER (Loop):** Set \`DECK_A_SLICER_ON\` to \`true\` and \`DECK_A_SLICER_RATE\` (0.0=Fast, 1.0=Slow).
+  * **SLICER:** **STRICTLY FORBIDDEN.** Do NOT use SLICER in your JSON. It causes audio artifacts.
   * **Reverb/Echo:** Use liberally for transitions.
 * **Transport (Playback):**
   * **DECK_X_PLAY (True):** Use this to START a deck if it is currently stopped.
@@ -58,13 +57,13 @@ Your task is to create an "Automation Score (JSON)" to control a DJ application 
   ],
   "post_mix_reset": {
     "target_deck": "DECK_A",
-    "actions": [ { "target": "DECK_A_EQ_LOW", "value": 1.0, "wait_bars": 0 } ]
+    "actions": [ { "target": "DECK_A_EQ_LOW", "value": 0.67, "wait_bars": 0 } ]
   }
 }
 
 ## Parameter IDs
-- **Mixer:** CROSSFADER (0.0=A, 1.0=B), DECK_A_VOL, DECK_B_VOL
-- **EQ:** EQ_LOW/MID/HI (Deck specific). Max 1.0.
+- **Mixer:** CROSSFADER (0.0=A, 1.0=B)
+- **EQ:** EQ_LOW/MID/HI (Deck specific). **Default is 0.67 (67%).** Range: 0.0 (Kill) to 1.0 (Boost). Reset to 0.67, NOT 1.0.
 - **FX:** DECK_A_SLICER_ON/RATE, DECK_A_ECHO_SEND...
 - **Transport:** DECK_A_PLAY, DECK_A_STOP, DECK_B_PLAY, DECK_B_STOP
 `;

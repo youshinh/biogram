@@ -10,6 +10,39 @@ export class AutomationEngine {
   private score: AutomationScore | null = null;
   private animationFrameId: number | null = null;
   private onProgressCallback: ((bar: number, phase: string) => void) | null = null;
+  
+  // Grace period for transport commands after start()
+  // SafetyNet establishes correct play state, so we ignore Bar 0 transport commands
+  private gracePeriodEndBar = 0.5;
+  
+  // Track executed one-shot commands to prevent repeated triggering
+  private executedOneShotCommands: Set<string> = new Set();
+  
+  // FORBIDDEN parameters - AI is not allowed to control these
+  private static readonly FORBIDDEN_PARAMS = [
+      'DECK_A_TRIM', 'DECK_B_TRIM', 'TRIM_A', 'TRIM_B',
+      'DECK_A_DRIVE', 'DECK_B_DRIVE', 'DRIVE_A', 'DRIVE_B',
+      'TRIM', 'DRIVE',
+      // SLICER causes audio artifacts (tremolo effect) - block it
+      'DECK_A_SLICER_ON', 'DECK_B_SLICER_ON', 
+      'DECK_A_SLICER_RATE', 'DECK_B_SLICER_RATE',
+      'SLICER_ON', 'SLICER_RATE', 'SLICER_ACTIVE'
+  ];
+  
+  // Track mix direction to protect source deck from being stopped
+  private mixDirection: 'A->B' | 'B->A' | null = null;
+  
+  // Track already-logged blocked commands to avoid spam (log once per command per mix)
+  private loggedBlockedCommands: Set<string> = new Set();
+  
+  // Parameter value cache to avoid sending duplicate values to AudioEngine
+  // This prevents performance issues from thousands of redundant updates per second
+  private paramValueCache: Map<string, number | boolean> = new Map();
+  
+  // RATE LIMITER: Prevent overwhelming AudioWorklet with postMessages
+  // 10fps (100ms interval) is sufficient for smooth DJ mixing automation
+  private lastUpdateTime = 0;
+  private static readonly UPDATE_INTERVAL_MS = 100;
 
   constructor(engine: AudioEngine) {
     this.engine = engine;
@@ -17,7 +50,34 @@ export class AutomationEngine {
 
   loadScore(score: AutomationScore) {
     this.score = score;
-    // Validate or Reset state if needed
+    // Reset all tracking when loading new score
+    this.executedOneShotCommands.clear();
+    this.loggedBlockedCommands.clear();
+    this.paramValueCache.clear();
+    
+    // Detect mix direction from score metadata or transport commands
+    this.detectMixDirection();
+  }
+  
+  private detectMixDirection() {
+    if (!this.score) return;
+    
+    // Check if description mentions direction, or check CROSSFADER track
+    const desc = this.score.meta.description?.toLowerCase() || '';
+    if (desc.includes('a->b') || desc.includes('a to b')) {
+        this.mixDirection = 'A->B';
+    } else if (desc.includes('b->a') || desc.includes('b to a')) {
+        this.mixDirection = 'B->A';
+    } else {
+        // Fallback: check crossfader track direction
+        const cfTrack = this.score.tracks.find(t => t.target_id === 'CROSSFADER');
+        if (cfTrack && cfTrack.points.length >= 2) {
+            const startVal = cfTrack.points[0].value as number;
+            const endVal = cfTrack.points[cfTrack.points.length - 1].value as number;
+            this.mixDirection = endVal > startVal ? 'A->B' : 'B->A';
+        }
+    }
+    console.log(`[AutomationEngine] Detected mix direction: ${this.mixDirection}`);
   }
 
   start() {
@@ -25,9 +85,15 @@ export class AutomationEngine {
       console.warn("No score loaded");
       return;
     }
+    
+    // CRITICAL: Cancel any existing animation loop to prevent duplicates
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+    
     this.isPlaying = true;
-    this.startTime = this.engine['context'].currentTime; // Access raw context time
-    // Adjust start time to sync with next bar? For now immediate.
+    this.startTime = this.engine['context'].currentTime;
     this.loop();
   }
 
@@ -37,6 +103,21 @@ export class AutomationEngine {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    
+    // Clear one-shot tracking on stop
+    this.executedOneShotCommands.clear();
+    this.loggedBlockedCommands.clear();
+    this.paramValueCache.clear();
+    
+    // Notify UI that mix is complete so it can transition to IDLE state
+    if (this.score && this.onProgressCallback) {
+        this.onProgressCallback(this.score.meta.total_bars, 'COMPLETE');
+    }
+    
+    // CRITICAL: Reset FX that may have been activated during mix
+    // This prevents tremolo/gate effects from persisting after mix ends
+    this.engine.updateDspParam('SLICER_ACTIVE', 0.0);
+    console.log('[AutomationEngine] Reset SLICER_ACTIVE to 0 on mix stop');
     
     // Trigger Phase 4: Reset
     if (this.score && this.score.post_mix_reset) {
@@ -50,6 +131,14 @@ export class AutomationEngine {
 
   private loop = () => {
     if (!this.isPlaying || !this.score) return;
+    
+    // RATE LIMITER: Skip frames to prevent overwhelming AudioWorklet
+    const perfNow = performance.now();
+    if (perfNow - this.lastUpdateTime < AutomationEngine.UPDATE_INTERVAL_MS) {
+      this.animationFrameId = requestAnimationFrame(this.loop);
+      return; // Skip this frame
+    }
+    this.lastUpdateTime = perfNow;
 
     const now = this.engine['context'].currentTime;
     const elapsed = now - this.startTime;
@@ -165,6 +254,34 @@ export class AutomationEngine {
   }
 
   private applyParam(id: ParameterID, val: number | boolean) {
+      // Block FORBIDDEN parameters (TRIM, DRIVE)
+      if (AutomationEngine.FORBIDDEN_PARAMS.includes(id as string)) {
+          // Log only once
+          if (!this.loggedBlockedCommands.has(`forbidden_${id}`)) {
+              this.loggedBlockedCommands.add(`forbidden_${id}`);
+              console.warn(`[AutomationEngine] Blocked forbidden parameter: ${id}`);
+          }
+          return;
+      }
+      
+      // CRITICAL: Skip if value hasn't changed significantly
+      // This prevents performance issues from redundant AudioEngine updates every frame
+      const cachedVal = this.paramValueCache.get(id);
+      if (cachedVal !== undefined) {
+          if (typeof val === 'boolean' && val === cachedVal) {
+              return; // Boolean unchanged
+          }
+          if (typeof val === 'number' && typeof cachedVal === 'number') {
+              // Only update if changed by more than 0.01 (1%)
+              // This significantly reduces AudioEngine message traffic
+              if (Math.abs(val - cachedVal) < 0.01) {
+                  return; // Number unchanged within threshold
+              }
+          }
+      }
+      // Update cache
+      this.paramValueCache.set(id, val);
+      
       if (typeof val === 'boolean') {
           this.applyBooleanParam(id, val);
            return;
@@ -248,18 +365,30 @@ export class AutomationEngine {
           // FX
           case 'DECK_A_ECHO_SEND': 
              this.engine.updateDspParam('DUB', v); 
+             this.dispatchUpdate('DUB', v);
              // Toggle Tape Active automatically if send is > 0
-             if (v > 0.05) this.engine.updateDspParam('TAPE_ACTIVE', 1.0);
+             if (v > 0.05) {
+                 this.engine.updateDspParam('TAPE_ACTIVE', 1.0);
+                 this.dispatchUpdate('TAPE_ACTIVE', 1.0);
+             }
              break;
           case 'DECK_B_ECHO_SEND': 
              this.engine.updateDspParam('DUB', v); 
-             if (v > 0.05) this.engine.updateDspParam('TAPE_ACTIVE', 1.0);
+             this.dispatchUpdate('DUB', v);
+             if (v > 0.05) {
+                 this.engine.updateDspParam('TAPE_ACTIVE', 1.0);
+                 this.dispatchUpdate('TAPE_ACTIVE', 1.0);
+             }
              break;
 
           case 'DECK_A_REVERB_MIX':
           case 'DECK_B_REVERB_MIX':
              this.engine.updateDspParam('BLOOM_WET', v);
-             if (v > 0.05) this.engine.updateDspParam('REVERB_ACTIVE', 1.0);
+             this.dispatchUpdate('BLOOM_WET', v);
+             if (v > 0.05) {
+                 this.engine.updateDspParam('REVERB_ACTIVE', 1.0);
+                 this.dispatchUpdate('REVERB_ACTIVE', 1.0);
+             }
              break;
 
           case 'DECK_A_SLICER_RATE':
@@ -268,10 +397,13 @@ export class AutomationEngine {
              // 0.0 = Fast (1/16 = 0.0625), 1.0 = Slow (1/2 = 0.5)
              const pattern = 0.0625 + (v * (0.5 - 0.0625));
              this.engine.updateDspParam('SLICER_PATTERN', pattern);
+             this.dispatchUpdate('SLICER_PATTERN', pattern);
              break;
           
           case 'MASTER_SLAM_AMOUNT':
              this.updateSlam(v);
+             // Dispatch handled in updateSlam? No.
+             this.dispatchUpdate('SLAM_AMOUNT', v);
              break;
       }
   }
@@ -288,22 +420,91 @@ export class AutomationEngine {
        }
        
        // --- Transport (Smart Playback) ---
-       // Only act if value is TRUE (Trigger)
-       else if (val === true) {
-           if (id === 'DECK_A_PLAY') {
-               this.dispatchPlaybackCommand('A', true);
-           }
-           else if (id === 'DECK_B_PLAY') {
-               this.dispatchPlaybackCommand('B', true);
-           }
-           else if (id === 'DECK_A_STOP') {
-               this.dispatchPlaybackCommand('A', false);
-           }
-           else if (id === 'DECK_B_STOP') {
-               this.dispatchPlaybackCommand('B', false);
+       // These are ONE-SHOT commands - only execute once per keyframe
+       else if (id === 'DECK_A_PLAY' || id === 'DECK_B_PLAY' || 
+                id === 'DECK_A_STOP' || id === 'DECK_B_STOP') {
+           // Only act if value is TRUE (Trigger)
+           if (val === true) {
+               // Grace period: Ignore transport commands in first 0.5 bars
+               // SafetyNet has already established the correct play state
+               if (this.currentBar < this.gracePeriodEndBar) {
+                   // Log only once per command to avoid spam
+                   if (!this.loggedBlockedCommands.has(`grace_${id}`)) {
+                       this.loggedBlockedCommands.add(`grace_${id}`);
+                       console.log(`[AutomationEngine] Ignoring ${id} during grace period`);
+                   }
+                   return;
+               }
+               
+               // SOURCE DECK PROTECTION: Never stop the source deck during a mix
+               // A->B: Source is A, should NOT be stopped
+               // B->A: Source is B, should NOT be stopped
+               if (this.mixDirection === 'A->B' && id === 'DECK_A_STOP') {
+                   // Log only once to avoid spam
+                   if (!this.loggedBlockedCommands.has(id)) {
+                       this.loggedBlockedCommands.add(id);
+                       console.log(`[AutomationEngine] Blocked ${id} - Source deck A protected`);
+                   }
+                   return;
+               }
+               if (this.mixDirection === 'B->A' && id === 'DECK_B_STOP') {
+                   if (!this.loggedBlockedCommands.has(id)) {
+                       this.loggedBlockedCommands.add(id);
+                       console.log(`[AutomationEngine] Blocked ${id} - Source deck B protected`);
+                   }
+                   return;
+               }
+               
+               // Find the exact keyframe time for this command from the score
+               // This ensures we track by keyframe, not by current bar position
+               const keyframeTime = this.findKeyframeTimeForCommand(id);
+               const commandKey = `${id}_${keyframeTime}`;
+               
+               // Check if already executed
+               if (this.executedOneShotCommands.has(commandKey)) {
+                   return; // Already executed, skip
+               }
+               
+               // Mark as executed
+               this.executedOneShotCommands.add(commandKey);
+               
+               // Now dispatch
+               if (id === 'DECK_A_PLAY') {
+                   this.dispatchPlaybackCommand('A', true);
+               }
+               else if (id === 'DECK_B_PLAY') {
+                   this.dispatchPlaybackCommand('B', true);
+               }
+               else if (id === 'DECK_A_STOP') {
+                   this.dispatchPlaybackCommand('A', false);
+               }
+               else if (id === 'DECK_B_STOP') {
+                   this.dispatchPlaybackCommand('B', false);
+               }
            }
        }
-  }
+   }
+
+   /**
+    * Find the keyframe time for a transport command based on current bar position
+    * This returns the time of the keyframe that is currently active
+    */
+   private findKeyframeTimeForCommand(id: ParameterID): number {
+       if (!this.score) return -1;
+       
+       const track = this.score.tracks.find(t => t.target_id === id);
+       if (!track || !track.points || track.points.length === 0) return -1;
+       
+       // Find the most recent keyframe that has passed
+       for (let i = track.points.length - 1; i >= 0; i--) {
+           const point = track.points[i];
+           if (this.currentBar >= point.time) {
+               return point.time;
+           }
+       }
+       
+       return track.points[0].time;
+   }
 
   private dispatchPlaybackCommand(deckId: 'A' | 'B', playing: boolean) {
         // console.log(`[AutomationEngine] Force Playback State Deck ${deckId}: ${playing}`);

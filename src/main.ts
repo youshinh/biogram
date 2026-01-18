@@ -268,7 +268,8 @@ if (isVizMode) {
         // if (superCtrl.mixState !== 'IDLE') return; <--- REMOVED BLOCKER
 
         // 1. Identify Decks
-        const sourceId = direction.includes("A ->") ? "A" : "B";
+        // UI sends 'A->B' or 'B->A' (no spaces)
+        const sourceId = direction.includes("A->") ? "A" : "B";
         const targetId = sourceId === "A" ? "B" : "A";
         
         pendingMixContext = { sourceId, targetId };
@@ -329,20 +330,20 @@ if (isVizMode) {
             const { sourceId, targetId } = pendingMixContext;
             
             // 1. Force Source Deck to Play (The track leaving)
-            if (engine.isDeckStopped(sourceId as "A" | "B")) {
-                 console.log(`[SafetyNet] Force Starting Source Deck ${sourceId}`);
-                 window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: sourceId } }));
-            }
+            // Always force play state to ensure sync
+            console.log(`[SafetyNet] Force Ensuring Source Deck ${sourceId} Playing`);
+            window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: sourceId, playing: true } }));
             
             // 2. Force Target Deck to Play (The track entering)
-            // Fixes "Stopped but no play" bug.
-            if (engine.isDeckStopped(targetId as "A" | "B")) {
-                 console.log(`[SafetyNet] Force Starting Target Deck ${targetId}`);
-                 window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: targetId } }));
-            }
+            console.log(`[SafetyNet] Force Ensuring Target Deck ${targetId} Playing`);
+            window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: targetId, playing: true } }));
         }
 
-        autoEngine.start();
+        // Delay AutomationEngine start to ensure SafetyNet transport commands are fully processed
+        // This prevents AI score's Bar 0 transport commands from immediately overriding SafetyNet
+        setTimeout(() => {
+            autoEngine.start();
+        }, 200);
     });
 
     superCtrl.addEventListener('ai-mix-abort', () => {
@@ -684,74 +685,92 @@ if (isVizMode) {
 
 
 
-    // --- AI PARAMETER GRID (7 SLOTS + Custom) ---
-    // Grid Need: 8 slots? 
-    // Grid Need: 8 slots? 
-    // Current layout: 'repeat(6, 1fr)'. We need more space or redefine.
-    // User asked for "7 UI parameters" + Custom.
+    // --- AI PARAMETER GRID (7 SLOTS + Custom + KEY/SCALE w/RANDOM) ---
     controlsContainer.style.height = '100%';
     controlsContainer.style.alignItems = 'stretch';
-    // Ambient, Minimal, Dub, Impact, Color (5 Sliders)
-    // Texture (Combo)
-    // Pulse (Combo)
-    // Custom (Combo/Input)
-    // Total 8 slots. 4 columns x 2 rows? Or 8 columns?
-    // Let's try 8 columns for now to fit wide.
-    // Let's try 10 columns to fit all params in one row as requested
-    // Let's try 9 columns to fit all params in one row (8 params + 1 dual slot)
+    // 9 columns: 5 sliders + 2 combos + 1 custom + 1 key/scale with random
     controlsContainer.style.gridTemplateColumns = 'repeat(9, 1fr)';
 
-    // 0. (Removed - moved to end)
+    // Store references to sliders for randomization
+    const sliderRefs: { name: string, wrapper: HTMLElement, slider: HTMLElement }[] = [];
+    const comboRefs: { name: string, wrapper: HTMLElement, select: HTMLSelectElement, slider: HTMLElement }[] = [];
+
+    // Helper to create slider with reference
+    const createAiSliderWithRef = (label: string, onChange: (val: number) => void): HTMLElement => {
+        const wrapper = createAiSlider(label, onChange);
+        const slider = wrapper.querySelector('bio-slider') as HTMLElement;
+        if (slider) {
+            sliderRefs.push({ name: label, wrapper, slider });
+        }
+        return wrapper;
+    };
+
+    // Helper to create combo slot with reference
+    const createComboSlotWithRef = (label: string, options: string[], onChange: (sel: string, val: number) => void): HTMLElement => {
+        const wrapper = createComboSlot(label, options, onChange);
+        const select = wrapper.querySelector('select') as HTMLSelectElement;
+        const slider = wrapper.querySelector('bio-slider') as HTMLElement;
+        if (select && slider) {
+            comboRefs.push({ name: label, wrapper, select, slider });
+        }
+        return wrapper;
+    };
 
     // 1. AMBIENT
-    controlsContainer.appendChild(createAiSlider('AMBIENT', (v) => {
+    controlsContainer.appendChild(createAiSliderWithRef('AMBIENT', (v) => {
         uiState.valAmbient = v;
         updatePrompts();
     }));
     
     // 2. MINIMAL
-    controlsContainer.appendChild(createAiSlider('MINIMAL', (v) => {
+    controlsContainer.appendChild(createAiSliderWithRef('MINIMAL', (v) => {
         uiState.valMinimal = v;
         updatePrompts();
     }));
     
     // 3. DUB
-    controlsContainer.appendChild(createAiSlider('DUB', (v) => {
+    controlsContainer.appendChild(createAiSliderWithRef('DUB', (v) => {
         uiState.valDub = v;
         updatePrompts();
     }));
 
-    // 4. IMPACT (New)
-    controlsContainer.appendChild(createAiSlider('IMPACT', (v) => {
+    // 4. IMPACT
+    controlsContainer.appendChild(createAiSliderWithRef('IMPACT', (v) => {
         uiState.valImpact = v;
         updatePrompts();
     }));
 
-    // 5. COLOR (New)
-    controlsContainer.appendChild(createAiSlider('COLOR', (v) => {
+    // 5. COLOR
+    controlsContainer.appendChild(createAiSliderWithRef('COLOR', (v) => {
         uiState.valColor = v;
         updatePrompts();
     }));
 
-    // 6. TEXTURE (Combo)
-    controlsContainer.appendChild(createComboSlot('TEXTURE', [
+    // TEXTURE options array for combo slot
+    const textureOptions = [
         'Field Recordings Nature', 
         'Industrial Factory Drone', 
         'Tape Hiss Lo-Fi', 
         'Underwater Hydrophone'
-    ], (sel, val) => {
+    ];
+
+    // 6. TEXTURE (Combo)
+    controlsContainer.appendChild(createComboSlotWithRef('TEXTURE', textureOptions, (sel, val) => {
         uiState.typeTexture = sel;
-        uiState.valTexture = val; // Note: Spec says Ambient overrides intensity in text, but we store it just in case logic needs it
+        uiState.valTexture = val;
         updatePrompts();
     }));
 
-    // 7. PULSE (Renamed from RHYTHM)
-    controlsContainer.appendChild(createComboSlot('PULSE', [
+    // PULSE options array for combo slot
+    const pulseOptions = [
         'Sub-bass Pulse', 
         'Granular Clicks', 
         'Deep Dub Tech Rhythm', 
         'Industrial Micro-beats'
-    ], (sel, val) => {
+    ];
+
+    // 7. PULSE (Renamed from RHYTHM)
+    controlsContainer.appendChild(createComboSlotWithRef('PULSE', pulseOptions, (sel, val) => {
         uiState.typePulse = sel;
         uiState.valPulse = val;
         updatePrompts();
@@ -760,19 +779,60 @@ if (isVizMode) {
     // 8. CUSTOM
     controlsContainer.appendChild(createCustomSlot((text, val) => {
         uiState.theme = text;
-        // val is 0-100, might imply theme weight?
-        // Spec says "deckPrompt (Theme)" is strictly the text.
-        // We'll ignore val for text generation logic for now, or use it?
-        // For now just text triggers update.
         updatePrompts();
     }));
 
-    // 9. KEY / SCALE (New Dual Slot at End)
-    // Needs scale labels
+    // 9. KEY / SCALE + RANDOM (Combined Slot)
     const scaleLabels = SCALE_OPTIONS.map(o => o.label);
-    controlsContainer.appendChild(createDualSelectorSlot('KEY', ROOT_OPTIONS, 'SCALE', scaleLabels, (root, scaleLbl) => {
+    
+    // Create combined wrapper for KEY/SCALE/RANDOM
+    const keyScaleRandomWrapper = document.createElement('div');
+    keyScaleRandomWrapper.className = "flex flex-col flex-1 border border-white/20 bg-black/40 rounded-lg overflow-hidden";
+    
+    // Helper to create select - returns { container, sel } for reference
+    const createInlineSelect = (lbl: string, opts: string[], onUpdate: (val: string) => void) => {
+        const container = document.createElement('div');
+        container.className = "flex flex-col border-b border-white/10";
+        
+        const header = document.createElement('div');
+        header.textContent = lbl;
+        header.className = "bg-black/50 text-zinc-500 text-[9px] px-1.5 py-0.5 font-mono tracking-wider";
+        container.appendChild(header);
+
+        const sel = document.createElement('select');
+        sel.className = "bg-transparent text-white text-[10px] p-1 font-mono outline-none w-full appearance-none cursor-pointer hover:bg-white/5";
+        
+        // Add "None" option
+        const noneOpt = document.createElement('option');
+        noneOpt.value = "";
+        noneOpt.textContent = "---";
+        noneOpt.style.backgroundColor = "#000";
+        noneOpt.style.color = "#fff";
+        sel.appendChild(noneOpt);
+
+        opts.forEach(opt => {
+            const el = document.createElement('option');
+            el.value = opt;
+            el.textContent = opt.split(' ').slice(0, 2).join(' ').toUpperCase();
+            el.style.backgroundColor = "#000";
+            el.style.color = "#fff";
+            sel.appendChild(el);
+        });
+        
+        sel.onchange = (e: any) => onUpdate(e.target.value);
+        container.appendChild(sel);
+        return { container, sel };
+    };
+
+    // KEY selector
+    const keySelect = createInlineSelect('KEY', ROOT_OPTIONS, (root) => {
         uiState.keyRoot = root;
-        // Find prompt for scale
+        updatePrompts();
+    });
+    keyScaleRandomWrapper.appendChild(keySelect.container);
+
+    // SCALE selector
+    const scaleSelect = createInlineSelect('SCALE', scaleLabels, (scaleLbl) => {
         const opt = SCALE_OPTIONS.find(o => o.label === scaleLbl);
         if (opt) {
             uiState.scaleLabel = opt.label;
@@ -782,7 +842,82 @@ if (isVizMode) {
             uiState.scalePrompt = "";
         }
         updatePrompts();
-    }));
+    });
+    keyScaleRandomWrapper.appendChild(scaleSelect.container);
+
+    // RANDOM button (below KEY/SCALE)
+    const randomBtnContainer = document.createElement('div');
+    randomBtnContainer.className = "flex-1 flex items-center justify-center py-2";
+
+    const randomBtn = document.createElement('button');
+    randomBtn.textContent = 'RANDOM';
+    
+    // Explicit styles to ensure circular shape
+    randomBtn.style.width = '72px';
+    randomBtn.style.height = '72px';
+    randomBtn.style.borderRadius = '50%';
+    
+    // Base Tailwind classes for colors and interaction
+    randomBtn.className = "bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-mono text-[10px] font-bold border border-white/10 transition-all duration-150 cursor-pointer flex items-center justify-center shadow-lg active:scale-95 active:border-tech-cyan/50 tracking-wider";
+    
+    randomBtn.onclick = () => {
+        // Randomize all main sliders (0-100)
+        sliderRefs.forEach(ref => {
+            const randomVal = Math.floor(Math.random() * 100);
+            (ref.slider as any).value = randomVal;
+            ref.slider.dispatchEvent(new CustomEvent('change', { 
+                detail: randomVal, 
+                bubbles: true, 
+                composed: true 
+            }));
+        });
+
+        // Randomize combo slot types and values
+        comboRefs.forEach(ref => {
+            const optionCount = ref.select.options.length;
+            const randomIndex = Math.floor(Math.random() * optionCount);
+            ref.select.selectedIndex = randomIndex;
+            ref.select.dispatchEvent(new Event('change', { bubbles: true }));
+
+            const randomVal = Math.floor(Math.random() * 100);
+            (ref.slider as any).value = randomVal;
+            ref.slider.dispatchEvent(new CustomEvent('change', { 
+                detail: randomVal, 
+                bubbles: true, 
+                composed: true 
+            }));
+        });
+
+        // Randomize KEY
+        // includes empty option? maybe skip it. options[0] is ---.
+        // Let's pick a valid key/scale usually.
+        const keyOpts = keySelect.sel.options;
+        if (keyOpts.length > 1) {
+             const rKey = Math.floor(Math.random() * (keyOpts.length - 1)) + 1;
+             keySelect.sel.selectedIndex = rKey;
+             keySelect.sel.dispatchEvent(new Event('change'));
+        }
+
+        // Randomize SCALE
+        const scaleOpts = scaleSelect.sel.options;
+        if (scaleOpts.length > 1) {
+             const rScale = Math.floor(Math.random() * (scaleOpts.length - 1)) + 1;
+             scaleSelect.sel.selectedIndex = rScale;
+             scaleSelect.sel.dispatchEvent(new Event('change'));
+        }
+
+        // Visual feedback
+        randomBtn.style.color = '#fff';
+        randomBtn.style.borderColor = '#fff';
+        setTimeout(() => {
+            randomBtn.style.color = '';
+            randomBtn.style.borderColor = '';
+        }, 150);
+    };
+
+    randomBtnContainer.appendChild(randomBtn);
+    keyScaleRandomWrapper.appendChild(randomBtnContainer);
+    controlsContainer.appendChild(keyScaleRandomWrapper); // Ensure it's appended
 
     shell.appendChild(controlsContainer);
 

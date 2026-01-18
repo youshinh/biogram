@@ -42,6 +42,51 @@ export class FxRack extends LitElement {
   @property({ type: Number }) compGain = 1.2;
   
   @property({ type: Number }) dubSend = 0.0;
+  
+  connectedCallback() {
+      super.connectedCallback();
+      window.addEventListener('mixer-update', this.handleUpdate);
+  }
+
+  disconnectedCallback() {
+      super.disconnectedCallback();
+      window.removeEventListener('mixer-update', this.handleUpdate);
+  }
+
+  private handleUpdate = (e: any) => {
+      const { parameter, value } = e.detail;
+      
+      // Tape Echo
+      if (parameter === 'DUB') {
+          this.dubSend = value;
+      } else if (parameter === 'TAPE_ACTIVE') {
+          this.activeTape = value > 0.5;
+      }
+      
+      // Bloom Verb
+      else if (parameter === 'BLOOM_WET') {
+          this.bloomWet = value;
+      } else if (parameter === 'REVERB_ACTIVE') {
+          this.activeReverb = value > 0.5;
+      }
+      
+      // Dynamics
+      else if (parameter === 'COMP_ACTIVE') {
+          this.activeLimiter = value > 0.5;
+      }
+      
+      // Spectral Gate
+      else if (parameter === 'SPECTRAL_GATE_ACTIVE') {
+          this.activeGate = value > 0.5;
+      }
+      else if (parameter === 'GATE_THRESH') {
+          // Reverse mapping if needed, or just update internal state?
+          // For UI consistency, we might need a separate internal 'thresh' if logic differs.
+          // For now assume direct update 
+      }
+      
+      this.requestUpdate();
+  }
 
   firstUpdated() {
       // Sync initial state

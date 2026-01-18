@@ -764,7 +764,10 @@ class GhostProcessor extends AudioWorkletProcessor {
             
             // 5. CLOUD GRAIN (Mono Sum -> Cloud -> Mix Back)
             if (this.cloudActive) {
-                this.cloud.setParams(this.cloudDensity, this.cloudSize, this.cloudSpray, this.cloudPitch, this.cloudMix);
+                // Update params once per block, not per sample
+                if (i === 0) {
+                    this.cloud.setParams(this.cloudDensity, this.cloudSize, this.cloudSpray, this.cloudPitch, this.cloudMix);
+                }
                 const monoIn = (sampleL + sampleR) * 0.5;
                 const out = this.cloud.process(monoIn); 
                 sampleL = out; 
@@ -784,9 +787,12 @@ class GhostProcessor extends AudioWorkletProcessor {
             }
 
             // 8. TAPE ECHO (Mono Send -> Mono Return -> Center)
-            const bpm = 120; 
-            const delayTime = (60 / bpm) * 0.75; 
-            this.delay.setParams(delayTime, this.dubFeedback, 0.002); 
+            // Update params once per block for performance
+            if (i === 0) {
+                const bpm = 120; 
+                const delayTime = (60 / bpm) * 0.75; 
+                this.delay.setParams(delayTime, this.dubFeedback, 0.002);
+            }
             
             const tapeSendAmount = this.tapeSendSmooth.process();
             const monoSum = (sampleL + sampleR) * 0.5;
@@ -837,21 +843,9 @@ class GhostProcessor extends AudioWorkletProcessor {
             sampleL = Math.max(-1.0, Math.min(1.0, sampleL));
             sampleR = Math.max(-1.0, Math.min(1.0, sampleR));
 
-            // Writes
+            // Update Read Pointers (accumulate within loop)
             ptrA += velA; 
             ptrB += velB;
-            Atomics.store(this.headerView, OFFSETS.READ_POINTER_A / 4, ptrA);
-            Atomics.store(this.headerView, OFFSETS.READ_POINTER_B / 4, ptrB);
-            
-            if (this.ghostActive) {
-                 Atomics.store(this.headerView, OFFSETS.GHOST_POINTER / 4, Math.floor(this.ghostPtr));
-            } else {
-                 Atomics.store(this.headerView, OFFSETS.GHOST_POINTER / 4, -1);
-            }
-            
-            Atomics.store(this.headerView, OFFSETS.SLICER_ACTIVE / 4, (this.slicerActive) ? 1 : 0);
-            
-            if (this.floatView) this.floatView[OFFSETS.TAPE_VELOCITY / 4] = (velA + velB) / 2; 
 
             // Output to AudioContext
             leftChannel[i] = sampleL;
@@ -867,6 +861,21 @@ class GhostProcessor extends AudioWorkletProcessor {
                 outputs[2][1][i] = eqBR_Out;
             }
         }
+
+        // === BLOCK-LEVEL UPDATES (Outside sample loop for performance) ===
+        // Write pointers to shared memory once per block instead of per sample
+        Atomics.store(this.headerView, OFFSETS.READ_POINTER_A / 4, ptrA);
+        Atomics.store(this.headerView, OFFSETS.READ_POINTER_B / 4, ptrB);
+        
+        if (this.ghostActive) {
+             Atomics.store(this.headerView, OFFSETS.GHOST_POINTER / 4, Math.floor(this.ghostPtr));
+        } else {
+             Atomics.store(this.headerView, OFFSETS.GHOST_POINTER / 4, -1);
+        }
+        
+        Atomics.store(this.headerView, OFFSETS.SLICER_ACTIVE / 4, (this.slicerActive) ? 1 : 0);
+        
+        if (this.floatView) this.floatView[OFFSETS.TAPE_VELOCITY / 4] = (velA + velB) / 2;
 
         return true;
     } catch (e) {
