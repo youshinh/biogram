@@ -2,7 +2,7 @@
 
 > "Noise is where the universe resides. (ノイズこそが、宇宙の所在である)"
 
-**Bio:gram** は、**Google Gemini 1.5 Flash** を搭載した実験的な AI DJ システムであり、「Prompt-DJ」プラットフォームです。従来の線形的なオートミックスを超越し、**Deep Spectral Architect (深層スペクトル設計)** を採用することで、AI が「Ghost (幽霊)」のようなパートナーとして振る舞い、周波数帯域の譲り合い、有機的なパラメータ操作、そして物語性のあるトランジションをリアルタイムに実行します。
+**Bio:gram** は、**Google Gemini Flash** を搭載した実験的な AI DJ システムであり、「Prompt-DJ」プラットフォームです。従来の線形的なオートミックスを超越し、**Deep Spectral Architect (深層スペクトル設計)** を採用することで、AI が「Ghost (幽霊)」のようなパートナーとして振る舞い、周波数帯域の譲り合い、有機的なパラメータ操作、そして物語性のあるトランジションをリアルタイムに実行します。
 
 [🇺🇸 English](README.md)
 
@@ -30,7 +30,7 @@ AI は、以下の4つの物語的フェーズを通じてミックスを指揮�
 4.  **Silent Reset (浄化 - The Purification)**: ユーザーには見えない舞台裏で、AI がすべてのパラメータを初期値に戻し、次の演奏（転生）に備えるクリーンアップフェーズです。
 
 ### 👻 Ghost Faders
-画面上のスライダーやノブが勝手に動く様子をご覧ください。これは録画されたアニメーションではなく、**Gemini 1.5 Flash** モデルがリアルタイムに生成した「オートメーション・スコア（楽譜）」に基づいて、AI が実際に操作を行っている姿です。
+画面上のスライダーやノブが勝手に動く様子をご覧ください。これは録画されたアニメーションではなく、**Gemini Flash** モデルがリアルタイムに生成した「オートメーション・スコア（楽譜）」に基づいて、AI が実際に操作を行っている姿です。
 
 ### 🧠 Generative Modes
 AI の性格（Persona）を選択し、物語をコントロールできます。
@@ -47,7 +47,7 @@ AI の性格（Persona）を選択し、物語をコントロールできます�
 ## 🛠️ Tech Stack
 
 -   **Framework**: Vite + TypeScript
--   **AI Model**: Google Gemini 1.5 Flash (via `@google/genai`)
+-   **AI Model**: Google Gemini Flash (via `@google/genai`)
 -   **Audio Engine**: Web Audio API + AudioWorklet (サンプル単位の精密なタイミング制御)
 -   **UI**: Lit (Web Components) + TailwindCSS
 -   **Visuals**: Hydra-Synth + p5.js

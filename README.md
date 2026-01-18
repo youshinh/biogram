@@ -2,7 +2,7 @@
 
 > "Noise is where the universe resides."
 
-**Bio:gram** is an experimental AI-driven DJ system, a "Prompt-DJ" platform powered by **Google's Gemini 1.5 Flash**. It transcends traditional linear mixing by employing a **Deep Spectral Architect**, allowing the AI to act as a "Ghost" partner that performs spectral handoffs, organic parameter manipulation, and narrative-driven transitions.
+**Bio:gram** is an experimental AI-driven DJ system, a "Prompt-DJ" platform powered by **Google's Gemini Flash**. It transcends traditional linear mixing by employing a **Deep Spectral Architect**, allowing the AI to act as a "Ghost" partner that performs spectral handoffs, organic parameter manipulation, and narrative-driven transitions.
 
 [🇯🇵 日本語 (Japanese)](README_JP.md)
 
@@ -29,7 +29,7 @@ The AI orchestrates mixes through four distinct narrative phases, visualized on 
 4.  **Silent Reset (The Purification)**: A hidden cleanup phase where the AI resets all parameters to prepare the deck for its next reincarnation.
 
 ### 👻 Ghost Faders
-Watch as the sliders and knobs on the UI move by themselves. This is not a pre-recorded animation but real-time control by the **Gemini 1.5 Flash** model, executing the "Automation Score" it generated on the fly.
+Watch as the sliders and knobs on the UI move by themselves. This is not a pre-recorded animation but real-time control by the **Gemini Flash** model, executing the "Automation Score" it generated on the fly.
 
 ### 🧠 Generative Modes
 Control the narrative with distinct AI personalities:
@@ -46,7 +46,7 @@ Built-in **Hydra-Synth** integration reacts to audio bands in real-time, generat
 ## 🛠️ Tech Stack
 
 -   **Framework**: Vite + TypeScript
--   **AI Model**: Google Gemini 1.5 Flash (via `@google/genai`)
+-   **AI Model**: Google Gemini Flash (via `@google/genai`)
 -   **Audio Engine**: Web Audio API + AudioWorklet (Sample-accurate timing)
 -   **UI**: Lit (Web Components) + TailwindCSS
 -   **Visuals**: Hydra-Synth + p5.js
