@@ -58,7 +58,7 @@ const SCALE_OPTIONS = [
 ];
 
 
-console.log("Prompt-DJ v2.0 'Ghost in the Groove' initializing...");
+console.log("Bio:gram v2.0 'Ghost in the Groove' initializing...");
 
 // Init Engine Early (but don't start audio context yet)
 const engine = new AudioEngine();
@@ -792,15 +792,16 @@ if (isVizMode) {
     // Helper to create select - returns { container, sel } for reference
     const createInlineSelect = (lbl: string, opts: string[], onUpdate: (val: string) => void) => {
         const container = document.createElement('div');
-        container.className = "flex flex-col border-b border-white/10";
+        // Increased vertical padding (py-1.5) and bottom margin for clearance
+        container.className = "flex flex-col border-b border-white/10 py-1 mb-1";
         
         const header = document.createElement('div');
         header.textContent = lbl;
-        header.className = "bg-black/50 text-zinc-500 text-[9px] px-1.5 py-0.5 font-mono tracking-wider";
+        header.className = "bg-black/50 text-zinc-500 text-[9px] px-1.5 py-0.5 font-mono tracking-wider mb-1";
         container.appendChild(header);
 
         const sel = document.createElement('select');
-        sel.className = "bg-transparent text-white text-[10px] p-1 font-mono outline-none w-full appearance-none cursor-pointer hover:bg-white/5";
+        sel.className = "bg-transparent text-white text-[11px] p-1.5 font-mono outline-none w-full appearance-none cursor-pointer hover:bg-white/5";
         
         // Add "None" option
         const noneOpt = document.createElement('option');
@@ -852,13 +853,12 @@ if (isVizMode) {
     const randomBtn = document.createElement('button');
     randomBtn.textContent = 'RANDOM';
     
-    // Explicit styles to ensure circular shape
-    randomBtn.style.width = '72px';
-    randomBtn.style.height = '72px';
+    // Increased size to 80px (w-20 -> ~80px) and font size (text-xs / 12px)
+    randomBtn.style.width = '80px';
+    randomBtn.style.height = '80px';
     randomBtn.style.borderRadius = '50%';
     
-    // Base Tailwind classes for colors and interaction
-    randomBtn.className = "bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-mono text-[10px] font-bold border border-white/10 transition-all duration-150 cursor-pointer flex items-center justify-center shadow-lg active:scale-95 active:border-tech-cyan/50 tracking-wider";
+    randomBtn.className = "bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-mono text-xs font-bold border border-white/10 transition-all duration-150 cursor-pointer flex items-center justify-center shadow-lg active:scale-95 active:border-tech-cyan/50 tracking-wider";
     
     randomBtn.onclick = () => {
         // Randomize all main sliders (0-100)
