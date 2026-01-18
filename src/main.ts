@@ -11,10 +11,14 @@ import './ui/modules/dj-mixer';
 import './ui/modules/fx-rack';
 import './ui/modules/app-header';
 import './ui/modules/loop-library-panel';
+import './ui/modules/super-controls';
+import { AutomationEngine } from './ai/automation-engine';
+import { MixGenerator } from './ai/mix-generator';
 import type { AppShell } from './ui/shell';
 import type { FxRack } from './ui/modules/fx-rack';
 import type { DeckController } from './ui/modules/deck-controller';
 import type { DjMixer } from './ui/modules/dj-mixer';
+import type { SuperControls } from './ui/modules/super-controls';
 import { 
     createAiSlider, 
     createComboSlot, 
@@ -61,8 +65,15 @@ const engine = new AudioEngine();
 window.engine = engine;
 
 // Init MIDI
+// Init MIDI
 const midiManager = new MidiManager();
 window.midiManager = midiManager;
+
+// Init AI Mix Engine
+const autoEngine = new AutomationEngine(engine);
+// @ts-ignore
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+const mixGen = new MixGenerator(apiKey);
 
 // ROUTING LOGIC
 const urlParams = new URLSearchParams(window.location.search);
@@ -85,11 +96,11 @@ if (isVizMode) {
     
     // VIEW CONTAINER
     const viewContainer = document.createElement('div');
-    viewContainer.style.height = 'calc(100vh - 30px)'; // Subtract header
-    viewContainer.style.position = 'relative';
-    viewContainer.style.overflow = 'hidden';
+    viewContainer.style.height = '100vh';
+    viewContainer.style.width = '100vw'; // Ensure width
     viewContainer.style.display = 'flex';
     viewContainer.style.flexDirection = 'column';
+    viewContainer.style.overflow = 'hidden';
 
     // --- PROMPT STATE MANAGEMENT (Centralized) ---
     // Central State (UI Values are shared, Context is per-deck)
@@ -163,6 +174,7 @@ if (isVizMode) {
     
     // 1. HEADER (Navigation)
     const header = document.createElement('app-header');
+    header.style.flexShrink = '0';
     viewContainer.appendChild(header);
 
     // View State
@@ -175,8 +187,9 @@ if (isVizMode) {
     // A. Main Shell (Default Full)
     const shell = document.createElement('app-shell') as AppShell;
     shell.view = 'DECK'; // Init
-    shell.style.height = "100%";
-    shell.style.display = "flex"; // Ensure it takes space
+    shell.style.flexGrow = '1';
+    shell.style.height = '0'; // Allow shrinking
+    shell.style.minHeight = '0';
     shell.style.borderBottom = "1px solid #333";
     viewContainer.appendChild(shell);
     
@@ -238,6 +251,52 @@ if (isVizMode) {
     deckB.deckId = "B";
     deckB.slot = 'deck-b';
     shell.appendChild(deckB);
+
+    // 3. Super Controls (AI Mix)
+    const superCtrl = document.createElement('super-controls') as SuperControls;
+    superCtrl.slot = 'super';
+    shell.appendChild(superCtrl);
+
+    // AI Mix Event Handling
+    superCtrl.addEventListener('ai-mix-trigger', async (e: any) => {
+        const { direction, duration, mood } = e.detail;
+        if (superCtrl.isGenerating || superCtrl.isPlaying) return;
+
+        superCtrl.isGenerating = true;
+        superCtrl.addLog(`ARCHITECTING MIX: ${direction} (${duration} Bars)`);
+        
+        // Construct Prompt
+        const req = `Mix from ${direction}. Duration: ${duration} Bars. Mood: ${mood}.`;
+        const score = await mixGen.generateScore(req, engine.masterBpm);
+        
+        superCtrl.isGenerating = false;
+        
+        if (score) {
+            superCtrl.addLog(`SCORE RECEIVED. Tracks: ${score.tracks.length}`);
+            autoEngine.loadScore(score);
+            
+            autoEngine.setOnProgress((bar, phase) => {
+                 superCtrl.updateStatus(bar, phase, duration);
+                 // If mix is done (callback might not signal completion explicitly other than phase)
+                 if (bar >= duration) {
+                     superCtrl.isPlaying = false;
+                     superCtrl.addLog(`MIX COMPLETE.`);
+                 }
+            });
+            
+            superCtrl.isPlaying = true;
+            autoEngine.start();
+            superCtrl.addLog(`MIX STARTED.`);
+        } else {
+            superCtrl.addLog(`GENERATION FAILED.`);
+        }
+    });
+
+    superCtrl.addEventListener('ai-mix-abort', () => {
+        autoEngine.stop();
+        superCtrl.isPlaying = false;
+        superCtrl.addLog(`MIX ABORTED.`);
+    });
     
     // Listen for Deck Events
     window.addEventListener('deck-play-toggle', (e:any) => {

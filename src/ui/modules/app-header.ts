@@ -7,7 +7,7 @@ export class AppHeader extends LitElement {
     return this; // Enable Light DOM
   }
 
-  @state() currentView: 'DECK' | 'RACK' = 'DECK';
+  @state() currentView: 'DECK' | 'RACK' | 'SUPER' = 'DECK';
 
   render() {
     return html`
@@ -32,12 +32,20 @@ export class AppHeader extends LitElement {
                 @click="${() => this.switchView('RACK')}">
                 FX_RACK
               </button>
+              <button 
+                class="text-[10px] font-mono px-3 py-1 border transition-all duration-200 uppercase tracking-wider
+                ${this.currentView === 'SUPER' 
+                    ? 'bg-purple-500 text-black border-purple-500 shadow-[0_0_10px_purple]' 
+                    : 'bg-black text-zinc-600 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600'}"
+                @click="${() => this.switchView('SUPER')}">
+                AI_MIX
+              </button>
           </div>
       </div>
     `;
   }
 
-  private switchView(view: 'DECK' | 'RACK') {
+  private switchView(view: 'DECK' | 'RACK' | 'SUPER') {
     this.currentView = view;
     this.dispatchEvent(new CustomEvent('view-change', {
       detail: { view },

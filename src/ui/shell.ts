@@ -186,7 +186,7 @@ export class AppShell extends LitElement {
   `;
 
   @property({ type: String }) status = "OFFLINE";
-  @property({ type: String }) view: 'DECK' | 'RACK' = 'DECK';
+  @property({ type: String }) view: 'DECK' | 'RACK' | 'SUPER' = 'DECK';
 
   render() {
     return html`
@@ -234,6 +234,10 @@ export class AppShell extends LitElement {
                     <div class="actions-panel">
                        <slot name="actions"></slot>
                     </div>
+                </div>
+             ` : this.view === 'SUPER' ? html`
+                <div class="rack-panel">
+                    <slot name="super"></slot>
                 </div>
              ` : html`
                 <div class="rack-panel">
