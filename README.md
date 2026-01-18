@@ -58,7 +58,7 @@ Bio:gram features a custom audio engine built on AudioWorklet for sample-accurat
 
 -   **Framework**: Vite + TypeScript
 -   **Generative AI**: 
-    -   **Logic**: Google Gemini 1.5 Flash (via `@google/genai`)
+    -   **Logic**: Google Gemini Flash (via `@google/genai`)
     -   **Audio**: Google Lyria (`lyria-realtime-exp`)
 -   **Audio Engine**: Web Audio API + AudioWorklet (DSP)
 -   **Database**: IndexedDB + Vector Search (Local-First)
