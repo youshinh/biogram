@@ -287,15 +287,20 @@ export class HydraVisualizer extends LitElement {
     
     const bufferLen = audioData.length;
     const halfSize = Math.floor(bufferLen / 2);
+    const maxFrames = Math.floor(halfSize / 2);
     const startOffset = isDeckB ? halfSize : 0;
     
     for (let x = 0; x < w; x++) {
-        const relativeSampleIndex = (x - w/2) * step; 
+        // step is frames-per-pixel
+        const relativeFrameIndex = (x - w/2) * step; 
         
-        let idx = Math.floor(headPos + relativeSampleIndex) % halfSize;
-        if (idx < 0) idx += halfSize;
+        let frameIdx = Math.floor(headPos + relativeFrameIndex) % maxFrames;
+        if (frameIdx < 0) frameIdx += maxFrames;
         
-        const sample = audioData[startOffset + idx] || 0;
+        // Frames -> Sample Index (Stereo Interleaved)
+        const sampleIdx = frameIdx * 2;
+        
+        const sample = audioData[startOffset + sampleIdx] || 0;
         const y = (h * 0.5) + (sample * (h * 0.4)); 
         
         if (x === 0) this.ctx.moveTo(x, y);
@@ -485,9 +490,13 @@ export class HydraVisualizer extends LitElement {
       if (!this.ctx) return;
       const step = Math.ceil(this.zoomScale);
       let diff = targetHeadPos - mainHeadPos;
-      const bufferLen = (window as any).engine.getBufferSize?.() || 12*1024*1024/4;
-      if (diff > bufferLen / 2) diff -= bufferLen;
-      if (diff < -bufferLen / 2) diff += bufferLen;
+      
+      const engine = (window as any).engine;
+      const bufferLen = engine.getAudioData().length;
+      const maxFrames = Math.floor(bufferLen / 4); // Total samples / 4 (2 decks * 2 channels)
+      
+      if (diff > maxFrames / 2) diff -= maxFrames;
+      if (diff < -maxFrames / 2) diff += maxFrames;
       const x = (w/2) + (diff / step);
       if (x >= 0 && x <= w) {
           this.ctx.strokeStyle = color;

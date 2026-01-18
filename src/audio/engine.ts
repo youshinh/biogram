@@ -87,6 +87,17 @@ export class AudioEngine {
       // This ensures we buffer content but don't play it until user asks.
       this.updateDspParam('TAPE_STOP', 1.0, 'A');
       this.updateDspParam('TAPE_STOP', 1.0, 'B');
+      
+      // Explicitly initialize FX Targets to match UI Defaults
+      this.updateDspParam('SLICER_TARGET', 0.0); // 0.0 = A
+      this.updateDspParam('GHOST_TARGET', 0.0);  // 0.0 = A
+      this.updateDspParam('SLICER_ACTIVE', 0.0);
+      this.updateDspParam('GHOST_ACTIVE', 0.0);
+      
+      // Initialize SLAM (Ensure Silent)
+      this.updateDspParam('SLAM_NOISE', 0.0);
+      this.updateDspParam('SLAM_DRIVE', 1.0);
+      
       this.isPlaying = false;
 
       // Handle Messages from Worklet
@@ -443,7 +454,7 @@ export class AudioEngine {
    */
   skipToPosition(deck: 'A' | 'B', position: number) {
       if (this.workletNode) {
-          if (import.meta.env.DEV) console.log(`[Engine] Requesting Skip to Position ${position} for ${deck}`);
+          if (import.meta.env.DEV) console.log(`[Engine] Deck ${deck} skipping to position: ${position} (Frames)`);
           this.workletNode.port.postMessage({ type: 'SKIP_TO_POSITION', deck, position });
       }
   }

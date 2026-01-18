@@ -724,7 +724,65 @@ if (isVizMode) {
 
     const slicerModule = createFxModule("SLICER", "SLICER", () => toggleSlicerEditor(), engine);
     gridControls.appendChild(slicerModule);
+    
+    actionsContainer.appendChild(gridControls);
+    
 
+
+    // 4. SLAM BUTTON & WRAPPER
+    // Create Button First
+    const slamBtn = document.createElement('slam-button');
+    slamBtn.style.flex = "1";
+    slamBtn.style.position = "relative";
+    slamBtn.setAttribute('label', 'SLAM // MASTER FX');
+
+
+    // SLAM CONFIGURATION (Customizable)
+    const slamConfig = {
+        maxCutoff: 10000,
+        maxRes: 15.0,
+        maxDrive: 4.0, // Reduced from 10.0 (User req: Milder default)
+        maxNoise: 0.1, // Reduced from 0.2 (User req: Milder default)
+        
+        // Base values (Safe state)
+        baseCutoff: 20.0,
+        baseRes: 1.0, 
+        baseDrive: 1.0,
+        baseNoise: 0.0
+    };
+
+    // SLAM MACRO: Energy Riser (Resonance HPF + Saturation + Noise)
+    const updateSlamParams = (x: number, y: number) => {
+        // Clamp 0..1
+        x = Math.max(0, Math.min(1, x));
+        y = Math.max(0, Math.min(1, y));
+        
+        // Y-Axis (Vertical): Intensity / Energy
+        // Top (Y=0) is Max Energy
+        const intensity = 1.0 - y; 
+        
+        // 1. Filter Cutoff (Exponential Sweep 20Hz -> Config Max)
+        // const minFreq = 20;
+        // const maxFreq = 10000;
+        const cutoff = slamConfig.baseCutoff * Math.pow(slamConfig.maxCutoff / slamConfig.baseCutoff, intensity);
+        
+        // 2. Filter Resonance (X-Axis)
+        // Left(0) = Low Res(1.0), Right(1) = High Res(Config Max)
+        const resonance = 1.0 + (x * (slamConfig.maxRes - 1.0));
+
+        // 3. Drive (Saturation)
+        // Linked to Intensity (Energy)
+        const drive = 1.0 + (intensity * (slamConfig.maxDrive - 1.0));
+
+        // 4. Noise Level (Pink Noise)
+        // Linked to Intensity
+        const noiseLevel = intensity * slamConfig.maxNoise;
+
+        engine.updateDspParam('SLAM_CUTOFF', cutoff);
+        engine.updateDspParam('SLAM_RES', resonance);
+        engine.updateDspParam('SLAM_DRIVE', drive);
+        engine.updateDspParam('SLAM_NOISE', noiseLevel);
+    };
 
     // --- SLAM EDITOR ---
     let slamOverlay: HTMLElement | null = null;
@@ -733,78 +791,88 @@ if (isVizMode) {
          
          slamOverlay = mkOverlay("SLAM CONFIG", "#ef4444"); // Red
          
-         mkSliderHelper(slamOverlay, "NOISE FLOOR", 'NOISE_LEVEL', 0.1, 0, 1, engine);
-         mkSliderHelper(slamOverlay, "CRUSH PRE-GAIN", 'CRUSH_GAIN', 1.0, 0, 2, engine); // 0..200%
-         mkSliderHelper(slamOverlay, "TARGET MIX", 'SLAM_MIX', 1.0, 0, 1, engine);
+         // Helper to update config and engine param via existing slider helper logic?
+         // mkSliderHelper calls engine.updateDspParam directly.
+         // We need it to update slamConfig.
+         // Let's use a wrapper function or modify mkSliderHelper usage pattern if possible,
+         // OR just create a slider manually here since it's just 4 params.
+         // Actually, let's just make a little helper function here to avoid reinventing wheel.
+         
+         const mkConfigSlider = (label: string, configKey: keyof typeof slamConfig, min: number, max: number, step: number = 0.01) => {
+             const container = document.createElement('div');
+             container.className = "flex flex-col gap-1 mb-2";
+             
+             const header = document.createElement('div');
+             header.className = "flex justify-between text-[0.6rem] font-mono text-zinc-400";
+             const title = document.createElement('span');
+             title.textContent = label;
+             const valSpan = document.createElement('span');
+             valSpan.textContent = slamConfig[configKey].toFixed(2);
+             
+             header.appendChild(title);
+             header.appendChild(valSpan);
+             
+             const slider = document.createElement('input');
+             slider.type = "range";
+             slider.min = String(min);
+             slider.max = String(max);
+             slider.step = String(step);
+             slider.value = String(slamConfig[configKey]);
+             slider.className = "w-full h-1 bg-zinc-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-red-500 [&::-webkit-slider-thumb]:rounded-full";
+             
+             slider.oninput = (e: any) => {
+                 const v = parseFloat(e.target.value);
+                 // @ts-ignore
+                 slamConfig[configKey] = v;
+                 valSpan.textContent = v.toFixed(2);
+             };
+             
+             container.appendChild(header);
+             container.appendChild(slider);
+             slamOverlay!.appendChild(container);
+         };
+
+         mkConfigSlider("MAX DRIVE", 'maxDrive', 1.0, 20.0, 0.1);
+         mkConfigSlider("MAX NOISE", 'maxNoise', 0.0, 1.0, 0.01);
+         mkConfigSlider("MAX RES", 'maxRes', 1.0, 30.0, 0.5);
+         mkConfigSlider("MAX CUTOFF", 'maxCutoff', 1000, 20000, 100);
 
          const close = document.createElement('button');
          close.textContent = "CLOSE";
-         close.className = "b-all font-mono text-xs hover:bg-white hover:text-black transition-colors border border-white/20 p-2 mt-2";
+         close.className = "b-all font-mono text-xs hover:bg-white hover:text-black transition-colors border border-white/20 p-2 mt-2 w-full text-center";
          close.onclick = () => toggleSlamEditor();
          slamOverlay.appendChild(close);
          
          document.body.appendChild(slamOverlay);
     };
     
-    // Pass toggleSlamEditor to specific usage if needed, but here we just needed the function definition.
-    // The SlamButton uses toggleDestEditor in original code, so we map it there.
-    const toggleDestEditor = toggleSlamEditor;
-
-    actionsContainer.appendChild(gridControls);
-
-    const slamBtn = document.createElement('slam-button');
-    slamBtn.style.flex = "1"; // Fill remaining
-    slamBtn.style.position = "relative"; // For Edit button
-    slamBtn.setAttribute('label', 'SLAM // MASTER FX'); // Clarify Master Context
-    
-    // SLAM MACRO: Maximize Destruction with XY Control
-    const updateSlamParams = (x: number, y: number) => {
-        // Clamp 0..1
-        x = Math.max(0, Math.min(1, x));
-        y = Math.max(0, Math.min(1, y));
-        
-        // Y-Axis (Vertical): Intensity / Destruction
-        const intensity = 1.0 - y;
-        
-        // Map Intensity to Bitcrush - Primary effect
-        const sr = 22000 - (intensity * 18000); 
-        const bits = 16 - (intensity * 12);
-        
-        engine.updateDspParam('SR', sr);
-        engine.updateDspParam('BITS', bits);
-        
-        // Spectral Gate
-        const thresh = 0.01 + (intensity * 0.04);
-        engine.updateDspParam('GATE_THRESH', thresh);
-        
-        // Add noise injection for classic SLAM texture
-        const noiseLevel = intensity * 0.15; // Up to 15% noise
-        engine.updateDspParam('NOISE_LEVEL', noiseLevel);
-
-        // X-Axis (Horizontal): Tone / Space
-        engine.updateDspParam('GHOST_EQ', x);
-    };
-    
-    // RELEASE: Return to Clean / Safe State
-    // let isSlamming = false; // (Defined at top)
+    // RELEASE: Return to Clean State
     const releaseSlam = () => {
-        if (!isSlamming) return; // Only release if actually slamming
+        if (!isSlamming) return;
         isSlamming = false;
         
-        // Reset Params
-        engine.updateDspParam('GATE_THRESH', 0.0); 
-        engine.updateDspParam('SR', 44100); 
-        engine.updateDspParam('BITS', 32); 
-        engine.updateDspParam('GHOST_EQ', 0.5);
-        engine.updateDspParam('NOISE_LEVEL', 0.0); // Kill Noise
+        // Reset Params to Safe Defaults
+        engine.updateDspParam('SLAM_CUTOFF', 20.0); // Open/Low HPF (Pass-through if logic dictates, but HPF @ 20Hz is safe)
+        engine.updateDspParam('SLAM_RES', 1.0);
+        engine.updateDspParam('SLAM_DRIVE', 1.0);
+        engine.updateDspParam('SLAM_NOISE', 0.0);
         
-        // DISABLE FX (Restore to UI state? Or just Kill?)
-        // Ideally should restore to UI state, but for now Safety Kill is safer to stop accidental noise.
-        // User can re-enable modules if they were on.
-        // TODO: Store previous state? For now, just turn off to ensure silence.
-        engine.updateDspParam('DECIMATOR_ACTIVE', 0.0);
-        engine.updateDspParam('SPECTRAL_GATE_ACTIVE', 0.0);
+        // Safety: Reset Legacy SLAM params to ensure no artifacts
+        engine.updateDspParam('BITS', 32);
+        
+        // Note: New SLAM implementation in processor executes always if noise/drive/filter are active?
+        // Or we should verify if we need to bypass it?
+        // In this Energy Riser design, setting Noise=0, Drive=1, Cutoff=20 effectively bypasses it.
+        // HPF @ 20Hz is transparent. Drive @ 1.0 is transparent (if tanh(x) ~ x for small x, wait. tanh(x) is linear near 0).
+        // Yes, tanh(x) ~ x. So Drive=1 is linear? No, Drive should be gain?
+        // If Drive param is 'PreScan', then 1.0 means no boost.
+        // math.tanh(input * 1.0) is slightly saturated for high inputs.
+        // But for normal signals < 1.0 it's close to linear.
+        // Ideally we should disable the effect block if not slamming?
+        // Let's rely on parameters for now as per design "Continuous".
+        // But to be safe, we can set NOISE=0.
     };
+    const toggleDestEditor = toggleSlamEditor;
 
     const handleSlamMove = (e: CustomEvent) => {
         const rect = slamBtn.getBoundingClientRect();
@@ -815,9 +883,6 @@ if (isVizMode) {
 
     slamBtn.addEventListener('slam-start', (e: Event) => {
         isSlamming = true;
-        // FORCE ENABLE FX for Slam
-        engine.updateDspParam('DECIMATOR_ACTIVE', 1.0);
-        engine.updateDspParam('SPECTRAL_GATE_ACTIVE', 1.0);
         
         updatePrompts(); // Trigger Slam Prompt
         handleSlamMove(e as CustomEvent); // Trigger immediately

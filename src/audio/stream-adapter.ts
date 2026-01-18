@@ -37,13 +37,24 @@ export class StreamAdapter {
         // Get Write Pointer
         let writePtr = Atomics.load(this.headerView, writePtrOffset / 4);
 
-        for (let i = 0; i < chunk.length; i++) {
-            // Circular buffer within the half-zone
-            const localIndex = writePtr % halfSize; 
-            const index = offset + localIndex;
-            
-            this.audioData[index] = chunk[i];
-            writePtr++;
+        // Stereo: chunk contains L, R, L, R...
+        // writePtr is now FRAME index (1 frame = 2 floats)
+        
+        // Calculate max frames per deck
+        const maxFrames = Math.floor(halfSize / 2);
+
+        for (let i = 0; i < chunk.length; i += 2) {
+             const left = chunk[i];
+             const right = chunk[i+1] || left; // Safety fallback
+
+             // Circular buffer within the half-zone
+             const localFrameIndex = writePtr % maxFrames; 
+             const baseIndex = offset + (localFrameIndex * 2);
+             
+             this.audioData[baseIndex] = left;
+             this.audioData[baseIndex + 1] = right;
+             
+             writePtr++;
         }
 
         // Store updated pointer

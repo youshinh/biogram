@@ -46,6 +46,11 @@ export class FxRack extends LitElement {
   firstUpdated() {
       // Sync initial state
       this.updateParam('FILTER_ACTIVE', this.activeFilter ? 1 : 0);
+      this.updateParam('HPF', this.filterX);
+      this.updateParam('LPF', this.filterY); // Assumption: Y is LPF? Wait, check handleFilterMove logic first? 
+      // Safe to send what we have, logic handles limits.
+      this.updateParam('FILTER_Q', this.filterQ);
+      this.updateParam('FILTER_DRIVE', this.filterDrive);
       this.updateParam('DECIMATOR_ACTIVE', this.activeDecimator ? 1 : 0);
       this.updateParam('CLOUD_ACTIVE', this.activeCloud ? 1 : 0);
       this.updateParam('REVERB_ACTIVE', this.activeReverb ? 1 : 0);

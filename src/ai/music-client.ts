@@ -46,7 +46,7 @@ export class MusicClient {
     private isResetBuffering = false; // New: Wait for buffer to fill before jumping
     private resetBufferCount = 0;
     private resetStartWritePtr = 0; // Track where new audio started being written
-    private readonly RESET_THRESHOLD = 44100 * 1.5; // Wait for 1.5s of new audio (reduced from 3s)
+    private readonly RESET_THRESHOLD = 44100 * 0.5; // Wait for 0.5s of new audio for faster jump
     
     // Performance: Skip BPM detection if already have high confidence result
     private hasHighConfidenceBpm = false;
@@ -91,26 +91,29 @@ export class MusicClient {
                             const bytes = decodeBase64(chunk.data);
                             const pcmAll = convertInt16ToFloat32(bytes);
                             
-                            // Downmix to Mono
-                            const mono = new Float32Array(pcmAll.length / 2);
-                            for(let i=0; i<mono.length; i++) {
-                                const l = pcmAll[i*2];
-                                const r = pcmAll[i*2+1];
-                                mono[i] = (l + r) * 0.5;
-                            }
+                            // Raw Stereo PCM (Interleaved)
+                            // pcmAll is Float32Array [L, R, L, R...]
                             
                             // 1. Playback
-                            this.adapter.writeChunk(mono, this.deckId);
+                            this.adapter.writeChunk(pcmAll, this.deckId);
                             
                              // Handle Reset Buffering
                             if (this.isResetBuffering) {
                                 // Record the start position of new audio (first chunk after reset)
+                                // Note: getWritePointer returns FRAME index. 
+                                // pcmAll.length is SAMPLES. Frames = Samples / 2.
+                                const framesWritten = pcmAll.length / 2;
+                                
                                 if (this.resetBufferCount === 0) {
-                                    this.resetStartWritePtr = this.adapter.getWritePointer(this.deckId) - mono.length;
+                                    this.resetStartWritePtr = this.adapter.getWritePointer(this.deckId) - framesWritten;
                                 }
                                 
-                                this.resetBufferCount += mono.length;
+                                this.resetBufferCount += framesWritten; // Count FRAMES
                                 // Wait for enough data to ensure smooth playback start
+                                // RESET_THRESHOLD should be in FRAMES (e.g. 44100 frames = 1 sec)
+                                // Assuming existing constant was adjusted or is interpreted as frames?
+                                // If original was samples (mono), 1 buffer was ~44k samples?
+                                // Let's check logic later or assume consistency.
                                 if (this.resetBufferCount >= this.RESET_THRESHOLD) { 
                                     if (import.meta.env.DEV) {
                                         console.log(`[MusicClient] Reset Threshold Met -> Jumping to start position`);
@@ -126,9 +129,14 @@ export class MusicClient {
                                 this.pendingJump = false;
                             }
 
-                            // 2. Ghost System Archiving
-                            this.archiveBuffer.push(mono);
-                            this.archiveSampleCount += mono.length;
+                            // 2. Ghost System Archiving (Keep simple for now, maybe store stereo or mono sum?)
+                            // Ghost processor currently might expect mono in archive buffer for simplicity?
+                            // Actually archiveBuffer is just pushing Float32Array.
+                            // If we push stereo, memory usage doubles.
+                            // For Ghost "Shadow", maybe we only need Mono Sum to save memory?
+                            // Or keep stereo. Let's keep stereo for fidelity.
+                            this.archiveBuffer.push(pcmAll);
+                            this.archiveSampleCount += pcmAll.length;
                             
                             if (this.archiveSampleCount >= this.ARCHIVE_THRESHOLD) {
                                 this.flushArchive();

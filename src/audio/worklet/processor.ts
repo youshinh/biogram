@@ -16,6 +16,10 @@ import { IsolatorEQ } from './dsp/isolator';
 import { SmoothValue } from './dsp/smooth-value';
 // @ts-ignore
 import { CloudGrain } from './dsp/cloud-grain';
+// @ts-ignore
+import { PinkNoise } from './dsp/pink-noise';
+import { BiquadFilter } from './dsp/biquad-filter';
+
 
 declare const AudioWorkletProcessor: any;
 declare const registerProcessor: any;
@@ -34,7 +38,7 @@ const OFFSETS = {
   SLICER_ACTIVE: 32,   // Int32: Slicer Active State
 };
 
-// ... SvfFilter Code ... (Keep SvfFilter class as is, it's fine)
+// ... SvfFilter Code ...
 class SvfFilter {
     private sampleRate: number;
     private s1: number = 0.0;
@@ -64,7 +68,9 @@ class SvfFilter {
         this.a3 = this.g * this.a2;
     }
     process(input: number, type: 'LP' | 'HP' | 'BP'): number {
-        const v3 = input - this.s2;
+         if (isNaN(input)) input = 0;
+         
+         const v3 = input - this.s2;
         const v1 = this.a1 * this.s1 + this.a2 * v3;
         const v2 = this.s2 + this.a2 * this.s1 + this.a3 * v3;
         this.s1 = 2 * v1 - this.s1;
@@ -92,17 +98,26 @@ class GhostProcessor extends AudioWorkletProcessor {
   private crossfader: number = 0.5; // 0.0 = A, 1.0 = B
   
   // FX (Master Chain)
-  private decimator: Decimator = new Decimator(44100);
+  // Stereo Instances
+  private decimatorL: Decimator = new Decimator(44100);
+  private decimatorR: Decimator = new Decimator(44100);
   private noiseLevel: number = 0.0;
   
-  private delay: TapeDelay = new TapeDelay(44100, 2.0);
+  private delay: TapeDelay = new TapeDelay(44100, 2.0); // Mono Send for efficiency
   private dubFeedback: number = 0.0;
   
-  private spectralGate: SpectralGate = new SpectralGate(44100);
-  private bloom: BloomReverb = new BloomReverb(44100);
-  private limiter: Limiter = new Limiter(44100);
-  private hpf: SvfFilter = new SvfFilter(44100);
-  private lpf: SvfFilter = new SvfFilter(44100);
+  private spectralGateL: SpectralGate = new SpectralGate(44100);
+  private spectralGateR: SpectralGate = new SpectralGate(44100);
+  
+  private bloom: BloomReverb = new BloomReverb(44100); // Mono Send for efficiency
+  
+  private limiterL: Limiter = new Limiter(44100);
+  private limiterR: Limiter = new Limiter(44100);
+  
+  private hpfL: SvfFilter = new SvfFilter(44100);
+  private hpfR: SvfFilter = new SvfFilter(44100);
+  private lpfL: SvfFilter = new SvfFilter(44100);
+  private lpfR: SvfFilter = new SvfFilter(44100);
 
   // States
   private filterActive: boolean = false;
@@ -115,6 +130,8 @@ class GhostProcessor extends AudioWorkletProcessor {
   private hpfFreq: number = 20;
   private lpfFreq: number = 14000;
   private filterQ: number = 0.7;
+  private filterDrive: number = 0.0;
+  private filterDrift: number = 0.0;
   
   // Transport State
   private baseSpeedA: number = 1.0;
@@ -127,10 +144,22 @@ class GhostProcessor extends AudioWorkletProcessor {
   private ghostPtr: number = 0;
   private ghostMix: number = 0.6; // Ghost volume (controlled by GHOST_FADE)
   private ghostLpfCoeff: number = 0.5; // Ghost EQ LPF coefficient
-  private ghostLpfState: number = 0; // Ghost EQ LPF state
+  private ghostLpfStateL: number = 0;
+  private ghostLpfStateR: number = 0;
   
   private slicerActive: boolean = false;
   private slicerTarget: 'A' | 'B' = 'B';
+  
+  // SLAM (Energy Riser) Components
+  private pinkNoise = new PinkNoise();
+  private filterL = new BiquadFilter();
+  private filterR = new BiquadFilter();
+  
+  // SLAM Parameters
+  private slamCutoff: number = 20.0;
+  private slamRes: number = 0.0; // Default to 0 to keep isResonant() false (Inactive)
+  private slamDrive: number = 1.0;
+  private slamNoise: number = 0.0; // 0..1
   
   // SLICER PARAMS
   private slicerPattern: number = 0.25;
@@ -159,10 +188,15 @@ class GhostProcessor extends AudioWorkletProcessor {
   private muteCurrentB: number = 1.0;
 
   // DC Blocker State
-  private dcPrevInA: number = 0;
-  private dcPrevOutA: number = 0;
-  private dcPrevInB: number = 0;
-  private dcPrevOutB: number = 0;
+  private dcPrevInAL: number = 0;
+  private dcPrevOutAL: number = 0;
+  private dcPrevInAR: number = 0;
+  private dcPrevOutAR: number = 0;
+  
+  private dcPrevInBL: number = 0;
+  private dcPrevOutBL: number = 0;
+  private dcPrevInBR: number = 0;
+  private dcPrevOutBR: number = 0;
   
   // EQ (Multipliers 0-1.5)
   private eqAHi: number = 1.0;
@@ -216,13 +250,13 @@ class GhostProcessor extends AudioWorkletProcessor {
 
   constructor() {
     super();
-    this.hpf.setParams(this.hpfFreq, this.filterQ); 
-    this.lpf.setParams(this.lpfFreq, this.filterQ); 
+    this.hpfL.setParams(this.hpfFreq, this.filterQ); 
+    this.hpfR.setParams(this.hpfFreq, this.filterQ); 
+    this.lpfL.setParams(this.lpfFreq, this.filterQ); 
+    this.lpfR.setParams(this.lpfFreq, this.filterQ); 
     this.updateLimiter();
     
-    this.cloud = new CloudGrain(44100); // TODO: pass actual sampleRate if available? 
-    // AudioWorkletGlobalScope.sampleRate is available but I'll assume 44100 or fix later.
-    // Actually `sampleRate` global is available in Worklet.
+    this.cloud = new CloudGrain(44100); 
     
     this.tapeSendSmooth = new SmoothValue(0, 0.9995);
     this.reverbSendSmooth = new SmoothValue(0, 0.9995);
@@ -235,7 +269,7 @@ class GhostProcessor extends AudioWorkletProcessor {
       
       if (event.data.type === 'CONFIG_LOOP') {
           const { deck, start, end, crossfade, count, active } = event.data;
-          // console.log(`[Processor] CONFIG_LOOP Deck ${deck} Active:${active} Start:${start} End:${end}`);
+          // Frames should be consistent with main thread
           if (deck === 'A') {
               this.loopActiveA = active;
               this.loopStartA = start;
@@ -304,7 +338,7 @@ class GhostProcessor extends AudioWorkletProcessor {
           if (param === 'CLOUD_DENSITY') this.cloudDensity = value;
           if (param === 'CLOUD_SIZE') this.cloudSize = value;
           if (param === 'CLOUD_SPRAY') this.cloudSpray = value;
-          if (param === 'CLOUD_PITCH') this.cloudPitch = value; // 0.5 .. 2.0 mapped in UI?
+          if (param === 'CLOUD_PITCH') this.cloudPitch = value; 
           if (param === 'CLOUD_MIX') this.cloudMix = value;
           
           if (param === 'TAPE_ACTIVE') {
@@ -329,9 +363,23 @@ class GhostProcessor extends AudioWorkletProcessor {
                 this.updateLimiter();
           }
 
-          if (param === 'HPF') { this.hpfFreq = 20 * Math.pow(1000, value); this.hpf.setParams(this.hpfFreq, this.filterQ); }
-          if (param === 'LPF') { this.lpfFreq = 20 * Math.pow(1000, value); this.lpf.setParams(this.lpfFreq, this.filterQ); }
-          if (param === 'FILTER_Q') { this.filterQ = 0.1 + (value * 9.9); this.hpf.setParams(this.hpfFreq, this.filterQ); this.lpf.setParams(this.lpfFreq, this.filterQ); }
+          if (param === 'HPF') { 
+              this.hpfFreq = 20 * Math.pow(1000, value); 
+              this.hpfL.setParams(this.hpfFreq, this.filterQ); 
+              this.hpfR.setParams(this.hpfFreq, this.filterQ); 
+          }
+          if (param === 'LPF') { 
+              this.lpfFreq = 20 * Math.pow(1000, value); 
+              this.lpfL.setParams(this.lpfFreq, this.filterQ); 
+              this.lpfR.setParams(this.lpfFreq, this.filterQ); 
+          }
+          if (param === 'FILTER_Q') { 
+              this.filterQ = 0.1 + (value * 9.9); 
+              this.hpfL.setParams(this.hpfFreq, this.filterQ); 
+              this.hpfR.setParams(this.hpfFreq, this.filterQ); 
+              this.lpfL.setParams(this.lpfFreq, this.filterQ); 
+              this.lpfR.setParams(this.lpfFreq, this.filterQ); 
+          }
           
           if (param === 'DUB') this.dubFeedback = value * 0.95;
           if (param === 'NOISE_LEVEL') this.noiseLevel = value;
@@ -356,21 +404,23 @@ class GhostProcessor extends AudioWorkletProcessor {
 
           if (param === 'MASTER_BPM') this.masterBpm = Math.max(60, Math.min(200, value));
           
-          // SLAM DESTRUCTION PARAMETERS
+          // SLAM PARAMS
           if (param === 'SPECTRAL_GATE_ACTIVE') this.spectralGateActive = value > 0.5;
-          if (param === 'GATE_THRESH') this.spectralGate.setThreshold(value);
-          if (param === 'GATE_RELEASE') this.spectralGate.setRelease(value);
-          if (param === 'SR') this.decimator.setSampleRate(value);
-          if (param === 'BITS') this.decimator.setBitDepth(value);
+          if (param === 'GATE_THRESH') { this.spectralGateL.setThreshold(value); this.spectralGateR.setThreshold(value); }
+          if (param === 'GATE_RELEASE') { this.spectralGateL.setRelease(value); this.spectralGateR.setRelease(value); }
+          if (param === 'SR') { this.decimatorL.setSampleRate(value); this.decimatorR.setSampleRate(value); }
+          if (param === 'BITS') { this.decimatorL.setBitDepth(value); this.decimatorR.setBitDepth(value); }
           
-          // GHOST PARAMETERS
+          if (param === 'SLAM_CUTOFF') this.slamCutoff = value;
+          if (param === 'SLAM_RES') this.slamRes = value;
+          if (param === 'SLAM_DRIVE') this.slamDrive = value;
+          if (param === 'SLAM_NOISE') this.slamNoise = value;
+          
           if (param === 'GHOST_EQ') {
-            // Map 0..1 to dark..bright (LPF coeff: 0.1=dark, 0.95=bright)
             this.ghostLpfCoeff = 0.1 + (value * 0.85);
           }
           if (param === 'GHOST_FADE') {
-            // Map 0..1 to ghost volume
-            this.ghostMix = value * 0.8; // Max 80% mix
+            this.ghostMix = value * 0.8; 
           }
           
           // TRIM / DRIVE
@@ -379,49 +429,37 @@ class GhostProcessor extends AudioWorkletProcessor {
           if (param === 'DRIVE_A') this.driveA = value;
           if (param === 'DRIVE_B') this.driveB = value;
           
-          // EQ (HI/MID/LOW for A and B)
-          if (param === 'EQ_A_HI') this.eqAHi = value;
-          if (param === 'EQ_A_MID') this.eqAMid = value;
-          if (param === 'EQ_A_LOW') this.eqALow = value;
-          if (param === 'EQ_B_HI') this.eqBHi = value;
-          if (param === 'EQ_B_MID') this.eqBMid = value;
-          if (param === 'EQ_B_LOW') this.eqBLow = value;
-          
-          // KILL (Mute) - Set on IsolatorEQ instances directly
-          if (param === 'KILL_A_HI') this.eqA.killHigh = value;
-          if (param === 'KILL_A_MID') this.eqA.killMid = value;
-          if (param === 'KILL_A_LOW') this.eqA.killLow = value;
-          if (param === 'KILL_B_HI') this.eqB.killHigh = value;
-          if (param === 'KILL_B_MID') this.eqB.killMid = value;
-          if (param === 'KILL_B_LOW') this.eqB.killLow = value;
-          
-          // EQ Gain - Set on IsolatorEQ instances directly  
           if (param === 'EQ_A_HI') this.eqA.gainHigh = value;
           if (param === 'EQ_A_MID') this.eqA.gainMid = value;
           if (param === 'EQ_A_LOW') this.eqA.gainLow = value;
           if (param === 'EQ_B_HI') this.eqB.gainHigh = value;
           if (param === 'EQ_B_MID') this.eqB.gainMid = value;
           if (param === 'EQ_B_LOW') this.eqB.gainLow = value;
+          if (param === 'KILL_A_HI') this.eqA.killHigh = value;
+          if (param === 'KILL_A_MID') this.eqA.killMid = value;
+          if (param === 'KILL_A_LOW') this.eqA.killLow = value;
+          if (param === 'KILL_B_HI') this.eqB.killHigh = value;
+          if (param === 'KILL_B_MID') this.eqB.killMid = value;
+          if (param === 'KILL_B_LOW') this.eqB.killLow = value;
       }
       
       if (event.data.type === 'SKIP_TO_LATEST') {
           const { deck } = event.data;
           // Safe jump logic inside Audio Thread
+          // frame-based pointers
           const writeOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
           const writePtr = Atomics.load(this.headerView!, writeOffset / 4);
           
-          const safetySamples = 44100 * 2.0; 
-          const newPtr = Math.max(0, writePtr - safetySamples);
+          const safetyFrames = 44100 * 2.0; 
+          const newPtr = Math.max(0, writePtr - safetyFrames);
           
           if (deck === 'A') {
-              // Reset loop state on manual skip? Probably safe to keep active but update pointers.
               Atomics.store(this.headerView!, OFFSETS.READ_POINTER_A / 4, newPtr);
           } else {
               Atomics.store(this.headerView!, OFFSETS.READ_POINTER_B / 4, newPtr);
           }
       }
       
-      // Jump to specific position (for new track start)
       if (event.data.type === 'SKIP_TO_POSITION') {
           const { deck, position } = event.data;
           const offset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;
@@ -435,19 +473,21 @@ class GhostProcessor extends AudioWorkletProcessor {
           const writeOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
           const writePtr = Atomics.load(this.headerView!, writeOffset / 4);
           
-          const totalSize = this.audioData.length;
-          const halfSize = Math.floor(totalSize / 2);
+          const bufferSize = this.audioData.length;
+          const halfSize = Math.floor(bufferSize / 2);
+          const maxFrames = Math.floor(halfSize / 2);
           const offsetStep = deck === 'A' ? 0 : halfSize;
           
-          const silenceLen = 44100 * 4;
+           const silenceLen = 44100 * 16;
           
           for(let i=1; i<silenceLen; i++) {
-              let relativeIdx = writePtr - i;
-              while (relativeIdx < 0) relativeIdx += halfSize;
-              relativeIdx = relativeIdx % halfSize;
+              let relativeFrame = writePtr - i;
+              while (relativeFrame < 0) relativeFrame += maxFrames;
+              relativeFrame = relativeFrame % maxFrames;
               
-              const absoluteIdx = relativeIdx + offsetStep;
+              const absoluteIdx = (relativeFrame * 2) + offsetStep;
               this.audioData[absoluteIdx] = 0;
+              this.audioData[absoluteIdx + 1] = 0;
           }
       }
     };
@@ -462,21 +502,27 @@ class GhostProcessor extends AudioWorkletProcessor {
   }
 
   private updateLimiter() {
-      this.limiter.setParams(Math.max(0.001, this.compThresh), this.compRatio, this.compMakeup, 100);
+      this.limiterL.setParams(Math.max(0.001, this.compThresh), this.compRatio, this.compMakeup, 100);
+      this.limiterR.setParams(Math.max(0.001, this.compThresh), this.compRatio, this.compMakeup, 100);
   }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
     try {
         const output = outputs[0];
         if (!output || output.length === 0) return true;
-        const leftChannel = output[0];
-        const rightChannel = output[1] || leftChannel;
         
+        // Stereo Output Support
+        const leftChannel = output[0];
+        const rightChannel = output[1]; // Can be undefined
+
         if (!this.audioData || !this.headerView) return true;
 
         const bufferSize = this.audioData.length;
         const halfSize = Math.floor(bufferSize / 2);
-        const offsetB = halfSize;
+        
+        // FRAME MATH: 1 Frame = 2 Floats (L, R)
+        const maxFrames = Math.floor(halfSize / 2); // Frames per deck
+        const offsetB = halfSize; // Decks are split by halfSize in ARRAY, not frames
 
         const readPtrA = Atomics.load(this.headerView, OFFSETS.READ_POINTER_A / 4);
         const readPtrB = Atomics.load(this.headerView, OFFSETS.READ_POINTER_B / 4);
@@ -488,21 +534,19 @@ class GhostProcessor extends AudioWorkletProcessor {
         let ptrB = readPtrB;
 
         for (let i = 0; i < leftChannel.length; i++) {
-            // --- LOOP LOGIC A ---
+            // --- LOOP LOGIC A (Frames) ---
             if (this.loopActiveA && this.loopStartA !== this.loopEndA) {
                  if (ptrA >= this.loopEndA) {
                      if (this.loopCountA === -1 || this.loopRemainingA > 0) {
                          if (this.loopCountA > 0) this.loopRemainingA--;
                          ptrA = this.loopStartA;
-                         // console.log(`[Processor] Loop A Jump -> ${ptrA}`);
                      } else {
-                         // Loop finished, disable
                          this.loopActiveA = false;
                      }
                  }
             }
             
-            // --- LOOP LOGIC B ---
+            // --- LOOP LOGIC B (Frames) ---
             if (this.loopActiveB && this.loopStartB !== this.loopEndB) {
                  if (ptrB >= this.loopEndB) {
                      if (this.loopCountB === -1 || this.loopRemainingB > 0) {
@@ -514,33 +558,37 @@ class GhostProcessor extends AudioWorkletProcessor {
                  }
             }
             
-            // --- A ---
-            const idxA = ((Math.floor(ptrA) % halfSize) + halfSize) % halfSize;
-            let sampleA = this.audioData[idxA] || 0;
+            // --- READ A (Stereo) ---
+            const localFrameA = ((Math.floor(ptrA) % maxFrames) + maxFrames) % maxFrames;
+            const idxA = localFrameA * 2;
             
-            // Crossfade Logic A (Reads ahead if near end)
+            let sampleAL = this.audioData[idxA] || 0;
+            let sampleAR = this.audioData[idxA + 1] || 0;
+            
+            // Crossfade Logic A
             if (this.loopActiveA && this.loopCrossfadeA > 0) {
                 const distToEnd = this.loopEndA - ptrA;
                 if (distToEnd > 0 && distToEnd < this.loopCrossfadeA) {
-                    const fade = distToEnd / this.loopCrossfadeA; // 0..1 (0 at end)
-                    // Mix with Start
+                    const fade = distToEnd / this.loopCrossfadeA;
                     const startPtr = this.loopStartA + (this.loopCrossfadeA - distToEnd);
-                    const idxStart = ((Math.floor(startPtr) % halfSize) + halfSize) % halfSize;
-                    const sampleStart = this.audioData[idxStart] || 0;
                     
-                    // Equal Power Crossfade? Or Linear for now.
-                    // Fade OUT current, Fade IN start.
-                    // sampleA = (sampleA * fade) + (sampleStart * (1.0 - fade));
+                    const localStartFrame = ((Math.floor(startPtr) % maxFrames) + maxFrames) % maxFrames;
+                    const idxStart = localStartFrame * 2;
                     
-                    // Improved Crossfade (fading out the end, fading in the start)
-                    sampleA = sampleA * fade + sampleStart * (1.0 - fade);
+                    const sStartL = this.audioData[idxStart] || 0;
+                    const sStartR = this.audioData[idxStart + 1] || 0;
+                    
+                    sampleAL = sampleAL * fade + sStartL * (1.0 - fade);
+                    sampleAR = sampleAR * fade + sStartR * (1.0 - fade);
                 }
             }
 
-            // --- B ---
-            const idxB = ((Math.floor(ptrB) % halfSize) + halfSize) % halfSize; 
-            const dbIdx = idxB + offsetB;
-            let sampleB = this.audioData[dbIdx] || 0;
+            // --- READ B (Stereo) ---
+            const localFrameB = ((Math.floor(ptrB) % maxFrames) + maxFrames) % maxFrames;
+            const idxB = (localFrameB * 2) + offsetB;
+            
+            let sampleBL = this.audioData[idxB] || 0;
+            let sampleBR = this.audioData[idxB + 1] || 0;
 
             // Crossfade Logic B
             if (this.loopActiveB && this.loopCrossfadeB > 0) {
@@ -548,60 +596,92 @@ class GhostProcessor extends AudioWorkletProcessor {
                 if (distToEnd > 0 && distToEnd < this.loopCrossfadeB) {
                     const fade = distToEnd / this.loopCrossfadeB; 
                     const startPtr = this.loopStartB + (this.loopCrossfadeB - distToEnd);
-                    const idxStart = ((Math.floor(startPtr) % halfSize) + halfSize) % halfSize;
-                    const dbIdxStart = idxStart + offsetB;
-                    const sampleStart = this.audioData[dbIdxStart] || 0;
-                    sampleB = sampleB * fade + sampleStart * (1.0 - fade);
+                    
+                    const localStartFrame = ((Math.floor(startPtr) % maxFrames) + maxFrames) % maxFrames;
+                    const idxStart = (localStartFrame * 2) + offsetB; // Offset for B
+                    
+                    const sStartL = this.audioData[idxStart] || 0;
+                    const sStartR = this.audioData[idxStart + 1] || 0;
+                    
+                    sampleBL = sampleBL * fade + sStartL * (1.0 - fade);
+                    sampleBR = sampleBR * fade + sStartR * (1.0 - fade);
                 }
             }
 
-            // Smooth Mute Ramp (Apply fade to avoid pops)
-            this.muteCurrentA += (this.muteTargetA - this.muteCurrentA) * 0.01; // ~100-200 samples fade
+            // Smooth Mute
+            this.muteCurrentA += (this.muteTargetA - this.muteCurrentA) * 0.01;
             this.muteCurrentB += (this.muteTargetB - this.muteCurrentB) * 0.01;
 
-            sampleA = sampleA * this.trimA;
-            if (this.driveA > 0) sampleA = Math.tanh(sampleA * (1.0 + this.driveA * 4.0));
-            sampleA *= this.muteCurrentA;
+            // --- PROCESS DECK A ---
+            sampleAL *= this.trimA;
+            sampleAR *= this.trimA;
+            if (this.driveA > 0) {
+                const drv = 1.0 + this.driveA * 4.0;
+                sampleAL = Math.tanh(sampleAL * drv);
+                sampleAR = Math.tanh(sampleAR * drv);
+            }
+            sampleAL *= this.muteCurrentA;
+            sampleAR *= this.muteCurrentA;
             
-            // DC Blocker A (Removes Low Freq / Static Offset when stopped)
-            const dcOutA = sampleA - this.dcPrevInA + (0.995 * this.dcPrevOutA);
-            this.dcPrevInA = sampleA; // Store INPUT
-            this.dcPrevOutA = dcOutA; // Store OUTPUT
-            sampleA = dcOutA;
-
-            sampleB = sampleB * this.trimB;
-            if (this.driveB > 0) sampleB = Math.tanh(sampleB * (1.0 + this.driveB * 4.0));
-            sampleB *= this.muteCurrentB;
+            // DC Blocker A (Stereo)
+            const dcOutAL = sampleAL - this.dcPrevInAL + (0.995 * this.dcPrevOutAL);
+            this.dcPrevInAL = sampleAL; this.dcPrevOutAL = dcOutAL; sampleAL = dcOutAL;
             
-            // DC Blocker B
-            const dcOutB = sampleB - this.dcPrevInB + (0.995 * this.dcPrevOutB);
-            this.dcPrevInB = sampleB;
-            this.dcPrevOutB = dcOutB;
-            sampleB = dcOutB;
+            const dcOutAR = sampleAR - this.dcPrevInAR + (0.995 * this.dcPrevOutAR);
+            this.dcPrevInAR = sampleAR; this.dcPrevOutAR = dcOutAR; sampleAR = dcOutAR;
 
-            // --- FX INSERTPOINT (Pre-Mixer) ---
+            // --- PROCESS DECK B ---
+            sampleBL *= this.trimB;
+            sampleBR *= this.trimB;
+            if (this.driveB > 0) {
+                const drv = 1.0 + this.driveB * 4.0;
+                sampleBL = Math.tanh(sampleBL * drv);
+                sampleBR = Math.tanh(sampleBR * drv);
+            }
+            sampleBL *= this.muteCurrentB;
+            sampleBR *= this.muteCurrentB;
+            
+            // DC Blocker B (Stereo)
+            const dcOutBL = sampleBL - this.dcPrevInBL + (0.995 * this.dcPrevOutBL);
+            this.dcPrevInBL = sampleBL; this.dcPrevOutBL = dcOutBL; sampleBL = dcOutBL;
+            
+            const dcOutBR = sampleBR - this.dcPrevInBR + (0.995 * this.dcPrevOutBR);
+            this.dcPrevInBR = sampleBR; this.dcPrevOutBR = dcOutBR; sampleBR = dcOutBR;
 
-            // 1. GHOST (Shadows)
-            if (this.ghostActive) {
-                const targetPtr = (this.ghostTarget === 'A') ? ptrA : ptrB;
-                const offset = 44100 * 2; 
-                let gP = targetPtr - offset;
-                this.ghostPtr = gP;
-                const bufferIdx = ((Math.floor(gP) % halfSize) + halfSize) % halfSize;
-                const finalIdx = bufferIdx + ((this.ghostTarget === 'B') ? offsetB : 0);
-                const rawGhost = this.audioData[finalIdx] || 0;
-                
-                // Apply Ghost EQ
-                this.ghostLpfState += this.ghostLpfCoeff * (rawGhost - this.ghostLpfState);
-                const filteredGhost = this.ghostLpfState;
-                const ghostSample = filteredGhost * this.ghostMix;
-
-                // Add to Target Deck
-                if (this.ghostTarget === 'A') sampleA += ghostSample;
-                else sampleB += ghostSample;
+            // Update SLAM Filters once per block
+            if (i === 0) {
+                 this.filterL.update(this.slamCutoff, this.slamRes, 44100);
+                 this.filterR.update(this.slamCutoff, this.slamRes, 44100);
             }
 
-            // 2. SMOOTH SLICER
+            // 1. GHOST (Shadows) - Stereo
+            if (this.ghostActive) {
+                const targetPtr = (this.ghostTarget === 'A') ? ptrA : ptrB;
+                const offset = 44100 * 2; // 2 seconds delay
+                let gP = targetPtr - offset;
+                this.ghostPtr = gP;
+                
+                const localFrameG = ((Math.floor(gP) % maxFrames) + maxFrames) % maxFrames;
+                const baseIdxG = (localFrameG * 2) + ((this.ghostTarget === 'B') ? offsetB : 0);
+                
+                const rawGhostL = this.audioData[baseIdxG] || 0;
+                const rawGhostR = this.audioData[baseIdxG + 1] || 0;
+                
+                // Apply Ghost EQ (L/R)
+                this.ghostLpfStateL += this.ghostLpfCoeff * (rawGhostL - this.ghostLpfStateL);
+                this.ghostLpfStateR += this.ghostLpfCoeff * (rawGhostR - this.ghostLpfStateR);
+                
+                const ghostSampleL = this.ghostLpfStateL * this.ghostMix;
+                const ghostSampleR = this.ghostLpfStateR * this.ghostMix;
+
+                if (this.ghostTarget === 'A') {
+                    sampleAL += ghostSampleL; sampleAR += ghostSampleR;
+                } else {
+                    sampleBL += ghostSampleL; sampleBR += ghostSampleR;
+                }
+            }
+
+            // 2. SMOOTH SLICER (Applied to both channels equally)
             if (this.slicerActive) {
                 const bpm = Math.max(60, this.masterBpm); 
                 const speedFactor = Math.pow(2, (this.slicerSpeed - 0.5) * 4); 
@@ -626,214 +706,160 @@ class GhostProcessor extends AudioWorkletProcessor {
                 
                 this.slicerCurrentGain += (targetGain - this.slicerCurrentGain) * smoothFactor;
                 
-                // Apply to Target Deck
-                if (this.slicerTarget === 'A') sampleA *= this.slicerCurrentGain;
-                else sampleB *= this.slicerCurrentGain;
+                if (this.slicerTarget === 'A') {
+                    sampleAL *= this.slicerCurrentGain;
+                    sampleAR *= this.slicerCurrentGain;
+                } else {
+                    sampleBL *= this.slicerCurrentGain;
+                    sampleBR *= this.slicerCurrentGain;
+                }
             } else {
                 this.slicerCurrentGain = 1.0; 
             }
 
-            const [eqAL, eqAR] = this.eqA.process(sampleA, sampleA); 
-            const [eqBL, eqBR] = this.eqB.process(sampleB, sampleB);
+            // EQ (IsolatorEQ is Stereo)
+            const [eqAL_Out, eqAR_Out] = this.eqA.process(sampleAL, sampleAR); 
+            const [eqBL_Out, eqBR_Out] = this.eqB.process(sampleBL, sampleBR);
 
             // Mixer
             const volA = Math.min(1.0, (1.0 - this.crossfader) * 2.0); 
             const volB = Math.min(1.0, this.crossfader * 2.0);         
             
-            let mixL = (eqAL * volA) + (eqBL * volB);
-            let mixR = (eqAR * volA) + (eqBR * volB);
+            let mixL = (eqAL_Out * volA) + (eqBL_Out * volB);
+            let mixR = (eqAR_Out * volA) + (eqBR_Out * volB);
             
             mixL = Math.tanh(mixL);
             mixR = Math.tanh(mixR);
             
+            let sampleL = mixL;
+            let sampleR = mixR;
 
-
-
-            
-            // sample is already defined above as 'let sample = mixL;' defined at line ~570
-            // Wait, previous tool removed the definition of 'sample = mixL', leaving only the *usage*.
-            // But 'mixL' is used above.
-            // Check context:
-            // "let sample = mixL;" was at line 570.
-            // Step 104 removed the *second* definition.
-            // But now I am replacing the block *before* line 570 (Slicer block)?
-            // Lines 555-568.
-            // Line 570 is AFTER Slicer.
-            // So 'sample' initialized at 570 is correct.
-            // But wait, my previous Replace (Step 99) removed `let sample = mixL;` at line 579 (which was inside the block).
-            // Line 570 still contains `let sample = mixL;` ?
-            // I need to be careful not to delete line 570 if I am replacing 555-568.
-            // I will replace up to line 569.
-            
-            let sample = mixL; 
-            
-            // 1. GHOST (Already mixed above)
-            
-            // 2. SLICER (Already applied above via mixL/R gain, effective here)
-            // (Code at lines 555-568 handles this by modifying mixL/R directly)
-
-            // sample is already defined above as 'let sample = mixL;' defined at line ~570
-
-            // 3. FILTER_XY
+            // 3. FILTER_XY (Dual Mono)
             if (this.filterActive) {
-                // Analog Drive (Saturation) & Resonance Compensation
-                const gainComp = 1.0 + (this.filterQ * 0.5); // Boost volume with Q
-                const driveInput = sample * gainComp * (1.0 + this.filterDrive * 3.0);
+                const gainComp = 1.0 + (this.filterQ * 0.5);
+                const driveInputL = sampleL * gainComp * (1.0 + this.filterDrive * 3.0);
+                const driveInputR = sampleR * gainComp * (1.0 + this.filterDrive * 3.0);
                 
-                // Hard Tanh Saturation (Analog Clip)
-                sample = Math.tanh(driveInput);
+                sampleL = Math.tanh(driveInputL);
+                sampleR = Math.tanh(driveInputR);
 
-                sample = this.hpf.process(sample, 'HP');
-                sample = this.lpf.process(sample, 'LP');
+                sampleL = this.hpfL.process(sampleL, 'HP');
+                sampleR = this.hpfR.process(sampleR, 'HP');
+                sampleL = this.lpfL.process(sampleL, 'LP');
+                sampleR = this.lpfR.process(sampleR, 'LP');
             }
 
-            // 4. DECIMATOR (Texture)
-            if (this.decimatorActive) sample = this.decimator.process(sample);
+            // 4. DECIMATOR (Dual Mono)
+            if (this.decimatorActive) {
+                sampleL = this.decimatorL.process(sampleL);
+                sampleR = this.decimatorR.process(sampleR);
+            }
             
-            // 7. (Moved) CLOUD GRAIN (Texture)
+            // 5. CLOUD GRAIN (Mono Sum -> Cloud -> Mix Back)
             if (this.cloudActive) {
                 this.cloud.setParams(this.cloudDensity, this.cloudSize, this.cloudSpray, this.cloudPitch, this.cloudMix);
-                sample = this.cloud.process(sample);
+                const monoIn = (sampleL + sampleR) * 0.5;
+                const out = this.cloud.process(monoIn); 
+                sampleL = out; 
+                sampleR = out;
             }
             
-            // 5. SPECTRAL GATE (Texture/Reduction)
-            if (this.spectralGateActive) sample = this.spectralGate.process(sample);
+            // 6. SPECTRAL GATE (Dual Mono)
+            if (this.spectralGateActive) {
+                sampleL = this.spectralGateL.process(sampleL);
+                sampleR = this.spectralGateR.process(sampleR);
+            }
             
-            // 6. DYNAMICS (Compression/Limiter - MOD06)
-            if (this.compActive) sample = this.limiter.process(sample);
+            // 7. DYNAMICS (Dual Mono Limiter)
+            if (this.compActive) {
+                sampleL = this.limiterL.process(sampleL);
+                sampleR = this.limiterR.process(sampleR);
+            }
 
-            // 7. TAPE ECHO (Spatial 1 - Send/Return)
-            // Always process to allow tails (Post-Fader / Dub Style)
-            const bpm = 120; // TODO: Use masterBpm
+            // 8. TAPE ECHO (Mono Send -> Mono Return -> Center)
+            const bpm = 120; 
             const delayTime = (60 / bpm) * 0.75; 
             this.delay.setParams(delayTime, this.dubFeedback, 0.002); 
             
-            // Smoothed Send
             const tapeSendAmount = this.tapeSendSmooth.process();
-            const tapeSend = sample * tapeSendAmount;
+            const monoSum = (sampleL + sampleR) * 0.5;
+            const tapeSend = monoSum * tapeSendAmount;
             
             const tapeOut = this.delay.process(tapeSend);
-            sample += tapeOut * (this.dubFeedback * 0.5); // Wet Add
+            sampleL += tapeOut * (this.dubFeedback * 0.5);
+            sampleR += tapeOut * (this.dubFeedback * 0.5);
             
-            // 8. BLOOM REVERB (Spatial 2 - Send/Return)
-            // Smoothed Send
-            const bloomSendAmount = this.reverbSendSmooth.process();
-            
-            // Bloom Hybrid Mode:
-            // If we want "Insert" behavior when fully active (Wet+Dry), and "Send" behavior when fading out?
-            // "bloom.process" returns (Input*Dry + Tank*Wet).
-            // If Input decreases, Dry output decreases.
-            // If we want to simulate "Switch Off Send", we reduce Input.
-            // Bloom output will naturally reduce Dry part and keep Tails.
-            // This works perfectly for "Post-Fader"!
-            // Because Bloom implementation calculates Dry from Input.
-            // If Input is 0, Dry is 0, only Wet (Tails) remains.
-            // So we just feed `sample * amount`.
-            // But wait...
-            // If `bloomSendAmount` is 0, input to Bloom is 0.
-            // Output of Bloom is Tails.
-            // Sample is `sample`.
-            // If we do `sample = bloom.process(...)`, then `sample` becomes Tails.
-            // Original `sample` (Dry) is lost!
-            // We want `sample` to remain `sample` (MixL).
-            // And add Tails.
-            // 8. BLOOM REVERB (Spatial 2 - Send/Return)
-            // Smoothed Send
+            // 9. BLOOM REVERB (Mono Send -> Mono Return -> Center)
             const reverbSendAmount = this.reverbSendSmooth.process();
+            const bloomIn = monoSum * reverbSendAmount;
+            const bloomOut = this.bloom.process(bloomIn);
+            sampleL = (sampleL * (1.0 - reverbSendAmount)) + bloomOut;
+            sampleR = (sampleR * (1.0 - reverbSendAmount)) + bloomOut;
+
+            // 10. SLAM (Master Energy Riser - Injection)
+            // Signal Flow: PinkNoise -> Drive -> Filter -> Mix
+            // Only process if parameters indicate activity to save CPU and reduce noise risk
+            if (this.slamNoise > 0.001 || this.filterL.isResonant()) {
+                 const pNoise = this.pinkNoise.process() * this.slamNoise;
+                 
+                 // Apply to both channels (Stereo Injection)
+                 let slamL = sampleL + pNoise;
+                 let slamR = sampleR + pNoise; // Correlated noise for riser (center focus)
+                 
+                 if (this.slamDrive > 1.0) {
+                     const d = this.slamDrive;
+                     slamL = Math.tanh(slamL * d);
+                     slamR = Math.tanh(slamR * d);
+                 }
+                 
+                 // Filter (Already updated per block)
+                 // NOTE: FilterLinkage update at block start is crucial
+                 slamL = this.filterL.process(slamL);
+                 slamR = this.filterR.process(slamR); // Ensure filterR state is current
+                 
+                 sampleL = slamL;
+                 sampleR = slamR;
+            } else {
+                // Ensure Filter state is advanced even if effect "off" to prevent click on toggle?
+                // Or just reset?
+                // For performance, we skip. But if filter is high-pass, engaging it might click.
+                // Assuming "SLAM" is a momentary effect, it's fine.
+            }
+
+            // Final Safety Clip
+            sampleL = Math.max(-1.0, Math.min(1.0, sampleL));
+            sampleR = Math.max(-1.0, Math.min(1.0, sampleR));
+
+            // Writes
+            ptrA += velA; 
+            ptrB += velB;
+            Atomics.store(this.headerView, OFFSETS.READ_POINTER_A / 4, ptrA);
+            Atomics.store(this.headerView, OFFSETS.READ_POINTER_B / 4, ptrB);
             
-            // --- NOISE INJECTION (For Slam) ---
-            if (this.noiseLevel > 0.0) {
-                 const noise = (Math.random() * 2.0 - 1.0) * this.noiseLevel;
-                 sample += noise;
+            if (this.ghostActive) {
+                 Atomics.store(this.headerView, OFFSETS.GHOST_POINTER / 4, Math.floor(this.ghostPtr));
+            } else {
+                 Atomics.store(this.headerView, OFFSETS.GHOST_POINTER / 4, -1);
             }
             
-            // Logic: `sample = (sample * (1.0 - reverbSendAmount)) + this.bloom.process(sample * reverbSendAmount);`
+            Atomics.store(this.headerView, OFFSETS.SLICER_ACTIVE / 4, (this.slicerActive) ? 1 : 0);
             
-            const bloomIn = sample * reverbSendAmount;
-            const bloomOut = this.bloom.process(bloomIn);
-            sample = (sample * (1.0 - reverbSendAmount)) + bloomOut;
-            
-            // Standard Send/Return mix topology:
-            // Master = Dry + AuxReturn.
-            // AuxSend = Dry * SendLevel.
-            // AuxReturn = Reverb(AuxSend) [100% Wet].
-            
-            // Our Bloom class is an Insert Effect (Dry/Wet knob).
-            // To use it as Send/Return, we should set Bloom's internal Dry to 0?
-            // But we don't control that here (params are set elsewhere).
-            
-            // If we use it as Insert `sample = bloom.process(sample)`, we can't have "Post Fader Tails" easily
-            // because if we "Bypass" it (`sample = sample`), we lose tails.
-            // If we "Input 0" (`sample = bloom(0)`), we generate tails, but lose Dry.
-            
-            // SOLUTION:
-            // Additive Mixing.
-            // We need to SUBTRACT the Dry part computed by Bloom if we want to keep original Sample?
-            // Or just rely on Bloom being 100% Wet?
-            // User can set Dry/Wet in UI.
-            // If user sets Dry=100, Wet=50.
-            // If we use `sample = bloom(sample)`, we get Dry+Wet.
-            // If we switch OFF (Send=0):
-            // We want `sample + Tails`.
-            // `bloom(0)` gives Tails (Wet only, since Input=0 -> Dry=0).
-            // So `sample += bloom(0)` gives Dry + Tails. Perfect!
-            // BUT:
-            // If we switch ON (Send=1):
-            // `sample += bloom(sample)`.
-            // `bloom(sample)` = Dry + Wet.
-            // Result = Sample + (Sample + Wet) = 2xDry + Wet.
-            // Volume doubling!
-            
-            // We need to CROSSFADE logic?
-            // If On: `sample = bloom(sample)`. (Insert)
-            // If Off: `sample = sample + bloom(0)`. (Additive Tails)
-            // While fader moves 1->0:
-            // `amount` goes 1->0.
-            // `bloomIn = sample * amount`.
-            // `bloomOut = bloom.process(bloomIn)`. -> `(sample*amount)*Dry + Tank*Wet`.
-            // `sample = (sample * (1-amount)) + bloomOut` ?
-            // Let's trace:
-            // amount=1: `0 + (Sample*Dry + Wet)`. Correct Insert.
-            // amount=0: `Sample + (0 + Wet)`. Correct Additive Tails.
-            // amount=0.5: `0.5*Sample + (0.5*Sample*Dry + Wet)`.
-            // = `Sample*(0.5 + 0.5*Dry) + Wet`.
-            // If Dry=1.0. `Sample*(1.0) + Wet`. Constant Dry level.
-            // This assumes `bloom.process` is linear for Dry generation.
-            
+            if (this.floatView) this.floatView[OFFSETS.TAPE_VELOCITY / 4] = (velA + velB) / 2; 
 
-
-            // 9. FINAL PROTECTION (Hard Clip)
-            sample = Math.max(-1.0, Math.min(1.0, sample)); 
-
-            leftChannel[i] = sample;
-            rightChannel[i] = sample; 
+            // Output to AudioContext
+            leftChannel[i] = sampleL;
+            if (rightChannel) rightChannel[i] = sampleR;
             
-            // Viz Outputs
+             // Viz Outputs. Use eqAL_Out etc.
             if (outputs[1] && outputs[1].length >= 2) {
-                outputs[1][0][i] = eqAL;
-                outputs[1][1][i] = eqAR;
+                outputs[1][0][i] = eqAL_Out;
+                outputs[1][1][i] = eqAR_Out;
             }
             if (outputs[2] && outputs[2].length >= 2) {
-                outputs[2][0][i] = eqBL;
-                outputs[2][1][i] = eqBR;
+                outputs[2][0][i] = eqBL_Out;
+                outputs[2][1][i] = eqBR_Out;
             }
-            
-            ptrA += velA;
-            ptrB += velB;
         }
-
-        Atomics.store(this.headerView, OFFSETS.READ_POINTER_A / 4, Math.floor(ptrA));
-        Atomics.store(this.headerView, OFFSETS.READ_POINTER_B / 4, Math.floor(ptrB));
-        
-        if (this.ghostActive) {
-             Atomics.store(this.headerView, OFFSETS.GHOST_POINTER / 4, Math.floor(this.ghostPtr));
-        } else {
-             Atomics.store(this.headerView, OFFSETS.GHOST_POINTER / 4, -1);
-        }
-        
-        Atomics.store(this.headerView, OFFSETS.SLICER_ACTIVE / 4, (this.slicerActive) ? 1 : 0);
-        
-        if (this.floatView) this.floatView[OFFSETS.TAPE_VELOCITY / 4] = (velA + velB) / 2; 
 
         return true;
     } catch (e) {

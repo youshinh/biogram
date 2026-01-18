@@ -1,4 +1,4 @@
-export const SAB_SIZE_BYTES = 32 * 1024 * 1024; // 32MB buffer (approx 90s total, 45s per deck)
+export const SAB_SIZE_BYTES = 64 * 1024 * 1024; // 64MB buffer (approx 90s stereo total)
 export const HEADER_SIZE_BYTES = 128; // Reserved header space
 
 // Byte Offsets for the SharedArrayBuffer Header
