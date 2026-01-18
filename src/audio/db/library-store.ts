@@ -18,6 +18,7 @@ export interface LoopSample {
     rhythm: number;
   };
   pcmData: Float32Array;  // Audio data (mono 44.1kHz)
+  validAudioRatio?: number; // 有効音声の比率 (0-1)、未定義は旧データ
 }
 
 interface PromptDJLibrary extends DBSchema {

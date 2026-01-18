@@ -19,11 +19,40 @@ import {
     createAiSlider, 
     createComboSlot, 
     createCustomSlot, 
+    createDualSelectorSlot,
     createFxModule, 
     mkOverlay, 
     mkSliderHelper 
 } from './ui/ui-helpers';
 import { generatePrompt, generateNegativePrompt, getDisplayPromptParts, PromptState } from './ai/prompt-generator';
+
+// 1. ROOT (基音) のリスト
+const ROOT_OPTIONS = [
+  "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+];
+
+// 2. TYPE (スケール・響きの種類) のリスト
+const SCALE_OPTIONS = [
+  // --- 基本 ---
+  { label: "MAJOR",      prompt: "Major scale, uplifting, happy" },
+  { label: "MINOR",      prompt: "Minor scale, emotional, sad" },
+  
+  // --- チャーチ・モード（雰囲気重視） ---
+  { label: "DORIAN",     prompt: "Dorian mode, jazzy, soulful" },
+  { label: "PHRYGIAN",   prompt: "Phrygian mode, spanish, exotic tension" },
+  { label: "LYDIAN",     prompt: "Lydian mode, dreamy, floating" },
+  { label: "WHOLE TONE", prompt: "Whole tone scale, dreamy, mysterious, floating" },
+  
+  // --- 沖縄 / 12音 ---
+  { label: "RYUKYU",     prompt: "Ryukyu pentatonic scale, Okinawan, peaceful, island breeze" },
+  { label: "12-TONE",    prompt: "12-tone serialism, atonal, avant-garde, chaotic" },
+
+  // --- 不協和音・実験的 ---
+  { label: "DISSONANT",  prompt: "Dissonant harmony, tension, anxiety, clash" }, // 不協和音
+  { label: "NOISE",      prompt: "Noise music, texture, glitch, harsh" },        // ノイズ的アプローチ
+  { label: "ATONAL",     prompt: "Atonal, no key, chaotic, avant-garde" }
+];
+
 
 console.log("Prompt-DJ v2.0 'Ghost in the Groove' initializing...");
 
@@ -74,10 +103,28 @@ if (isVizMode) {
         valTexture: 0, 
         typePulse: 'Sub-bass Pulse',
         valPulse: 0,
-        theme: ""
+        // Scale Params
+        // Scale Params
+        keyRoot: "",
+        scaleLabel: "",
+        scalePrompt: "",
+        theme: "",
+        deckAPrompt: "", // Independent Prompt for A
+        deckBPrompt: ""  // Independent Prompt for B
     };
 
     let isSlamming = false;
+
+    // Listen for Deck Prompt Updates
+    window.addEventListener('deck-prompt-change', (e: any) => {
+        const { deck, prompt } = e.detail;
+        if (deck === 'A') uiState.deckAPrompt = prompt;
+        if (deck === 'B') uiState.deckBPrompt = prompt;
+        // Optional: Trigger update if playing? 
+        // For now, just update state. The GEN button will pick it up.
+        // If we want instant update on Enter/Blur:
+        updatePrompts();
+    });
 
     // Helper to Regenerate and Send
     const updatePrompts = () => {
@@ -87,8 +134,11 @@ if (isVizMode) {
         const stateA = {
             ...uiState,
             deckId: 'A' as const,
-            deckPrompt: uiState.theme,
+            deckPrompt: uiState.deckAPrompt || uiState.theme, // Use Deck Prompt, fallback to Global
             currentBpm,
+            keyRoot: uiState.keyRoot,
+            scalePrompt: uiState.scalePrompt,
+            scaleLabel: uiState.scaleLabel,
             isSlamming
         };
         const promptA = generatePrompt(stateA);
@@ -99,8 +149,11 @@ if (isVizMode) {
         const stateB = {
             ...uiState,
             deckId: 'B' as const,
-            deckPrompt: uiState.theme,
+            deckPrompt: uiState.deckBPrompt || uiState.theme, // Use Deck Prompt, fallback to Global
             currentBpm,
+            keyRoot: uiState.keyRoot,
+            scalePrompt: uiState.scalePrompt,
+            scaleLabel: uiState.scaleLabel,
             isSlamming
         };
         const promptB = generatePrompt(stateB);
@@ -258,17 +311,44 @@ if (isVizMode) {
                  if (import.meta.env.DEV) console.log('[GEN HANDLER] Clearing Visualizer B');
                  deckB.clearVisualizer();
              }
+             
+            // TRIGGER HARD RESET
+            const currentBpm = engine.masterBpm;
+            const state = {
+                ...uiState,
+                deckId: deck,
+                deckPrompt: deck === 'A' ? (uiState.deckAPrompt || uiState.theme) : (uiState.deckBPrompt || uiState.theme),
+                currentBpm,
+                keyRoot: uiState.keyRoot,
+                scalePrompt: uiState.scalePrompt,
+                scaleLabel: uiState.scaleLabel,
+                isSlamming
+            };
+            const prompt = generatePrompt(state);
+            
+            engine.resetAiSession(deck, prompt);
+
+             // Update deck to display the dynamic prompt parts on waveform
+            const targetDeck = deck === 'A' ? deckA : deckB;
+            const displayParts = getDisplayPromptParts(state);
+            targetDeck.generatedPrompt = displayParts.join(' • ');
+            
+            if (import.meta.env.DEV) console.log(`[GEN ${deck} (HARD RESET)] ${prompt}`);
+            return; // EXIT EARLY - resetAiSession handles the prompt update
         } else {
              if (import.meta.env.DEV) console.log(`[GEN HANDLER] Deck ${deck} is PLAYING -> No forced clear.`);
         }
         
-        // Trigger Generation
+        // Trigger Generation (Normal Flow for Playing Deck)
         const currentBpm = engine.masterBpm;
         const state = {
             ...uiState,
             deckId: deck,
-            deckPrompt: uiState.theme,
+            deckPrompt: deck === 'A' ? (uiState.deckAPrompt || uiState.theme) : (uiState.deckBPrompt || uiState.theme),
             currentBpm,
+            keyRoot: uiState.keyRoot,
+            scalePrompt: uiState.scalePrompt,
+            scaleLabel: uiState.scaleLabel,
             isSlamming
         };
         const prompt = generatePrompt(state);
@@ -279,7 +359,7 @@ if (isVizMode) {
         const displayParts = getDisplayPromptParts(state);
         targetDeck.generatedPrompt = displayParts.join(' • ');
         
-        if (import.meta.env.DEV) console.log(`[GEN ${deck} (Reset)] ${prompt}`);
+        if (import.meta.env.DEV) console.log(`[GEN ${deck} (Update)] ${prompt}`);
     };
 
     // Attach specifically to deck instances to avoid global bubbling confusion (though window bubbling should work if deckId is correct)
@@ -299,7 +379,7 @@ if (isVizMode) {
     };
 
     // Create Save Dialog Helper
-    const showSaveDialog = (): Promise<{ bars: number; name: string; tags: string[] } | null> => {
+    const showSaveDialog = (): Promise<{ bars: number; name: string } | null> => {
         return new Promise((resolve) => {
             const overlay = document.createElement('div');
             Object.assign(overlay.style, {
@@ -331,10 +411,6 @@ if (isVizMode) {
                 
                 <label style="display: block; margin-bottom: 4px; font-size: 11px; color: #888;">名前</label>
                 <input id="save-name" type="text" value="${defaultName}" 
-                       style="width: 100%; padding: 8px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box;">
-                
-                <label style="display: block; margin-bottom: 4px; font-size: 11px; color: #888;">タグ (カンマ区切り)</label>
-                <input id="save-tags" type="text" placeholder="ambient, dark, slow" 
                        style="width: 100%; padding: 8px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; margin-bottom: 16px; box-sizing: border-box;">
                 
                 <div style="display: flex; gap: 8px;">
@@ -348,7 +424,6 @@ if (isVizMode) {
 
             const barsSelect = dialog.querySelector('#save-bars') as HTMLSelectElement;
             const nameInput = dialog.querySelector('#save-name') as HTMLInputElement;
-            const tagsInput = dialog.querySelector('#save-tags') as HTMLInputElement;
             const cancelBtn = dialog.querySelector('#save-cancel') as HTMLButtonElement;
             const confirmBtn = dialog.querySelector('#save-confirm') as HTMLButtonElement;
 
@@ -363,17 +438,14 @@ if (isVizMode) {
             confirmBtn.onclick = () => {
                 const bars = parseInt(barsSelect.value);
                 const name = nameInput.value.trim() || defaultName;
-                const tags = tagsInput.value
-                    ? tagsInput.value.split(',').map(t => t.trim()).filter(t => t.length > 0)
-                    : [];
                 cleanup();
-                resolve({ bars, name, tags });
+                resolve({ bars, name });
             };
 
             nameInput.onkeydown = (e) => { if (e.key === 'Enter') confirmBtn.click(); };
-            tagsInput.onkeydown = (e) => { if (e.key === 'Enter') confirmBtn.click(); };
         });
     };
+
 
     const handleSaveLoop = async (e: CustomEvent) => {
         const deck = e.detail.deck as 'A' | 'B';
@@ -385,7 +457,7 @@ if (isVizMode) {
             console.log('[SAVE HANDLER] Save cancelled by user');
             return;
         }
-        const { bars, name, tags } = result;
+        const { bars, name } = result;
 
         // Extract selected bars from buffer
         const loopData = engine.extractLoopBuffer(deck, bars);
@@ -394,9 +466,41 @@ if (isVizMode) {
             return;
         }
 
+        // --- Audio Validity Check ---
+        const { analyzeAudioValidity } = await import('./audio/utils/audio-analysis');
+        const validityResult = analyzeAudioValidity(loopData.pcmData, 44100, 0.001, 0.8);
+        
+        if (!validityResult.hasEnoughAudio) {
+            const validPercent = Math.round(validityResult.validRatio * 100);
+            const proceed = confirm(
+                `⚠️ 警告: オーディオの ${validPercent}% しか有効な音声がありません。\n` +
+                `(${100 - validPercent}% が無音部分です)\n\n` +
+                `このまま保存しますか？`
+            );
+            if (!proceed) {
+                console.log('[SAVE HANDLER] Save cancelled due to insufficient audio');
+                return;
+            }
+        }
+
         // Get current prompt for metadata
         const targetDeck = deck === 'A' ? deckA : deckB;
         const prompt = (targetDeck as any).generatedPrompt || uiState.theme || 'Unknown';
+
+        // --- Auto-generate tags from UI state ---
+        const currentBpm = engine.masterBpm;
+        const promptState = {
+            ...uiState,
+            deckId: deck,
+            deckPrompt: uiState.theme,
+            currentBpm,
+            keyRoot: uiState.keyRoot,
+            scalePrompt: uiState.scalePrompt,
+            scaleLabel: uiState.scaleLabel,
+            isSlamming
+        };
+        const tags = getDisplayPromptParts(promptState);
+        if (import.meta.env.DEV) console.log('[SAVE HANDLER] Auto-generated tags:', tags);
 
         // Analyze audio for vector (simple RMS-based)
         let brightness = 0, energy = 0, rhythm = 0;
@@ -422,12 +526,13 @@ if (isVizMode) {
                 bpm: loopData.bpm,
                 tags,
                 vector: { brightness, energy, rhythm },
-                pcmData: loopData.pcmData
+                pcmData: loopData.pcmData,
+                validAudioRatio: validityResult.validRatio
             });
-            console.log(`[SAVE HANDLER] Loop saved: ${name} (${loopData.duration.toFixed(1)}s @ ${loopData.bpm} BPM) [Tags: ${tags.join(', ')}]`);
+            console.log(`[SAVE HANDLER] Loop saved: ${name} (${loopData.duration.toFixed(1)}s @ ${loopData.bpm} BPM) [Valid: ${Math.round(validityResult.validRatio * 100)}%] [Tags: ${tags.join(', ')}]`);
             
-            // Visual feedback (could be enhanced with toast notification)
-            alert(`ループを保存しました: ${name}${tags.length > 0 ? `\nタグ: ${tags.join(', ')}` : ''}`);
+            // Visual feedback
+            alert(`ループを保存しました: ${name}\nタグ: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
         } catch (err) {
             console.error('[SAVE HANDLER] Failed to save loop:', err);
             alert('保存に失敗しました');
@@ -459,7 +564,11 @@ if (isVizMode) {
     // Custom (Combo/Input)
     // Total 8 slots. 4 columns x 2 rows? Or 8 columns?
     // Let's try 8 columns for now to fit wide.
-    controlsContainer.style.gridTemplateColumns = 'repeat(8, 1fr)';
+    // Let's try 10 columns to fit all params in one row as requested
+    // Let's try 9 columns to fit all params in one row (8 params + 1 dual slot)
+    controlsContainer.style.gridTemplateColumns = 'repeat(9, 1fr)';
+
+    // 0. (Removed - moved to end)
 
     // 1. AMBIENT
     controlsContainer.appendChild(createAiSlider('AMBIENT', (v) => {
@@ -525,6 +634,23 @@ if (isVizMode) {
         updatePrompts();
     }));
 
+    // 9. KEY / SCALE (New Dual Slot at End)
+    // Needs scale labels
+    const scaleLabels = SCALE_OPTIONS.map(o => o.label);
+    controlsContainer.appendChild(createDualSelectorSlot('KEY', ROOT_OPTIONS, 'SCALE', scaleLabels, (root, scaleLbl) => {
+        uiState.keyRoot = root;
+        // Find prompt for scale
+        const opt = SCALE_OPTIONS.find(o => o.label === scaleLbl);
+        if (opt) {
+            uiState.scaleLabel = opt.label;
+            uiState.scalePrompt = opt.prompt;
+        } else {
+            uiState.scaleLabel = "";
+            uiState.scalePrompt = "";
+        }
+        updatePrompts();
+    }));
+
     shell.appendChild(controlsContainer);
 
     // 3. Actions Panel (Right Bottom)
@@ -584,6 +710,8 @@ if (isVizMode) {
         mkSliderHelper(slicerOverlay, "PATTERN LENGTH", 'SLICER_PATTERN', 0.25, 0, 1, engine);
         mkSliderHelper(slicerOverlay, "GATE TIME", 'SLICER_GATE', 0.5, 0, 1, engine);
         mkSliderHelper(slicerOverlay, "SPEED DIV", 'SLICER_SPEED', 0.5, 0, 1, engine);
+        mkSliderHelper(slicerOverlay, "SMOOTHING", 'SLICER_SMOOTH', 0.1, 0, 0.99, engine);
+        mkSliderHelper(slicerOverlay, "RANDOMIZE", 'SLICER_RANDOM', 0, 0, 1, engine);
 
         const close = document.createElement('button');
         close.textContent = "CLOSE";
@@ -663,10 +791,19 @@ if (isVizMode) {
         if (!isSlamming) return; // Only release if actually slamming
         isSlamming = false;
         
+        // Reset Params
         engine.updateDspParam('GATE_THRESH', 0.0); 
         engine.updateDspParam('SR', 44100); 
         engine.updateDspParam('BITS', 32); 
         engine.updateDspParam('GHOST_EQ', 0.5);
+        engine.updateDspParam('NOISE_LEVEL', 0.0); // Kill Noise
+        
+        // DISABLE FX (Restore to UI state? Or just Kill?)
+        // Ideally should restore to UI state, but for now Safety Kill is safer to stop accidental noise.
+        // User can re-enable modules if they were on.
+        // TODO: Store previous state? For now, just turn off to ensure silence.
+        engine.updateDspParam('DECIMATOR_ACTIVE', 0.0);
+        engine.updateDspParam('SPECTRAL_GATE_ACTIVE', 0.0);
     };
 
     const handleSlamMove = (e: CustomEvent) => {
@@ -678,6 +815,10 @@ if (isVizMode) {
 
     slamBtn.addEventListener('slam-start', (e: Event) => {
         isSlamming = true;
+        // FORCE ENABLE FX for Slam
+        engine.updateDspParam('DECIMATOR_ACTIVE', 1.0);
+        engine.updateDspParam('SPECTRAL_GATE_ACTIVE', 1.0);
+        
         updatePrompts(); // Trigger Slam Prompt
         handleSlamMove(e as CustomEvent); // Trigger immediately
     });
@@ -750,21 +891,70 @@ if (isVizMode) {
         }
     };
 
-    // Library Button
-    const libLink = document.createElement('div');
-    libLink.textContent = "💾 LOOP LIBRARY";
-    libLink.style.textAlign = "center";
-    libLink.style.fontSize = "0.6rem";
-    libLink.style.padding = "6px";
-    libLink.style.cursor = "pointer";
-    libLink.style.opacity = "0.7";
-    libLink.style.border = "1px solid #333";
-    libLink.style.borderRadius = "4px";
-    libLink.style.marginTop = "4px";
-    libLink.onmouseenter = () => libLink.style.opacity = "1";
-    libLink.onmouseleave = () => libLink.style.opacity = "0.7";
-    libLink.onclick = toggleLibraryPanel;
-    actionsContainer.appendChild(libLink);
+    // --- SIDE TOGGLE BUTTON (Right Edge) ---
+    const sideToggleBtn = document.createElement('button');
+    sideToggleBtn.innerHTML = `
+        <span style="writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);">LIBRARY</span>
+    `;
+    Object.assign(sideToggleBtn.style, {
+        position: 'fixed',
+        top: '160px', // Higher up (below header area)
+        right: '0',
+        // transform: 'translateY(-50%)', // Removed centering
+        padding: '24px 8px', // Larger click area
+        background: '#18181b', // zinc-900
+        color: '#a1a1aa', // zinc-400
+        border: '1px solid #27272a', // zinc-800
+        borderRight: 'none',
+        borderRadius: '8px 0 0 8px', // Slightly more rounded
+        cursor: 'pointer',
+        zIndex: '499', // Just below panel
+        fontSize: '12px', // Larger text
+        fontFamily: 'monospace',
+        letterSpacing: '3px',
+        boxShadow: '-2px 0 10px rgba(0,0,0,0.5)',
+        transition: 'right 0.3s ease-in-out, background 0.2s'
+    });
+    
+    sideToggleBtn.onmouseenter = () => { sideToggleBtn.style.background = '#27272a'; sideToggleBtn.style.color = 'white'; };
+    sideToggleBtn.onmouseleave = () => { sideToggleBtn.style.background = '#18181b'; sideToggleBtn.style.color = '#a1a1aa'; };
+    sideToggleBtn.onclick = toggleLibraryPanel;
+    document.body.appendChild(sideToggleBtn);
+
+    // --- CLOSE BUTTON (Inside Panel) ---
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '×';
+    Object.assign(closeBtn.style, {
+        position: 'absolute',
+        top: '10px',
+        right: '10px',
+        width: '24px',
+        height: '24px',
+        background: 'transparent',
+        border: 'none',
+        color: '#71717a', // zinc-500
+        fontSize: '20px',
+        cursor: 'pointer',
+        zIndex: '501',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '4px'
+    });
+    closeBtn.onmouseenter = () => { closeBtn.style.color = 'white'; closeBtn.style.background = '#7f1d1d'; }; // Dark Red
+    closeBtn.onmouseleave = () => { closeBtn.style.color = '#71717a'; closeBtn.style.background = 'transparent'; };
+    closeBtn.onclick = toggleLibraryPanel;
+    
+    // Prepend close button to container so it stays on top/accessible
+    libraryPanelContainer.appendChild(closeBtn);
+    // Panel logic updates toggle
+    // We also need to update side button visibility/position if needed?
+    // Actually, when panel is open (right=0), it covers the button if button is right=0.
+    // The spec says "Open button... change to Close button?" No, "× to close".
+    // So if panel covers the button, that's fine.
+    
+    // Also remove the old link from actionsContainer if it was added there in previous lines
+    // (The replace logic removes the creation lines of libLink, so we just don't add it)
 
     // Open Projector (Small Text Link below Actions)
     const projLink = document.createElement('div');

@@ -2,7 +2,8 @@ export class BloomReverb {
     private sampleRate: number;
     public size: number = 0.5; // Room Size
     public shimmer: number = 0.5; // Brightness / Modulation
-    public mix: number = 0.5;
+    public wet: number = 0.5;
+    public dry: number = 1.0;
     
     // Diffusion steps (Allpass filters)
     private allpassDelays: Float32Array[] = [];
@@ -38,10 +39,14 @@ export class BloomReverb {
         }
     }
     
-    setParams(size: number, shimmer: number, mix: number) {
+    public freeze: boolean = false;
+    
+    setParams(size: number, shimmer: number, wet: number, dry: number, freeze: boolean = false) {
         this.size = size;     // Feedback amount (Decay time)
         this.shimmer = shimmer; // HF Damping or Modulation Speed
-        this.mix = mix;
+        this.wet = wet;
+        this.dry = dry;
+        this.freeze = freeze;
     }
     
     private processAllpass(input: number, index: number): number {
@@ -62,65 +67,70 @@ export class BloomReverb {
     }
     
     process(input: number): number {
-        if (this.mix < 0.01) return input;
+        // Bypass if levels are negligible
+        if (this.wet < 0.01 && this.dry > 0.99) return input;
         
-        let wet = input;
+        // Wet Path
+        let wetSig = input;
         
         // 1. Diffusion
         for (let i = 0; i < 4; i++) {
-            wet = this.processAllpass(wet, i);
+            wetSig = this.processAllpass(wetSig, i);
         }
         
         // 2. Tank (FDN-ish)
-        // Simple parallel comb filters with matrix mixing would be better,
-        // but let's do a recirculating loop.
-        
         let tankOut = 0;
-        const feedback = 0.5 + (this.size * 0.48); // 0.5 to 0.98
-        const damping = 1.0 - (this.shimmer * 0.5); // Lowpass
         
-        // Update LFO for modulation (Shimmer-ish warble)
+        let feedback = 0.5 + (this.size * 0.48); // 0.5 to 0.98
+        if (this.freeze) feedback = 1.0; // Infinite Decay
+        
+        // When frozen, Damping should strictly be user controlled, but usually we open it up 
+        // to prevent the loop from becoming dull, OR we keep it to freeze the "Darkness".
+        // FIX: If we want "Eternal", we must disable damping loss.
+        let damping = 1.0 - (this.shimmer * 0.5); 
+        if (this.freeze) damping = 1.0; // Force lossless loop for infinity 
+        
+        // Update LFO
         this.lfoPhase += 0.0001 + (this.shimmer * 0.001);
         if (this.lfoPhase > Math.PI * 2) this.lfoPhase -= Math.PI * 2;
-        const mod = Math.sin(this.lfoPhase) * 20 * this.shimmer; // Modulate delay length
+        // Reduce modulation depth when frozen to avoid pitch sickness? Or keep it?
+        // Keep it for "Eternal" shifting textures.
+        const mod = Math.sin(this.lfoPhase) * 20 * this.shimmer; 
         
         for (let i = 0; i < 4; i++) {
             const buf = this.feedbackDelays[i];
             const ptr = this.feedbackPointers[i];
-            // Modulated Read
-            const maxLen = buf.length; // actually using fixed sizes defined earlier? 
-            // The buffers were init with size * 10.
-            // Let's use the prime lengths as base.
-            const baseLen = [1557, 1617, 1491, 1422][i];
             
-            // Calc read pos
+            // ... (Read logic is same)
+            const maxLen = buf.length; 
+            const baseLen = [1557, 1617, 1491, 1422][i];
             let readPos = ptr - baseLen - mod;
             while(readPos < 0) readPos += maxLen;
             while(readPos >= maxLen) readPos -= maxLen;
-            
             const rInt = Math.floor(readPos);
             const rFrac = readPos - rInt;
             const rNext = (rInt + 1) % maxLen;
-            
-            // Linear Interpolation
             const delayVal = buf[rInt] * (1 - rFrac) + buf[rNext] * rFrac;
             
-            // Filter (Damping)
+            // Filter
             this.feedbackGains[i] = (this.feedbackGains[i] * damping) + (delayVal * (1 - damping));
             const filtered = this.feedbackGains[i];
             
             tankOut += filtered;
             
-            // Feedback with mix from other tap? (Householder matrix is expensive)
-            // Simple self-feedback
-            const fbIn = wet + (filtered * feedback);
-            buf[ptr] = fbIn;
+            // Feedback
+            // If Frozen, Input is 0
+            const inputFeed = this.freeze ? 0.0 : wetSig;
+            const fbIn = inputFeed + (filtered * feedback);
+            buf[ptr] = fbIn; // Soft clip? No, pure math.
+
             
             this.feedbackPointers[i] = (ptr + 1) % maxLen;
         }
         
         tankOut = tankOut * 0.25; // Average
         
-        return (input * (1 - this.mix)) + (tankOut * this.mix);
+        // Independent Wet/Dry Mix
+        return (input * this.dry) + (tankOut * this.wet);
     }
 }

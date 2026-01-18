@@ -32,7 +32,11 @@ export class TapeTransport {
         // 1. Calculate Forces
         // Force to push towards target
         const diff = this.targetVelocity - this.velocity;
-        const driveForce = diff * this.motorForce;
+        
+        // Feedforward Friction Compensation: Add force to counteract friction at current velocity
+        const frictionComp = this.velocity * this.friction;
+        
+        const driveForce = (diff * this.motorForce) + frictionComp;
         
         // Friction opposes movement
         const resistance = -this.velocity * this.friction;

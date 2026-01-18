@@ -88,6 +88,60 @@ export const createCustomSlot = (onChange: (text: string, intens: number) => voi
     return wrapper;
 };
 
+// Dual Selector Slot (e.g. Key + Scale)
+export const createDualSelectorSlot = (labelA: string, optionsA: string[], labelB: string, optionsB: string[], onChange: (selA: string, selB: string) => void) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = "flex flex-col flex-1 border border-white/20 bg-black/40 rounded-lg overflow-hidden";
+    
+    // Helper to create select
+    const createSelect = (lbl: string, opts: string[], onUpdate: (val: string) => void) => {
+        const container = document.createElement('div');
+        container.className = "flex flex-col flex-1 border-b border-white/10 last:border-b-0";
+        
+        const header = document.createElement('div');
+        header.textContent = lbl;
+        header.className = "bg-black/50 text-zinc-500 text-[9px] px-1.5 py-0.5 font-mono tracking-wider";
+        container.appendChild(header);
+
+        const sel = document.createElement('select');
+        sel.className = "bg-transparent text-white text-[10px] p-1 font-mono outline-none w-full appearance-none cursor-pointer hover:bg-white/5";
+        
+        // Add "None" option
+        const noneOpt = document.createElement('option');
+        noneOpt.value = "";
+        noneOpt.textContent = "---";
+        noneOpt.style.backgroundColor = "#000";
+        noneOpt.style.color = "#fff";
+        sel.appendChild(noneOpt);
+
+        opts.forEach(opt => {
+            const el = document.createElement('option');
+            el.value = opt;
+            el.textContent = opt.split(' ').slice(0, 2).join(' ').toUpperCase();
+            el.style.backgroundColor = "#000";
+            el.style.color = "#fff";
+            sel.appendChild(el);
+        });
+        
+        sel.onchange = (e: any) => onUpdate(e.target.value);
+        container.appendChild(sel);
+        return { container, sel };
+    };
+
+    let selectionA = "";
+    let selectionB = "";
+
+    const update = () => onChange(selectionA, selectionB);
+
+    const s1 = createSelect(labelA, optionsA, (v) => { selectionA = v; update(); });
+    const s2 = createSelect(labelB, optionsB, (v) => { selectionB = v; update(); });
+
+    wrapper.appendChild(s1.container);
+    wrapper.appendChild(s2.container);
+    
+    return wrapper;
+};
+
 // --- FX Module Helpers ---
 // Note: These might be obsolete if FxRack handles everything, but keeping for compatibility if used elsewhere.
 // Reimplementing them to match BIO:GRAM if they are still used.

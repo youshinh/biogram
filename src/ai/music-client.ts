@@ -311,4 +311,28 @@ export class MusicClient {
     public isGenerating(): boolean {
         return this.isConnected && !this.isSmartPaused;
     }
+
+    async resetSession() {
+        if (this.session) {
+            console.log(`MusicClient[${this.deckId}]: Resetting session...`);
+            // @ts-ignore - Check if close exists or just rely on disconnect
+            if (this.session.close) {
+                 // @ts-ignore
+                this.session.close();
+            }
+            this.session = null;
+            this.isConnected = false;
+        }
+        
+        // Clear internal logic state
+        this.archiveBuffer = [];
+        this.archiveSampleCount = 0;
+        this.isResetBuffering = true; // Enable buffering logic to trigger jump
+        this.resetBufferCount = 0;
+        this.hasHighConfidenceBpm = false;
+        this.pendingJump = false;
+        
+        // Reconnect (which creates new session)
+        await this.connect();
+    }
 }

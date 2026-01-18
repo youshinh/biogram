@@ -83,7 +83,10 @@ export class AudioEngine {
 
       // Force Pause State (Stop Tape)
       // This ensures we buffer content but don't play it until user asks.
-      this.updateDspParam('TAPE_STOP', 1.0);
+      // Force Pause State (Stop Tape)
+      // This ensures we buffer content but don't play it until user asks.
+      this.updateDspParam('TAPE_STOP', 1.0, 'A');
+      this.updateDspParam('TAPE_STOP', 1.0, 'B');
       this.isPlaying = false;
 
       // Handle Messages from Worklet
@@ -138,6 +141,21 @@ export class AudioEngine {
       // Give Deck B a slightly different seed/personality or same? Using same for now.
       // Maybe vary description slightly to ensure separation? "minimal ambient B"
       this.musicClientB?.start(autoPlay, initPrompt);
+  }
+
+  setLoop(deck: 'A' | 'B', start: number, end: number, crossfade: number, count: number, active: boolean) {
+     if (this.workletNode) {
+         this.workletNode.port.postMessage({
+             type: 'CONFIG_LOOP',
+             deck,
+             start,
+             end,
+             crossfade,
+             count,
+             active
+         });
+         // console.log(`[Engine] Set Loop ${deck}: ${active ? 'ON' : 'OFF'} [${start}-${end}]`);
+     }
   }
 
   /**
@@ -213,6 +231,40 @@ export class AudioEngine {
   updateAiPrompt(deck: 'A' | 'B', text: string, weight: number = 1.0) {
       if (deck === 'B') this.musicClientB?.updatePrompt(text, weight);
       else this.musicClientA?.updatePrompt(text, weight);
+  }
+
+  /**
+   * Hard Reset AI Session (Disconnect & Reconnect)
+   * Used when GEN is pressed on a STOPPED deck to guarantee fresh context.
+   */
+  async resetAiSession(deck: 'A' | 'B', prompt: string) {
+      // 1. Clear physical buffer and visual state immediately
+      this.clearBuffer(deck);
+      this.updateDspParam('TAPE_STOP', 1.0, deck); // Ensure tape is stopped until we are ready
+      
+      if (deck === 'A') {
+          if (this.musicClientA) {
+              await this.musicClientA.resetSession();
+              // After reset, we need to send the prompt (resetSession calls connect -> we need to start/prompt)
+              // actually start() handles connect? resetSession handles connect.
+              // We need to send the prompt to the new session.
+              this.musicClientA.updatePrompt(prompt, 1.0);
+              // Ensure it's playing if we want it to verify connection, 
+              // but deck is stopped so we might just want it ready?
+              // The original logic was: if autoPlay=true it plays.
+              // We probably want it to start generating immediately into the buffer even if stopped?
+              // Wait, if deck is STOPPED, we want to buffer but NOT play audio output yet.
+              // Engine.setTapeStop handles the audio output mute.
+              // The session needs to be "playing" (generating) to fill the buffer.
+              this.musicClientA.resume(); 
+          }
+      } else {
+          if (this.musicClientB) {
+              await this.musicClientB.resetSession();
+              this.musicClientB.updatePrompt(prompt, 1.0);
+              this.musicClientB.resume();
+          }
+      }
   }
 
   pause() {

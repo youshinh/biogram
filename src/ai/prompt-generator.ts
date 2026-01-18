@@ -7,6 +7,12 @@ export interface PromptState {
     valColor: number;     // 0-100
     typeTexture: string;
     typePulse: string;
+    
+    // New Scale Parameters
+    keyRoot: string;      // e.g. "C", "F#"
+    // scaleType removed (using scalePrompt/scaleLabel directly)
+    scaleLabel: string;   // For display: "MINOR"
+    scalePrompt: string;  // For generation: "Minor scale, emotional..."
 
     // System Context
     deckId: 'A' | 'B';
@@ -19,6 +25,7 @@ export const generatePrompt = (state: PromptState): string => {
     const {
         valAmbient, valMinimal, valDub, valImpact, valColor,
         typeTexture, typePulse,
+        keyRoot, scalePrompt,
         deckId, deckPrompt, currentBpm, isSlamming
     } = state;
 
@@ -51,6 +58,12 @@ export const generatePrompt = (state: PromptState): string => {
     
     // Change format to "X BPM"
     const timeContext = `${currentBpm} BPM`;
+
+    // --- Step 2.5: Key & Scale ---
+    let keyContext = "";
+    if (keyRoot && scalePrompt) {
+        keyContext = `Key of ${keyRoot}, ${scalePrompt}`;
+    }
 
     // --- Step 3: Mode & Elements Assembly ---
     
@@ -119,6 +132,7 @@ export const generatePrompt = (state: PromptState): string => {
     
     const parts = [
         timeContext, // Moved to Start
+        keyContext,  // Add Key/Scale context
         theme,
         slamModifier, // Add Modifier here
         personality,
@@ -143,10 +157,16 @@ export const getDisplayPromptParts = (state: PromptState): string[] => {
     const {
         valAmbient, valMinimal, valDub, valImpact, valColor,
         typeTexture, typePulse,
+        keyRoot, scaleLabel,
         deckId, deckPrompt, isSlamming
     } = state;
 
     const parts: string[] = [];
+
+    // Scale Display
+    if (keyRoot && scaleLabel) {
+        parts.push(`Key: ${keyRoot} ${scaleLabel}`);
+    }
 
     // SLAM
     if (isSlamming) {

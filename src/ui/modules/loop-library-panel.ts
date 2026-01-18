@@ -19,7 +19,7 @@ export class LoopLibraryPanel extends LitElement {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 8px 12px;
+      padding: 8px 40px 8px 12px; /* Increased right padding for Close btn */
       background: #111;
       border-bottom: 1px solid #222;
     }
@@ -263,6 +263,9 @@ export class LoopLibraryPanel extends LitElement {
   @property({ type: String }) targetDeck: 'A' | 'B' = 'A';
 
   private libraryStore: any = null;
+  
+  // Minimum valid audio ratio for displaying samples (lower than this will be hidden)
+  private static readonly MIN_VALID_AUDIO_RATIO = 0.8;
 
   async connectedCallback() {
     super.connectedCallback();
@@ -274,7 +277,16 @@ export class LoopLibraryPanel extends LitElement {
       const { LibraryStore } = await import('../../audio/db/library-store');
       this.libraryStore = new LibraryStore();
       await this.libraryStore.init();
-      this.samples = await this.libraryStore.getAllSamples();
+      const allSamples = await this.libraryStore.getAllSamples();
+      
+      // Filter out samples with insufficient audio (but keep legacy samples without validAudioRatio)
+      this.samples = allSamples.filter((s: any) => {
+        // If validAudioRatio is not set (legacy data), show it
+        if (s.validAudioRatio === undefined) return true;
+        // Otherwise, only show samples with enough valid audio
+        return s.validAudioRatio >= LoopLibraryPanel.MIN_VALID_AUDIO_RATIO;
+      });
+      
       this.filteredSamples = this.samples;
       this.availableTags = await this.libraryStore.getAllTags();
     } catch (e) {

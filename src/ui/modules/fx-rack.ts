@@ -10,20 +10,31 @@ export class FxRack extends LitElement {
   @property({ type: Number }) filterX = 0.5;
   @property({ type: Number }) filterY = 0.5;
   @property({ type: Number }) filterQ = 0.5;
+  @property({ type: Number }) filterDrive = 0.0; // 0..1
 
   @property({ type: Boolean }) activeFilter = false;
   @property({ type: Boolean }) activeDecimator = false;
   @property({ type: Boolean }) activeReverb = false;
   @property({ type: Boolean }) activeTape = false;
   @property({ type: Boolean }) activeGate = false;
+  @property({ type: Number }) gateRelease = 0.5; // UI Value 0..1
   @property({ type: Boolean }) activeLimiter = false;
 
   @property({ type: Number }) sr = 1.0;
   @property({ type: Number }) bits = 16;
   
+  @property({ type: Boolean }) activeCloud = false;
+  @property({ type: Number }) cloudDensity = 0.5;
+  @property({ type: Number }) cloudSize = 0.2;
+  @property({ type: Number }) cloudSpray = 0.2;
+  @property({ type: Number }) cloudPitch = 0.5; // UI 0.5 -> 1.0 Pitch
+  @property({ type: Number }) cloudMix = 0.5;
+
   @property({ type: Number }) bloomSize = 0.6;
   @property({ type: Number }) bloomShimmer = 0.4;
-  @property({ type: Number }) bloomMix = 0.3;
+  @property({ type: Number }) bloomWet = 0.5;
+  @property({ type: Number }) bloomDry = 1.0;
+  @property({ type: Boolean }) activeFreeze = false;
 
   @property({ type: Number }) limiterGR = 1.0;
   @property({ type: Number }) compRatio = 4;
@@ -36,10 +47,15 @@ export class FxRack extends LitElement {
       // Sync initial state
       this.updateParam('FILTER_ACTIVE', this.activeFilter ? 1 : 0);
       this.updateParam('DECIMATOR_ACTIVE', this.activeDecimator ? 1 : 0);
+      this.updateParam('CLOUD_ACTIVE', this.activeCloud ? 1 : 0);
       this.updateParam('REVERB_ACTIVE', this.activeReverb ? 1 : 0);
+      this.updateParam('BLOOM_FREEZE', this.activeFreeze ? 1 : 0);
       this.updateParam('TAPE_ACTIVE', this.activeTape ? 1 : 0);
       this.updateParam('COMP_ACTIVE', this.activeLimiter ? 1 : 0);
-      this.updateParam('GATE_THRESH', this.activeGate ? this.compThresh : 0.0);
+      this.updateParam('SPECTRAL_GATE_ACTIVE', this.activeGate ? 1 : 0);
+      this.updateParam('GATE_THRESH', this.activeGate ? (this.activeGate ? 0.3 : 0.0) : 0.0);
+      const startRelease = 0.9 + (this.gateRelease * 0.0999);
+      this.updateParam('GATE_RELEASE', startRelease);
   }
 
   updateParam(id: string, val: number) {
@@ -52,10 +68,10 @@ export class FxRack extends LitElement {
 
   render() {
     return html`
-      <div class="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-3 p-3 h-full overflow-y-auto">
+      <div class="flex flex-nowrap gap-2 p-2 h-full overflow-x-auto items-stretch">
 
         <!-- MOD 01: FILTER XY -->
-        <div class="border border-white/10 flex flex-col min-h-[180px] p-3 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-tech-cyan/30 transition-colors">
+        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-tech-cyan/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeFilter ? 'bg-tech-cyan shadow-[0_0_8px_cyan]' : 'bg-zinc-800'}"></div>
@@ -92,15 +108,185 @@ export class FxRack extends LitElement {
                     }}"
                  >
              </div>
+             <div class="flex flex-col w-full mt-2">
+                 <div class="flex justify-between text-[10px] text-zinc-500 font-mono mb-1">
+                    <span>DRIVE</span>
+                    <span>${(this.filterDrive * 100).toFixed(0)}%</span>
+                 </div>
+                 <input type="range" 
+                    class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-orange-500 hover:accent-white"
+                    min="0" max="100" value="${this.filterDrive * 100}"
+                    @input="${(e: any) => {
+                        this.filterDrive = e.target.value / 100;
+                        this.updateParam('FILTER_DRIVE', this.filterDrive);
+                    }}"
+                 >
+             </div>
           </div>
         </div>
 
-        <!-- MOD 02: DECIMATOR -->
-        <div class="border border-white/10 flex flex-col min-h-[180px] p-3 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-purple-500/30 transition-colors">
+        <!-- MOD 02: TAPE ECHO -->
+        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-yellow-500/30 transition-colors">
+          <div class="flex justify-between items-center mb-2">
+             <div class="flex items-center gap-2">
+                 <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeTape ? 'bg-yellow-500 shadow-[0_0_8px_orange]' : 'bg-zinc-800'}"></div>
+                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_02 // TAPE_ECHO</span>
+             </div>
+             <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-600 rounded-sm checked:bg-yellow-500 checked:border-yellow-500 cursor-pointer" 
+                ?checked="${this.activeTape}"
+                @change="${(e: any) => {
+                    this.activeTape = e.target.checked;
+                    this.updateParam('TAPE_ACTIVE', this.activeTape ? 1 : 0);
+                }}">
+          </div>
+           <div class="flex flex-col justify-around flex-grow gap-2">
+              <div class="flex flex-col w-full">
+                  <div class="flex justify-between text-[10px] text-zinc-500 font-mono mb-1">
+                     <span>DUB SEND (FEEDBACK)</span>
+                     <span>${(this.dubSend * 100).toFixed(0)}%</span>
+                  </div>
+                  <input type="range" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-yellow-500 hover:accent-white" 
+                     min="0" max="100" value="${this.dubSend * 100}"
+                     @input="${(e: any) => {
+                         this.dubSend = e.target.value / 100;
+                         this.updateParam('DUB', this.dubSend);
+                     }}"
+                  >
+              </div>
+              <div class="flex items-center justify-between border-t border-white/10 pt-2 mt-2">
+                  <span class="text-[10px] text-zinc-600 opacity-50">TAPE_HISS</span>
+                  <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-700 rounded-sm checked:bg-yellow-500/50 checked:border-yellow-500">
+              </div>
+           </div>
+        </div>
+        
+        <!-- MOD 03: BLOOM VERB -->
+        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-pink-500/30 transition-colors">
+          <div class="flex justify-between items-center mb-2">
+             <div class="flex items-center gap-2">
+                 <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeReverb ? 'bg-pink-500 shadow-[0_0_8px_pink]' : 'bg-zinc-800'}"></div>
+                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_03 // BLOOM_VERB</span>
+             </div>
+             <div class="flex items-center gap-2">
+                <label class="flex items-center gap-1 cursor-pointer">
+                    <span class="text-[9px] font-mono ${this.activeFreeze ? 'text-cyan-400 animate-pulse' : 'text-zinc-600'}">FREEZE</span>
+                    <input type="checkbox" class="appearance-none w-2 h-2 border border-zinc-600 rounded-sm checked:bg-cyan-400 checked:border-cyan-400 checked:shadow-[0_0_5px_cyan]"
+                        ?checked="${this.activeFreeze}"
+                        @change="${(e: any) => {
+                            this.activeFreeze = e.target.checked;
+                            this.updateParam('BLOOM_FREEZE', this.activeFreeze ? 1 : 0);
+                        }}"
+                    >
+                </label>
+                <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-600 rounded-sm checked:bg-pink-500 checked:border-pink-500 cursor-pointer" 
+                    ?checked="${this.activeReverb}"
+                    @change="${(e: any) => {
+                        this.activeReverb = e.target.checked;
+                        this.updateParam('REVERB_ACTIVE', this.activeReverb ? 1 : 0);
+                    }}">
+             </div>
+          </div>
+          <div class="flex flex-col justify-around gap-3 pt-2">
+             ${[
+                 { label: 'SIZE', val: this.bloomSize, param: 'BLOOM_SIZE' },
+                 { label: 'SHIMMER', val: this.bloomShimmer, param: 'BLOOM_SHIMMER' },
+                 { label: 'WET', val: this.bloomWet, param: 'BLOOM_WET' },
+                 { label: 'DRY', val: this.bloomDry, param: 'BLOOM_DRY' }
+             ].map(ctrl => html`
+                 <div class="flex flex-col w-full">
+                      <div class="flex justify-between text-[10px] text-zinc-500 font-mono mb-1">
+                          <span>${ctrl.label}</span>
+                          <span>${(ctrl.val * 100).toFixed(0)}%</span>
+                      </div>
+                      <input type="range" 
+                             class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-pink-500 hover:accent-white"
+                             min="0" max="100" value="${ctrl.val * 100}"
+                             @input="${(e: any) => {
+                                 const v = e.target.value / 100;
+                                 if (ctrl.param === 'BLOOM_SIZE') this.bloomSize = v;
+                                 if (ctrl.param === 'BLOOM_SHIMMER') this.bloomShimmer = v;
+                                 if (ctrl.param === 'BLOOM_WET') this.bloomWet = v;
+                                 if (ctrl.param === 'BLOOM_DRY') this.bloomDry = v;
+                                 this.updateParam(ctrl.param, v);
+                                 this.requestUpdate();
+                             }}"
+                      >
+                 </div>
+             `)}
+          </div>
+        </div>
+
+        <!-- MOD 04: CLOUD GRAIN -->
+        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-sky-500/30 transition-colors">
+          <div class="flex justify-between items-center mb-2">
+             <div class="flex items-center gap-2">
+                 <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeCloud ? 'bg-sky-500 shadow-[0_0_8px_sky]' : 'bg-zinc-800'}"></div>
+                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_04 // CLOUD_GRAIN</span>
+             </div>
+             <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-600 rounded-sm checked:bg-sky-500 checked:border-sky-500 cursor-pointer" 
+                ?checked="${this.activeCloud}"
+                @change="${(e: any) => {
+                    this.activeCloud = e.target.checked;
+                    this.updateParam('CLOUD_ACTIVE', this.activeCloud ? 1 : 0);
+                }}">
+          </div>
+          <div class="flex flex-col gap-2 flex-grow justify-around">
+             <!-- Density / Size -->
+             <div class="flex gap-2">
+                <div class="flex flex-col w-1/2">
+                   <span class="text-[10px] text-zinc-500 font-mono mb-1">DENSITY</span>
+                   <input type="range" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-sky-500 hover:accent-white" min="0" max="100" value="${this.cloudDensity * 100}"
+                      @input="${(e: any) => { this.cloudDensity = e.target.value / 100; this.updateParam('CLOUD_DENSITY', this.cloudDensity); }}"
+                   >
+                </div>
+                <div class="flex flex-col w-1/2">
+                   <span class="text-[10px] text-zinc-500 font-mono mb-1">SIZE</span>
+                   <input type="range" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-sky-500 hover:accent-white" min="0" max="100" value="${this.cloudSize * 100}"
+                      @input="${(e: any) => { this.cloudSize = e.target.value / 100; this.updateParam('CLOUD_SIZE', this.cloudSize); }}"
+                   >
+                </div>
+             </div>
+             <!-- Spray / Pitch -->
+             <div class="flex gap-2">
+                <div class="flex flex-col w-1/2">
+                   <span class="text-[10px] text-zinc-500 font-mono mb-1">SPRAY</span>
+                   <input type="range" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-sky-500 hover:accent-white" min="0" max="100" value="${this.cloudSpray * 100}"
+                      @input="${(e: any) => { this.cloudSpray = e.target.value / 100; this.updateParam('CLOUD_SPRAY', this.cloudSpray); }}"
+                   >
+                </div>
+                <div class="flex flex-col w-1/2">
+                   <span class="text-[10px] text-zinc-500 font-mono mb-1">PITCH</span>
+                   <input type="range" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-sky-500 hover:accent-white" min="0" max="100" value="${this.cloudPitch * 100}"
+                      @input="${(e: any) => { 
+                          const v = e.target.value / 100;
+                          this.cloudPitch = v; 
+                          // Map 0..1 -> 0.5 .. 2.0 (Log scale?) 
+                          // Linear: 0.5 + 1.5*v
+                          const p = 0.5 + (v * 1.5);
+                          this.updateParam('CLOUD_PITCH', p); 
+                      }}"
+                   >
+                </div>
+             </div>
+             <!-- Mix -->
+             <div class="flex flex-col w-full">
+                <div class="flex justify-between text-[10px] text-zinc-500 font-mono mb-1">
+                    <span>MIX</span>
+                    <span>${(this.cloudMix * 100).toFixed(0)}%</span>
+                </div>
+                <input type="range" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-sky-500 hover:accent-white" min="0" max="100" value="${this.cloudMix * 100}"
+                      @input="${(e: any) => { this.cloudMix = e.target.value / 100; this.updateParam('CLOUD_MIX', this.cloudMix); }}"
+                >
+             </div>
+          </div>
+        </div>
+
+        <!-- MOD 05: DECIMATOR -->
+        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-purple-500/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeDecimator ? 'bg-purple-500 shadow-[0_0_8px_purple]' : 'bg-zinc-800'}"></div>
-                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_02 // DECIMATOR</span>
+                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_05 // DECIMATOR</span>
              </div>
              <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-600 rounded-sm checked:bg-purple-500 checked:border-purple-500 cursor-pointer" 
                 ?checked="${this.activeDecimator}"
@@ -144,123 +330,64 @@ export class FxRack extends LitElement {
              </div>
           </div>
         </div>
-
-        <!-- MOD 03: BLOOM VERB -->
-        <div class="border border-white/10 flex flex-col min-h-[180px] p-3 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-pink-500/30 transition-colors">
-          <div class="flex justify-between items-center mb-2">
-             <div class="flex items-center gap-2">
-                 <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeReverb ? 'bg-pink-500 shadow-[0_0_8px_pink]' : 'bg-zinc-800'}"></div>
-                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_03 // BLOOM_VERB</span>
-             </div>
-             <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-600 rounded-sm checked:bg-pink-500 checked:border-pink-500 cursor-pointer" 
-                ?checked="${this.activeReverb}"
-                @change="${(e: any) => {
-                    this.activeReverb = e.target.checked;
-                    this.updateParam('REVERB_ACTIVE', this.activeReverb ? 1 : 0);
-                }}">
-          </div>
-          <div class="flex flex-col justify-around gap-3 pt-2">
-             ${[
-                 { label: 'SIZE', val: this.bloomSize, param: 'BLOOM_SIZE' },
-                 { label: 'SHIMMER', val: this.bloomShimmer, param: 'BLOOM_SHIMMER' },
-                 { label: 'MIX', val: this.bloomMix, param: 'BLOOM_MIX' }
-             ].map(ctrl => html`
-                 <div class="flex flex-col w-full">
-                      <div class="flex justify-between text-[10px] text-zinc-500 font-mono mb-1">
-                          <span>${ctrl.label}</span>
-                          <span>${(ctrl.val * 100).toFixed(0)}%</span>
-                      </div>
-                      <input type="range" 
-                             class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-pink-500 hover:accent-white"
-                             min="0" max="100" value="${ctrl.val * 100}"
-                             @input="${(e: any) => {
-                                 const v = e.target.value / 100;
-                                 if (ctrl.param === 'BLOOM_SIZE') this.bloomSize = v;
-                                 if (ctrl.param === 'BLOOM_SHIMMER') this.bloomShimmer = v;
-                                 if (ctrl.param === 'BLOOM_MIX') this.bloomMix = v;
-                                 this.updateParam(ctrl.param, v);
-                                 this.requestUpdate();
-                             }}"
-                      >
-                 </div>
-             `)}
-          </div>
-        </div>
         
-         <!-- MOD 04: TAPE ECHO -->
-        <div class="border border-white/10 flex flex-col min-h-[180px] p-3 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-yellow-500/30 transition-colors">
-          <div class="flex justify-between items-center mb-2">
-             <div class="flex items-center gap-2">
-                 <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeTape ? 'bg-yellow-500 shadow-[0_0_8px_orange]' : 'bg-zinc-800'}"></div>
-                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_04 // TAPE_ECHO</span>
-             </div>
-             <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-600 rounded-sm checked:bg-yellow-500 checked:border-yellow-500 cursor-pointer" 
-                ?checked="${this.activeTape}"
-                @change="${(e: any) => {
-                    this.activeTape = e.target.checked;
-                    this.updateParam('TAPE_ACTIVE', this.activeTape ? 1 : 0);
-                }}">
-          </div>
-           <div class="flex flex-col justify-around flex-grow gap-2">
-              <div class="flex flex-col w-full">
-                  <div class="flex justify-between text-[10px] text-zinc-500 font-mono mb-1">
-                     <span>DUB SEND (FEEDBACK)</span>
-                     <span>${(this.dubSend * 100).toFixed(0)}%</span>
-                  </div>
-                  <input type="range" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-yellow-500 hover:accent-white" 
-                     min="0" max="100" value="${this.dubSend * 100}"
-                     @input="${(e: any) => {
-                         this.dubSend = e.target.value / 100;
-                         this.updateParam('DUB', this.dubSend);
-                     }}"
-                  >
-              </div>
-              <div class="flex items-center justify-between border-t border-white/10 pt-2 mt-2">
-                  <span class="text-[10px] text-zinc-600 opacity-50">TAPE_HISS</span>
-                  <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-700 rounded-sm checked:bg-yellow-500/50 checked:border-yellow-500">
-              </div>
-           </div>
-        </div>
-        
-         <!-- MOD 05: SPECTRAL GATE -->
-        <div class="border border-white/10 flex flex-col min-h-[180px] p-3 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-green-500/30 transition-colors">
+         <!-- MOD 06: SPECTRAL GATE -->
+        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-green-500/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeGate ? 'bg-green-500 shadow-[0_0_8px_lime]' : 'bg-zinc-800'}"></div>
-                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_05 // SPEC_GATE</span>
+                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_06 // SPEC_GATE</span>
              </div>
              <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-600 rounded-sm checked:bg-green-500 checked:border-green-500 cursor-pointer" 
                 ?checked="${this.activeGate}"
                 @change="${(e: any) => {
                     this.activeGate = e.target.checked;
+                    this.updateParam('SPECTRAL_GATE_ACTIVE', this.activeGate ? 1 : 0);
                     this.updateParam('GATE_THRESH', this.activeGate ? 0.3 : 0.0);
                 }}">
           </div>
-           <div class="flex flex-col justify-end gap-2 flex-grow">
-              <div class="flex items-end gap-[2px] h-16 border-b border-white/10 mb-2 pb-1 relative opacity-50">
-                  <!-- Fake Visualizer Bars -->
-                  ${[20, 60, 10, 80, 40, 50, 30, 70].map(h => html`<div class="flex-1 bg-zinc-400" style="height:${h}%"></div>`)}
-                  <div class="absolute w-full border-t border-dashed border-green-500 opacity-80" style="top: 40%"></div>
-              </div>
+           <div class="flex flex-col justify-around gap-2 flex-grow">
+              <!-- Removed Visualizer -->
               <div class="flex flex-col w-full">
                   <span class="text-[10px] text-zinc-500 font-mono mb-1">THRESHOLD</span>
                   <input type="range" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-green-500 hover:accent-white" min="0" max="100"
                      @input="${(e: any) => {
-                         const v = e.target.value / 100;
+                         // Rescale: 0-100 -> 0.0-0.2
+                         // User said it's too sensitive, so we cap max at 0.2
+                         const v = (e.target.value / 100) * 0.2;
                          this.updateParam('GATE_THRESH', v);
-                         if(v > 0) this.activeGate = true;
+                         if(v > 0) {
+                             this.activeGate = true;
+                             this.updateParam('SPECTRAL_GATE_ACTIVE', 1);
+                         }
+                      }}"
+                  >
+              </div>
+              <div class="flex flex-col w-full">
+                  <span class="text-[10px] text-zinc-500 font-mono mb-1">RELEASE</span>
+                  <input type="range" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-green-500 hover:accent-white" min="0" max="100" value="${this.gateRelease * 100}"
+                     @input="${(e: any) => {
+                         const v = e.target.value / 100;
+                         this.gateRelease = v;
+                         // Map 0..1 to 0.9 .. 0.9999
+                         // Logarithmic-ish mapping for release time
+                         // 0 -> 0.9 (Fast)
+                         // 1 -> 0.9999 (Slow)
+                         const r = 0.9 + (v * 0.0999);
+                         this.updateParam('GATE_RELEASE', r);
+                         this.requestUpdate();
                       }}"
                   >
               </div>
            </div>
         </div>
 
-         <!-- MOD 06: DYNAMICS (COMP/LIMIT) -->
-        <div class="border border-white/10 flex flex-col min-h-[180px] p-3 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-red-500/30 transition-colors">
+         <!-- MOD 07: DYNAMICS (COMP/LIMIT) -->
+        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-red-500/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeLimiter ? 'bg-red-500 shadow-[0_0_8px_red]' : 'bg-zinc-800'}"></div>
-                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_06 // DYNAMICS</span>
+                 <span class="font-mono text-xs text-zinc-400 tracking-wider">MOD_07 // DYNAMICS</span>
              </div>
              <span class="text-[10px] font-bold px-1 rounded ${this.limiterGR < 0.99 ? 'bg-red-500 text-white animate-pulse' : 'text-zinc-700 bg-zinc-900'}">GR</span>
              <input type="checkbox" class="appearance-none w-3 h-3 border border-zinc-600 rounded-sm checked:bg-red-500 checked:border-red-500 cursor-pointer" 
