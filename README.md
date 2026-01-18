@@ -2,7 +2,7 @@
 
 > "Noise is where the universe resides."
 
-**Bio:gram** is an experimental AI-driven DJ system, a "Prompt-DJ" platform powered by **Google's Gemini Flash** and the high-fidelity **Lyria** model. It transcends traditional linear mixing by employing a **Deep Spectral Architect**, allowing the AI to act as a "Ghost" partner that performs spectral handoffs, organic parameter manipulation, and narrative-driven transitions.
+**Bio:gram** is an experimental AI-driven DJ system powered by **Google's Gemini Flash** and the high-fidelity **Lyria** model. It transcends traditional linear mixing by employing a **Deep Spectral Architect**, allowing the AI to act as a "Ghost" partner that performs spectral handoffs, organic parameter manipulation, and narrative-driven transitions.
 
 [🇯🇵 日本語 (Japanese)](README_JP.md)
 

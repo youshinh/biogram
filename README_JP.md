@@ -2,7 +2,7 @@
 
 > "Noise is where the universe resides. (ノイズこそが、宇宙の所在である)"
 
-**Bio:gram** は、**Google Gemini Flash** と高忠実度音楽生成モデル **Lyria** を搭載した実験的な AI DJ システムであり、「Prompt-DJ」プラットフォームです。従来の線形的なオートミックスを超越し、**Deep Spectral Architect (深層スペクトル設計)** を採用することで、AI が「Ghost (幽霊)」のようなパートナーとして振る舞い、周波数帯域の譲り合い、有機的なパラメータ操作、そして物語性のあるトランジションをリアルタイムに実行します。
+**Bio:gram** は、**Google Gemini Flash** と高忠実度音楽生成モデル **Lyria** を搭載した実験的な AI DJ システムです。従来の線形的なオートミックスを超越し、**Deep Spectral Architect (深層スペクトル設計)** を採用することで、AI が「Ghost (幽霊)」のようなパートナーとして振る舞い、周波数帯域の譲り合い、有機的なパラメータ操作、そして物語性のあるトランジションをリアルタイムに実行します。
 
 [🇺🇸 English](README.md)
 
