@@ -4,16 +4,27 @@ import './atoms/bio-slider'; // Ensure custom elements are registered
 // --- UI Helper Functions ---
 
 export const createAiSlider = (label: string, onChange: (val: number) => void) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = "flex flex-col flex-1 h-full border border-white/20 bg-black/40 rounded-lg overflow-hidden";
+
+    // Header (Visual Match to Select)
+    const header = document.createElement('div');
+    header.className = "bg-black text-white border-b border-white/20 text-[11px] p-1.5 font-mono w-full truncate border-none";
+    // Actually, select has border-b. But here we might want just text.
+    // To match exactly: Select has border-b border-white/20.
+    header.className = "bg-black text-zinc-400 border-b border-white/20 text-[11px] p-1.5 font-mono w-full truncate pl-2 uppercase tracking-wide";
+    header.textContent = label;
+    wrapper.appendChild(header);
+
     const slider = document.createElement('bio-slider');
-    slider.setAttribute('label', label);
+    slider.setAttribute('label', ''); // Label handled by header
     slider.setAttribute('value', "0");
-    slider.className = "w-full h-56"; 
+    slider.className = "flex-1 border-none"; 
     slider.addEventListener('change', (e: any) => {
-        // bio-slider emits 0-100. We pass it directly (or scaled?)
-        // Spec says logic uses 0-100.
         onChange(e.detail); 
     });
-    return slider;
+    wrapper.appendChild(slider);
+    return wrapper;
 };
 
 export const createComboSlot = (label: string, options: string[], onChange: (selected: string, intens: number) => void) => {

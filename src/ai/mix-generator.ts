@@ -28,7 +28,7 @@ Your task is to create an "Automation Score (JSON)" to control a DJ application 
 * **EQ & Volume Safety:**
   * **EQ (Low/Mid/Hi):** Range is **0.0 (Kill)** to **1.0 (Flat/Normal)**. Do NOT exceed 1.0 (Boost).
   * **Volume:** Max **1.0**.
-  * **TRIM / DRIVE:** **DO NOT TOUCH**. Leave these for the human operator.
+  * **TRIM / DRIVE:** **STRICTLY FORBIDDEN.** Do NOT include these in your JSON. Leave them for the human.
 * **FX Control:**
   * **SLICER (Loop):** Set \`DECK_A_SLICER_ON\` to \`true\` and \`DECK_A_SLICER_RATE\` (0.0=Fast, 1.0=Slow).
   * **Reverb/Echo:** Use liberally for transitions.
@@ -73,8 +73,7 @@ export class MixGenerator {
     private ai: GoogleGenAI;
 
     constructor(apiKey: string) {
-        // Upgrade to v1beta as per user suggestion
-        this.ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
+        this.ai = new GoogleGenAI({ apiKey });
     }
 
     async generateScore(userRequest: string, currentBpm: number, context: { isAStopped: boolean, isBStopped: boolean } = { isAStopped: false, isBStopped: false }): Promise<AutomationScore | null> {
@@ -90,10 +89,11 @@ export class MixGenerator {
             Target Output: Valid JSON AutomationScore.
             `;
 
+        // User demanded "gemini-flash-lite-latest". 
         const requestConfig = {
-            model: 'gemini-flash-lite-latest', // Primary
+            model: 'gemini-flash-lite-latest',
             config: {
-                responseMimeType: 'application/json',
+                responseMimeType: 'application/json', // JSON Mode
                 systemInstruction: {
                     parts: [{ text: SYSTEM_PROMPT }]
                 }
@@ -104,25 +104,30 @@ export class MixGenerator {
             }]
         };
 
+        const timeoutMs = 20000; // Increased to 20s
+
         try {
-            // Try Primary Model
-            const response = await this.ai.models.generateContent(requestConfig);
+            console.log(`[MixGenerator] Requesting Mix with model: ${requestConfig.model}`);
+            const response = await this.withTimeout(
+                this.ai.models.generateContent(requestConfig),
+                timeoutMs
+            );
             return this.parseResponse(response);
 
         } catch (e: any) {
-            console.warn(`[MixGenerator] Primary model failed (${e.status || e.message}). Retrying with Fallback (Flash 1.5)...`);
+            const errorMsg = e.message || "Unknown Error";
+            console.error(`[MixGenerator] Error:`, e);
             
-            // Fallback: Retry with same model as per user request
-            try {
-                // User requested strictly "gemini-flash-lite-latest"
-                const fallbackConfig = { ...requestConfig, model: 'gemini-flash-lite-latest' };
-                const response = await this.ai.models.generateContent(fallbackConfig);
-                return this.parseResponse(response);
-            } catch (fallbackError) {
-                console.error("AI Mix Generation Failed (All Attempts):", fallbackError);
-                return null;
-            }
+            // Re-throw so main.ts can log it to UI
+            throw new Error(`AI Gen Failed: ${errorMsg}`);
         }
+    }
+
+    private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+        return Promise.race([
+            promise,
+            new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Timeout (${ms}ms)`)), ms))
+        ]);
     }
 
     private parseResponse(response: any): AutomationScore | null {

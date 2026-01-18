@@ -291,25 +291,25 @@ export class AutomationEngine {
        // Only act if value is TRUE (Trigger)
        else if (val === true) {
            if (id === 'DECK_A_PLAY') {
-               if (this.engine.isDeckStopped('A')) this.dispatchToggle('A');
+               this.dispatchPlaybackCommand('A', true);
            }
            else if (id === 'DECK_B_PLAY') {
-               if (this.engine.isDeckStopped('B')) this.dispatchToggle('B');
+               this.dispatchPlaybackCommand('B', true);
            }
            else if (id === 'DECK_A_STOP') {
-               if (!this.engine.isDeckStopped('A')) this.dispatchToggle('A');
+               this.dispatchPlaybackCommand('A', false);
            }
            else if (id === 'DECK_B_STOP') {
-               if (!this.engine.isDeckStopped('B')) this.dispatchToggle('B');
+               this.dispatchPlaybackCommand('B', false);
            }
        }
   }
 
-  private dispatchToggle(deckId: 'A' | 'B') {
-        console.log(`[AutomationEngine] Triggering Play/Stop for Deck ${deckId}`);
+  private dispatchPlaybackCommand(deckId: 'A' | 'B', playing: boolean) {
+        // console.log(`[AutomationEngine] Force Playback State Deck ${deckId}: ${playing}`);
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('deck-play-toggle', {
-                detail: { deckId }
+                detail: { deckId, playing } // Explicit state prevents toggling loop
             }));
         }
   }

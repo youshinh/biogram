@@ -73,10 +73,16 @@ export class FxRack extends LitElement {
 
   render() {
     return html`
-      <div class="flex flex-nowrap gap-2 p-2 h-full overflow-x-auto items-stretch">
+      <style>
+        ::-webkit-scrollbar { height: 6px; width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+      </style>
+      <div class="flex flex-nowrap gap-2 p-2 h-full overflow-auto items-stretch">
 
         <!-- MOD 01: FILTER XY -->
-        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-tech-cyan/30 transition-colors">
+        <div class="border border-white/10 flex flex-col h-full min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-tech-cyan/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeFilter ? 'bg-tech-cyan shadow-[0_0_8px_cyan]' : 'bg-zinc-800'}"></div>
@@ -131,7 +137,7 @@ export class FxRack extends LitElement {
         </div>
 
         <!-- MOD 02: TAPE ECHO -->
-        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-yellow-500/30 transition-colors">
+        <div class="border border-white/10 flex flex-col h-full min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-yellow-500/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeTape ? 'bg-yellow-500 shadow-[0_0_8px_orange]' : 'bg-zinc-800'}"></div>
@@ -166,7 +172,7 @@ export class FxRack extends LitElement {
         </div>
         
         <!-- MOD 03: BLOOM VERB -->
-        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-pink-500/30 transition-colors">
+        <div class="border border-white/10 flex flex-col h-full min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-pink-500/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeReverb ? 'bg-pink-500 shadow-[0_0_8px_pink]' : 'bg-zinc-800'}"></div>
@@ -222,7 +228,7 @@ export class FxRack extends LitElement {
         </div>
 
         <!-- MOD 04: CLOUD GRAIN -->
-        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-sky-500/30 transition-colors">
+        <div class="border border-white/10 flex flex-col h-full min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-sky-500/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeCloud ? 'bg-sky-500 shadow-[0_0_8px_sky]' : 'bg-zinc-800'}"></div>
@@ -287,7 +293,7 @@ export class FxRack extends LitElement {
         </div>
 
         <!-- MOD 05: DECIMATOR -->
-        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-purple-500/30 transition-colors">
+        <div class="border border-white/10 flex flex-col h-full min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-purple-500/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeDecimator ? 'bg-purple-500 shadow-[0_0_8px_purple]' : 'bg-zinc-800'}"></div>
@@ -337,7 +343,7 @@ export class FxRack extends LitElement {
         </div>
         
          <!-- MOD 06: SPECTRAL GATE -->
-        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-green-500/30 transition-colors">
+        <div class="border border-white/10 flex flex-col h-full min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-green-500/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeGate ? 'bg-green-500 shadow-[0_0_8px_lime]' : 'bg-zinc-800'}"></div>
@@ -388,7 +394,7 @@ export class FxRack extends LitElement {
         </div>
 
          <!-- MOD 07: DYNAMICS (COMP/LIMIT) -->
-        <div class="border border-white/10 flex flex-col min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-red-500/30 transition-colors">
+        <div class="border border-white/10 flex flex-col h-full min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-red-500/30 transition-colors">
           <div class="flex justify-between items-center mb-2">
              <div class="flex items-center gap-2">
                  <div class="w-2 h-2 rounded-full transition-all duration-200 ${this.activeLimiter ? 'bg-red-500 shadow-[0_0_8px_red]' : 'bg-zinc-800'}"></div>

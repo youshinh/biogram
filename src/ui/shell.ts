@@ -47,6 +47,10 @@ export class AppShell extends LitElement {
       margin: 0 auto;
     }
 
+    main.view-super {
+      gap: 0px; /* Minimize clearance fully */
+    }
+
     /* DECK ROW */
     .deck-row {
       display: grid;
@@ -72,15 +76,15 @@ export class AppShell extends LitElement {
 
     .deck-label {
       position: absolute;
-      top: 8px;
+      top: 32px; /* Significant clearance from top */
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.65rem;
       color: #3f3f46;
       pointer-events: none;
       z-index: 20;
     }
-    .label-left { left: 16px; }
-    .label-right { right: 16px; }
+    .label-left { left: 32px; }
+    .label-right { left: 32px; /* Move to left to avoid Loop Icon at top-right */ }
 
     /* MIXER CONTAINER */
     .mixer-container {
@@ -131,12 +135,12 @@ export class AppShell extends LitElement {
       background: rgba(0, 0, 0, 0.1);
       backdrop-filter: blur(12px);
       border: 1px solid rgba(255, 255, 255, 0.05);
-      padding: 16px;
+      padding: 4px 16px 16px 16px;
       display: flex;
       gap: 16px;
       overflow-x: auto;
       overflow-y: hidden;
-      align-items: center;
+      align-items: stretch;
       justify-content: space-around;
       box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
     }
@@ -197,7 +201,7 @@ export class AppShell extends LitElement {
         </div>
 
         <!-- MAIN LAYOUT -->
-        <main>
+        <main class="${this.view === 'SUPER' ? 'view-super' : ''}">
           
           <!-- UPPER ROW: Dual Decks & Mixer -->
           <div class="deck-row">

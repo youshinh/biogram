@@ -173,10 +173,17 @@ export class DjMixer extends LitElement {
                       band === 'MID' ? 'bg-zinc-700/40' :
                       'bg-zinc-800/40';
 
+      const labelText = band === 'HI' ? 'High' : band === 'MID' ? 'Mid' : 'Low';
+
       return html`
-         <div class="flex flex-col items-center w-full gap-1 flex-1 min-h-0 border-b border-white/5 last:border-0 py-1 ${bgClass}">
+         <div class="relative overflow-hidden flex flex-col items-center w-full gap-1 flex-1 min-h-0 border-b border-white/5 last:border-0 py-1 ${bgClass}">
+             <!-- Background Text -->
+             <div class="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
+                 <span class="text-[1.5rem] font-bold text-white/5 tracking-wider transform scale-y-150">${labelText}</span>
+             </div>
+
              <!-- Top row: Reset + Kill -->
-             <div class="flex items-center justify-between w-full px-1">
+             <div class="relative z-10 flex items-center justify-between w-full px-1">
                  <button class="text-[8px] font-mono px-1 py-0.5 text-zinc-500 hover:text-white hover:bg-zinc-600 rounded transition-all"
                          @click="${() => this.resetEq(deck, band)}">
                      RESET
@@ -187,7 +194,7 @@ export class DjMixer extends LitElement {
                  </button>
              </div>
              <!-- Slider -->
-             <bio-slider label="" .value="${val}" min="0" max="1.5" step="0.01" class="w-full h-32"
+             <bio-slider label="" .value="${val}" min="0" max="1.5" step="0.01" class="relative z-10 w-full h-32"
                          @change="${(e: CustomEvent) => this.handleEq(deck, band, e.detail)}"></bio-slider>
          </div>
       `;

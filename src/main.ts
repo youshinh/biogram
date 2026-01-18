@@ -258,17 +258,22 @@ if (isVizMode) {
     shell.appendChild(superCtrl);
 
     // AI Mix Event Handling
+    let pendingMixContext: { sourceId: string, targetId: string } | null = null;
+
+    // AI Mix Event Handling
     superCtrl.addEventListener('ai-mix-trigger', async (e: any) => {
         const { direction, duration, mood } = e.detail;
-        if (superCtrl.isGenerating || superCtrl.isPlaying) return;
+        
+        // Optimistic update in UI sets state to GENERATING, so we must allow it.
+        // if (superCtrl.mixState !== 'IDLE') return; <--- REMOVED BLOCKER
 
         // 1. Identify Decks
-        // Direction is "A -> B" or "B -> A"
         const sourceId = direction.includes("A ->") ? "A" : "B";
         const targetId = sourceId === "A" ? "B" : "A";
         
-        // 2. Playback Check
-        // Inspect engine state but DON'T auto-start blindly. Let AI decide.
+        pendingMixContext = { sourceId, targetId };
+
+        // 2. Playback Check (Context for AI)
         const isAStopped = engine.isDeckStopped('A');
         const isBStopped = engine.isDeckStopped('B');
 
@@ -277,66 +282,104 @@ if (isVizMode) {
             await engine['context'].resume();
         }
 
-        superCtrl.isGenerating = true;
+        superCtrl.mixState = 'GENERATING';
         superCtrl.addLog(`ARCHITECTING MIX: ${direction} (${duration} Bars)`);
         
         // Construct Prompt & Inject Context
         const req = `Mix from ${direction}. Duration: ${duration} Bars. Mood: ${mood}.`;
         
-        // Pass Context to MixGenerator
-        const score = await mixGen.generateScore(req, engine.masterBpm, { isAStopped, isBStopped });
-        
-        superCtrl.isGenerating = false;
-        
-        if (score) {
-            superCtrl.addLog(`SCORE RECEIVED. Tracks: ${score.tracks.length}`);
-            autoEngine.loadScore(score);
+        try {
+            // Pass Context to MixGenerator
+            const score = await mixGen.generateScore(req, engine.masterBpm, { isAStopped, isBStopped });
             
-            autoEngine.setOnProgress((bar, phase) => {
-                 superCtrl.updateStatus(bar, phase, duration);
-                 // If mix is done
-                 if (bar >= duration) {
-                     superCtrl.isPlaying = false;
-                     superCtrl.addLog(`MIX COMPLETE.`);
-                     // Auto-Stop logic is now handled by AI (DECK_X_STOP)
-                     // or can be re-enabled here as safety fallback if desired.
-                     // For now, removing hardcoded logic to trust "Smart Playback".
-                 }
-            });
-            
-            // 3. Start Playing Target Deck IMMEDIATELY (Sync Start)
-            if (engine.isDeckStopped(targetId as "A" | "B")) {
-                console.log(`[AI Mix] Starting Target Deck ${targetId}...`);
-                window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: targetId } }));
+            if (score) {
+                superCtrl.addLog(`SCORE RECEIVED. Tracks: ${score.tracks.length}`);
+                autoEngine.loadScore(score);
+                
+                autoEngine.setOnProgress((bar, phase) => {
+                     superCtrl.updateStatus(bar, phase, duration);
+                     // If mix is done
+                     if (bar >= duration) {
+                         superCtrl.mixState = 'IDLE';
+                         superCtrl.addLog(`MIX COMPLETE.`);
+                     }
+                });
+                
+                superCtrl.mixState = 'READY';
+                superCtrl.addLog(`READY TO START.`);
+            } else {
+                throw new Error("Empty Score Returned");
             }
-            // Ensure Volume is down? Automation should handle it, but initial state matters.
-            //Ideally Automation Engine applies first frame immediately upon loadScore/start.
-            
-            superCtrl.isPlaying = true;
-            autoEngine.start();
-            superCtrl.addLog(`MIX STARTED.`);
-        } else {
-            superCtrl.addLog(`GENERATION FAILED.`);
+        } catch (e: any) {
+             console.error("[main] Mix Generation Error:", e);
+             superCtrl.mixState = 'IDLE';
+             superCtrl.addLog(`ERROR: ${e.message}`);
         }
+    });
+
+    superCtrl.addEventListener('ai-mix-start', () => {
+        if (superCtrl.mixState !== 'READY') return;
+        
+        console.log(`[AI Mix] Starting Mix...`);
+        superCtrl.mixState = 'MIXING';
+        superCtrl.addLog(`MIX STARTED.`);
+
+        // --- SAFETY NET: Force Play if Stopped ---
+        if (pendingMixContext) {
+            const { sourceId, targetId } = pendingMixContext;
+            
+            // 1. Force Source Deck to Play (The track leaving)
+            if (engine.isDeckStopped(sourceId as "A" | "B")) {
+                 console.log(`[SafetyNet] Force Starting Source Deck ${sourceId}`);
+                 window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: sourceId } }));
+            }
+            
+            // 2. Force Target Deck to Play (The track entering)
+            // Fixes "Stopped but no play" bug.
+            if (engine.isDeckStopped(targetId as "A" | "B")) {
+                 console.log(`[SafetyNet] Force Starting Target Deck ${targetId}`);
+                 window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: targetId } }));
+            }
+        }
+
+        autoEngine.start();
     });
 
     superCtrl.addEventListener('ai-mix-abort', () => {
         autoEngine.stop();
-        superCtrl.isPlaying = false;
+        superCtrl.mixState = 'IDLE';
         superCtrl.addLog(`MIX ABORTED.`);
     });
+
+
     
     // Listen for Deck Events
+    // Listen for Deck Events
     window.addEventListener('deck-play-toggle', (e:any) => {
-        // TEMPORARY: Deck A Play = Check Resume
-        const deck = e.detail.deck as 'A' | 'B';
-        if (e.detail.playing) {
+        // Support both manual (deck, playing) and AI (deckId) events
+        const deckId = e.detail.deck || e.detail.deckId;
+        if (!deckId) return;
+
+        const deck = deckId as 'A' | 'B';
+        let playing = e.detail.playing;
+
+        // If playing state is not specified (e.g. from AI Automation), toggle based on current engine state
+        if (playing === undefined) {
+            playing = engine.isDeckStopped(deck);
+        }
+
+        if (playing) {
              engine.setTapeStop(deck, false);
              engine.unmute(deck); // Ensure we are unmuted (fixes GEN silence bug)
              engine.resume();
         } else {
              engine.setTapeStop(deck, true);
         }
+
+        // Sync UI (DeckController listens to this)
+        window.dispatchEvent(new CustomEvent('deck-play-sync', {
+            detail: { deck: deck, playing: playing }
+        }));
     });
 
     window.addEventListener('deck-bpm-change', (e:any) => {
@@ -643,8 +686,11 @@ if (isVizMode) {
 
     // --- AI PARAMETER GRID (7 SLOTS + Custom) ---
     // Grid Need: 8 slots? 
+    // Grid Need: 8 slots? 
     // Current layout: 'repeat(6, 1fr)'. We need more space or redefine.
     // User asked for "7 UI parameters" + Custom.
+    controlsContainer.style.height = '100%';
+    controlsContainer.style.alignItems = 'stretch';
     // Ambient, Minimal, Dub, Impact, Color (5 Sliders)
     // Texture (Combo)
     // Pulse (Combo)
