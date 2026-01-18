@@ -27,4 +27,5 @@ updateDEV/
 *.njsproj
 *.sln
 *.sw?
-legacy/
+legacy/*
+bio_gram/*
