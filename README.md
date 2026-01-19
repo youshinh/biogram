@@ -37,8 +37,11 @@ The AI orchestrates mixes through four narrative phases:
 -   **Ghost Faders**: Sliders and knobs move by themselves, executing the AI's "Automation Score" in real-time.
 -   **Vector Loop Library**: Stored loops are analyzed for characteristics like **Energy**, **Brightness**, and **Rhythm**. The system uses a local Vector Database (IndexedDB) to recommend "Complementary" or "Similar" tracks based on semantic distance, not just BPM.
 
-### 🧬 Visual Matrix (Hydra)
-Built-in **Hydra-Synth** integration reacts to audio bands in real-time, generating code-driven visuals that mirror the spectral changes of the mix.
+### 🧬 Living Biogram (Visuals)
+A dedicated **Three.js + GLSL Raymarching** engine creates a "Living Biogram"—two metaballs representing the mixing tracks.
+-   **Organic Mode**: A liquid, metallic surface that reflects the audio spectrum in real-time.
+-   **Particles Mode**: A data-driven visualization where thousands of grey speckles react to frequency bands.
+-   **Projector Mode**: Open `?mode=viz` in a separate window to project the visuals to a secondary screen/projector for live performance.
 
 ---
 
@@ -62,7 +65,7 @@ Bio:gram features a custom audio engine built on AudioWorklet for sample-accurat
     -   **Audio**: Google Lyria (`lyria-realtime-exp`)
 -   **Audio Engine**: Web Audio API + AudioWorklet (DSP)
 -   **Database**: IndexedDB + Vector Search (Local-First)
--   **Visuals**: Hydra-Synth + p5.js
+-   **Visuals**: Three.js + Custom Raymarching Shaders (GLSL)
 -   **UI**: Lit (Web Components) + TailwindCSS
 
 ---

@@ -12,6 +12,9 @@ import './ui/modules/fx-rack';
 import './ui/modules/app-header';
 import './ui/modules/loop-library-panel';
 import './ui/modules/super-controls';
+import './ui/visuals/ThreeViz';
+import './ui/visuals/VisualControls';
+import type { ThreeViz } from './ui/visuals/ThreeViz';
 import { AutomationEngine } from './ai/automation-engine';
 import { MixGenerator } from './ai/mix-generator';
 import type { AppShell } from './ui/shell';
@@ -82,8 +85,18 @@ const isVizMode = urlParams.get('mode') === 'viz';
 if (isVizMode) {
     // --- VJ Projector Mode ---
     document.title = "Bio:gram [PROJECTION]";
-    const receiver = document.createElement('hydra-receiver');
-    document.body.appendChild(receiver);
+    // Reset Body for Fullscreen
+    document.body.style.margin = "0";
+    document.body.style.overflow = "hidden";
+    document.body.style.background = "#000";
+
+    const viz = document.createElement('three-viz') as ThreeViz;
+    viz.mode = 'SLAVE';
+    viz.style.width = '100vw';
+    viz.style.height = '100vh';
+    viz.style.display = 'block';
+    
+    document.body.appendChild(viz);
     
 } else {
     // --- Main Controller Mode ---
@@ -91,16 +104,18 @@ if (isVizMode) {
     // Reset Body
     document.body.style.margin = "0";
     document.body.style.overflow = "hidden";
-    document.body.style.background = "#000";
+    document.body.style.background = "#000"; // Keep black background for canvas
     document.body.style.color = "#fff";
     
     // VIEW CONTAINER
     const viewContainer = document.createElement('div');
     viewContainer.style.height = '100vh';
-    viewContainer.style.width = '100vw'; // Ensure width
+    viewContainer.style.width = '100vw'; 
     viewContainer.style.display = 'flex';
     viewContainer.style.flexDirection = 'column';
     viewContainer.style.overflow = 'hidden';
+    viewContainer.style.position = 'relative'; // context
+    viewContainer.style.background = 'transparent'; // Important
 
     // --- PROMPT STATE MANAGEMENT (Centralized) ---
     // Central State (UI Values are shared, Context is per-deck)
@@ -257,6 +272,57 @@ if (isVizMode) {
     superCtrl.slot = 'super';
     shell.appendChild(superCtrl);
 
+    // 4. Visual Controls (Tab)
+    const vizControls = document.createElement('visual-controls');
+    vizControls.slot = 'visual-controls'; // Correct slot name
+    shell.appendChild(vizControls);
+
+    // 5. Visual Engine (Background)
+    // We need to inject this into the shadow DOM of app-shell? 
+    // NO, app-shell uses slots for content, but .bg-layer is internal.
+    // However, app-shell renders children in Light DOM if we put them there?
+    // Actually, app-shell.ts has <div class="bg-layer">...</div> but it doesn't have a slot for it.
+    // Strategy: We can query the app-shell shadowRoot after it mounts, OR we can modify AppShell to accept a 'background' slot.
+    // Let's modify AppShell to have a 'background' slot for cleanliness in a separate step?
+    // User wants us to "Continue" and I already modified AppShell but didn't add a background slot.
+    // Let's do a quick hack: Insert ThreeViz Absolute Positioned *behind* everything in ViewContainer.
+    
+    const threeViz = document.createElement('three-viz') as ThreeViz;
+    threeViz.style.position = 'absolute';
+    threeViz.style.top = '0';
+    threeViz.style.left = '0';
+    threeViz.style.width = '100%';
+    threeViz.style.height = '100%';
+    threeViz.style.zIndex = '0'; // Behind Shell which has z-index 10 for main
+    threeViz.style.pointerEvents = 'none'; // Let clicks pass through
+    
+    // Insert ThreeViz as the first child of viewContainer so it sits behind shell?
+    // Shell has a background color... we need to make Shell transparent?
+    // Shell CSS has `background-color: #0a0a0c`. We need to remove that or make it transparent.
+    // Let's append to body directly underneath viewContainer?
+    // viewContainer has `background: #000`.
+    viewContainer.style.background = 'transparent'; // Allow viz to show
+    viewContainer.insertBefore(threeViz, viewContainer.firstChild);
+
+    // Event Wiring: Controls -> Viz
+    vizControls.addEventListener('visual-texture-change', (e: any) => {
+        const { deck, url, type } = e.detail;
+        threeViz.updateTexture(deck, url, type);
+    });
+
+    vizControls.addEventListener('visual-webcam-toggle', (e: any) => {
+        threeViz.toggleWebcam(e.detail.active);
+    });
+
+    vizControls.addEventListener('visual-color-random', (e: any) => {
+        threeViz.randomizeColor(e.detail.deck);
+    });
+
+    vizControls.addEventListener('visual-mode-change', (e: any) => {
+        threeViz.setMode(e.detail.mode);
+    });
+
+
     // AI Mix Event Handling
     let pendingMixContext: { sourceId: string, targetId: string } | null = null;
 
@@ -299,6 +365,18 @@ if (isVizMode) {
                 
                 autoEngine.setOnProgress((bar, phase) => {
                      superCtrl.updateStatus(bar, phase, duration);
+                     
+                     // --- Visual Automation ---
+                     // Automate Visual Mode based on musical phase
+                     // BREAK / BUILDUP -> PARTICLES (Tension)
+                     // DROP / BODY / INTRO / OUTRO -> ORGANIC (Release/Flow)
+                     const p = phase.toUpperCase();
+                     if (p.includes('BREAK') || p.includes('BUILD')) {
+                         threeViz.setMode('wireframe'); // Maps to Particles
+                     } else {
+                         threeViz.setMode('organic');
+                     }
+
                      // If mix is done
                      if (bar >= duration) {
                          superCtrl.mixState = 'IDLE';
@@ -329,6 +407,9 @@ if (isVizMode) {
         if (pendingMixContext) {
             const { sourceId, targetId } = pendingMixContext;
             
+            // Visuals: Randomize Skin for the Incoming Track
+            threeViz.randomizeColor(targetId as 'A' | 'B');
+
             // 1. Force Source Deck to Play (The track leaving)
             // Always force play state to ensure sync
             console.log(`[SafetyNet] Force Ensuring Source Deck ${sourceId} Playing`);

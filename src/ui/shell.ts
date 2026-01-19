@@ -9,7 +9,7 @@ export class AppShell extends LitElement {
       width: 100vw;
       height: 100vh;
       overflow: hidden;
-      background-color: #0a0a0c; /* deep-void */
+      background-color: transparent; /* Allow Three.js Viz to show through */
       color: #d4d4d8; /* zinc-300 */
       font-family: 'Inter', sans-serif;
     }
@@ -177,7 +177,7 @@ export class AppShell extends LitElement {
     }
 
     /* SLOTS - CRITICAL: Ensure they fill height */
-    slot[name="deck-a"], slot[name="deck-b"], slot[name="mixer"], slot[name="fx-rack"] {
+    slot[name="deck-a"], slot[name="deck-b"], slot[name="mixer"], slot[name="fx-rack"], slot[name="visual-controls"] {
       display: block;
       height: 100%;
       width: 100%;
@@ -190,7 +190,7 @@ export class AppShell extends LitElement {
   `;
 
   @property({ type: String }) status = "OFFLINE";
-  @property({ type: String }) view: 'DECK' | 'RACK' | 'SUPER' = 'DECK';
+  @property({ type: String }) view: 'DECK' | 'RACK' | 'SUPER' | 'VISUAL' = 'DECK';
 
   render() {
     return html`
@@ -242,6 +242,10 @@ export class AppShell extends LitElement {
              ` : this.view === 'SUPER' ? html`
                 <div class="rack-panel">
                     <slot name="super"></slot>
+                </div>
+             ` : this.view === 'VISUAL' ? html`
+                <div class="rack-panel">
+                    <slot name="visual-controls"></slot>
                 </div>
              ` : html`
                 <div class="rack-panel">

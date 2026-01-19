@@ -498,13 +498,22 @@ export class AudioEngine {
   public masterAnalyser: AnalyserNode | null = null;
   public analyserA: AnalyserNode | null = null;
   public analyserB: AnalyserNode | null = null;
-  private spectrumData: Uint8Array = new Uint8Array(2048); // Match 4096 / 2
+
+  private spectrumDataMaster: Uint8Array = new Uint8Array(2048);
+  private spectrumDataA: Uint8Array = new Uint8Array(2048);
+  private spectrumDataB: Uint8Array = new Uint8Array(2048);
 
   getSpectrum(deck: 'A' | 'B' | 'MASTER' = 'MASTER'): Uint8Array {
-      const target = deck === 'A' ? this.analyserA : deck === 'B' ? this.analyserB : this.masterAnalyser;
-      if (!target) return this.spectrumData;
-      target.getByteFrequencyData(this.spectrumData);
-      return this.spectrumData;
+      if (deck === 'A') {
+          if (this.analyserA) this.analyserA.getByteFrequencyData(this.spectrumDataA);
+          return this.spectrumDataA;
+      } else if (deck === 'B') {
+          if (this.analyserB) this.analyserB.getByteFrequencyData(this.spectrumDataB);
+          return this.spectrumDataB;
+      } else {
+          if (this.masterAnalyser) this.masterAnalyser.getByteFrequencyData(this.spectrumDataMaster);
+          return this.spectrumDataMaster;
+      }
   }
   
   getAudioData(): Float32Array {
