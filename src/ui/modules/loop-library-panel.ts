@@ -1,6 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import type { LoopSample } from '../../audio/db/library-store';
+import { BeatDetector } from '../../audio/analysis/beat-detector';
+import { calculateVector } from '../../audio/utils/audio-analysis';
 
 @customElement('loop-library-panel')
 export class LoopLibraryPanel extends LitElement {
@@ -360,6 +362,65 @@ export class LoopLibraryPanel extends LitElement {
     }
   }
 
+  private handleImportClick() {
+    const fileInput = this.shadowRoot?.getElementById('file-input') as HTMLInputElement;
+    if (fileInput) fileInput.click();
+  }
+
+  private async handleFileSelect(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+
+    const file = input.files[0];
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      try {
+        const arrayBuffer = e.target?.result as ArrayBuffer;
+        const engine = (window as any).engine;
+
+        if (!engine || !engine.context) {
+          console.error('[LoopLibrary] Audio engine not available');
+          return;
+        }
+
+        const audioBuffer = await engine.context.decodeAudioData(arrayBuffer);
+        const pcmData = audioBuffer.getChannelData(0); // Use first channel (Mono)
+
+        // Calculate Vector
+        const vector = calculateVector(pcmData);
+
+        // Calculate BPM
+        const beatInfo = await BeatDetector.analyze(pcmData, audioBuffer.sampleRate);
+        const bpm = beatInfo.bpm > 0 ? beatInfo.bpm : 120; // Default if failed
+
+        // Save to Library
+        await this.libraryStore.saveSample({
+            name: file.name.replace(/\.[^/.]+$/, ""), // Remove extension
+            prompt: 'Imported',
+            duration: audioBuffer.duration,
+            bpm: bpm,
+            tags: ['imported'],
+            vector: vector,
+            pcmData: pcmData,
+            validAudioRatio: 1.0 // Assume imported files are valid
+        });
+
+        // Clear input
+        input.value = '';
+
+        // Refresh list
+        await this.loadLibrary();
+
+      } catch (err) {
+        console.error('[LoopLibrary] Import failed:', err);
+        alert('ファイルの読み込みに失敗しました。');
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+  }
+
   private async handleExport(sample: LoopSample, e: Event) {
     e.stopPropagation();
     
@@ -432,6 +493,12 @@ export class LoopLibraryPanel extends LitElement {
       
       <!-- TOOLBAR: Tag Filter + Recommend -->
       <div class="toolbar">
+        <input type="file" id="file-input" accept="audio/*" style="display: none"
+               @change="${(e: Event) => this.handleFileSelect(e)}">
+        <button class="toolbar-btn" @click="${() => this.handleImportClick()}">
+          Import
+        </button>
+
         <select class="tag-select" @change="${(e: any) => this.filterByTag(e.target.value)}">
           <option value="">All Tags</option>
           ${this.availableTags.map(tag => html`
