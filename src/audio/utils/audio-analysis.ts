@@ -107,3 +107,39 @@ export function detectTailingSilence(
 
   return silentTailChunks / numChunks;
 }
+
+/**
+ * Calculate feature vector from audio data
+ * @param pcmData Audio data
+ * @returns Vector with brightness, energy, and rhythm
+ */
+export function calculateVector(pcmData: Float32Array): { brightness: number, energy: number, rhythm: number } {
+    let energy = 0;
+    let zeroCrossings = 0;
+    const len = pcmData.length;
+
+    // Use stride for performance if array is very large, but for standard loops full scan is fine.
+    // For a 10MB file (approx 1 min stereo), it's fast enough.
+
+    for (let i = 0; i < len; i++) {
+        const sample = pcmData[i];
+        energy += sample * sample;
+
+        if (i > 0 && Math.sign(sample) !== Math.sign(pcmData[i-1])) {
+            zeroCrossings++;
+        }
+    }
+
+    // Normalize Energy: RMS * boost
+    energy = Math.min(1, Math.sqrt(energy / len) * 3);
+
+    // Normalize Brightness: Zero Crossing Rate
+    // Max theoretical ZCR is 1.0 (Nyquist). Musical audio is usually much lower.
+    // Scaling by 20 seems to be the "magic number" used in AudioEngine.
+    const brightness = Math.min(1, (zeroCrossings / len) * 20);
+
+    // Rhythm: Placeholder for now, or could use simplified onset density
+    const rhythm = 0.5;
+
+    return { energy, brightness, rhythm };
+}
