@@ -119,7 +119,54 @@ export class AutomationEngine {
     this.engine.updateDspParam('SLICER_ACTIVE', 0.0);
     console.log('[AutomationEngine] Reset SLICER_ACTIVE to 0 on mix stop');
     
-    // Trigger Phase 4: Reset
+    // =========================================================
+    // FAILSAFE: Ensure mix finishes in correct state
+    // Even if AI's JSON was incomplete, force correct end state
+    // =========================================================
+    if (this.mixDirection) {
+        const EQ_DEFAULT = 0.67; // Default EQ position (67%)
+        
+        if (this.mixDirection === 'A->B') {
+            // A->B: Crossfader fully to B, Stop A, Reset A's EQ
+            console.log('[AutomationEngine] Failsafe: Finalizing A->B mix');
+            
+            // 1. Force crossfader to B (1.0)
+            this.engine.setCrossfader(1.0);
+            this.dispatchUpdate('crossfader', 1.0);
+            
+            // 2. Stop Deck A (source deck is done)
+            this.dispatchPlaybackCommand('A', false);
+            
+            // 3. Reset Deck A's 3-band EQ to default
+            this.engine.setEq('A', 'LOW', EQ_DEFAULT);
+            this.engine.setEq('A', 'MID', EQ_DEFAULT);
+            this.engine.setEq('A', 'HI', EQ_DEFAULT);
+            this.dispatchUpdate('lowA', EQ_DEFAULT);
+            this.dispatchUpdate('midA', EQ_DEFAULT);
+            this.dispatchUpdate('highA', EQ_DEFAULT);
+            
+        } else if (this.mixDirection === 'B->A') {
+            // B->A: Crossfader fully to A, Stop B, Reset B's EQ
+            console.log('[AutomationEngine] Failsafe: Finalizing B->A mix');
+            
+            // 1. Force crossfader to A (0.0)
+            this.engine.setCrossfader(0.0);
+            this.dispatchUpdate('crossfader', 0.0);
+            
+            // 2. Stop Deck B (source deck is done)
+            this.dispatchPlaybackCommand('B', false);
+            
+            // 3. Reset Deck B's 3-band EQ to default
+            this.engine.setEq('B', 'LOW', EQ_DEFAULT);
+            this.engine.setEq('B', 'MID', EQ_DEFAULT);
+            this.engine.setEq('B', 'HI', EQ_DEFAULT);
+            this.dispatchUpdate('lowB', EQ_DEFAULT);
+            this.dispatchUpdate('midB', EQ_DEFAULT);
+            this.dispatchUpdate('highB', EQ_DEFAULT);
+        }
+    }
+    
+    // Trigger Phase 4: Reset (AI's custom post-mix actions)
     if (this.score && this.score.post_mix_reset) {
         this.handlePostMixReset(this.score.post_mix_reset);
     }
@@ -451,6 +498,24 @@ export class AutomationEngine {
                    if (!this.loggedBlockedCommands.has(id)) {
                        this.loggedBlockedCommands.add(id);
                        console.log(`[AutomationEngine] Blocked ${id} - Source deck B protected`);
+                   }
+                   return;
+               }
+               
+               // TARGET DECK PROTECTION: Never stop the target (incoming) deck
+               // A->B: Target is B, should NEVER be stopped - it must keep playing after mix
+               // B->A: Target is A, should NEVER be stopped - it must keep playing after mix
+               if (this.mixDirection === 'A->B' && id === 'DECK_B_STOP') {
+                   if (!this.loggedBlockedCommands.has(id)) {
+                       this.loggedBlockedCommands.add(id);
+                       console.log(`[AutomationEngine] Blocked ${id} - Target deck B must keep playing after mix`);
+                   }
+                   return;
+               }
+               if (this.mixDirection === 'B->A' && id === 'DECK_A_STOP') {
+                   if (!this.loggedBlockedCommands.has(id)) {
+                       this.loggedBlockedCommands.add(id);
+                       console.log(`[AutomationEngine] Blocked ${id} - Target deck A must keep playing after mix`);
                    }
                    return;
                }

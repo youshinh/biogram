@@ -278,10 +278,16 @@ export class SuperControls extends LitElement {
             </div>
             
             ${this.mixState === 'READY' ? html`
-                <button class="trigger-btn" style="background: #059669; border-color:#047857; padding:12px;"
-                   @click="${this.startMix}">
-                   START MIX
-                </button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="trigger-btn" style="background: #059669; border-color:#047857; padding:12px; flex:1;"
+                       @click="${this.startMix}">
+                       START MIX
+                    </button>
+                    <button class="trigger-btn" style="background: #71717a; border-color:#52525b; padding:12px; flex:1;"
+                       @click="${this.cancelMix}">
+                       CANCEL
+                    </button>
+                </div>
             ` : this.mixState === 'MIXING' ? html`
                 <button class="trigger-btn" style="background: #ef4444; border-color:#991b1b; padding:12px;"
                    @click="${this.stopMix}">
@@ -319,6 +325,15 @@ export class SuperControls extends LitElement {
   stopMix() {
       // Logic handled in main.ts listener
       this.dispatchEvent(new CustomEvent('ai-mix-abort', {
+          bubbles: true,
+          composed: true
+      }));
+  }
+  
+  cancelMix() {
+      // Cancel the generated mix without starting it
+      this.addLog('Mix cancelled by user');
+      this.dispatchEvent(new CustomEvent('ai-mix-cancel', {
           bubbles: true,
           composed: true
       }));

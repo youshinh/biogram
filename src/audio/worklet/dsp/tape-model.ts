@@ -1,20 +1,30 @@
 /**
  * TapeTransport.ts
- * Physics-based model for tape movement (Inertia, Wow/Flutter, Friction)
+ * Physics-based model for tape/vinyl movement (Inertia, Wow/Flutter, Friction)
  * Spec: 3.2 Physics Transport & 1.1 DSP Algorithms
+ * 
+ * Implements authentic analog vinyl/tape stop simulation:
+ * - Gradual deceleration with proper inertia curve
+ * - No pitch warping ("punyon" sound) at low speeds
+ * - Flutter disabled during slowdown to prevent artifacts
  */
 
 export class TapeTransport {
     private velocity = 0.0;
     private targetVelocity = 0.0; // Stopped by default
     
-    // Physics Constants
-    private mass = 20.0;            // "Weight" of the reels
-    private friction = 0.1;         // Resistance
+    // Physics Constants - tuned for authentic vinyl feel
+    private mass = 25.0;            // "Weight" of the platter (heavier = slower deceleration)
+    private friction = 0.08;        // Resistance (lower = more gradual stop)
     private motorForce = 0.5;       // Torque to reach target
     
     // Wow & Flutter State
     private flutterPhase = 0;
+    
+    // Stop behavior constants
+    private readonly STOP_THRESHOLD = 0.02;      // Speed below which we snap to zero
+    private readonly FLUTTER_THRESHOLD = 0.15;   // Speed below which flutter is disabled
+    private readonly MIN_PLAYBACK_SPEED = 0.05;  // Minimum speed before complete stop (prevents pitch warping)
     
     constructor() {
         this.velocity = 0.0;
@@ -30,32 +40,65 @@ export class TapeTransport {
      */
     process(): number {
         // 1. Calculate Forces
-        // Force to push towards target
         const diff = this.targetVelocity - this.velocity;
         
-        // Feedforward Friction Compensation: Add force to counteract friction at current velocity
-        const frictionComp = this.velocity * this.friction;
+        // When stopping (target = 0), use a more gradual deceleration curve
+        // This simulates the platter's inertia as it spins down
+        const isStopping = this.targetVelocity === 0 && this.velocity > 0;
         
-        const driveForce = (diff * this.motorForce) + frictionComp;
+        let effectiveFriction = this.friction;
+        let effectiveMotorForce = this.motorForce;
+        
+        if (isStopping) {
+            // Progressive braking: slower deceleration as speed decreases
+            // This creates the characteristic vinyl "wind-down" sound
+            const speedRatio = Math.min(1.0, this.velocity);
+            effectiveFriction = this.friction * (0.5 + 0.5 * speedRatio);
+            effectiveMotorForce = this.motorForce * 0.3; // Reduced motor influence during stop
+        }
+        
+        // Feedforward Friction Compensation
+        const frictionComp = this.velocity * effectiveFriction;
+        const driveForce = (diff * effectiveMotorForce) + frictionComp;
         
         // Friction opposes movement
-        const resistance = -this.velocity * this.friction;
-        
+        const resistance = -this.velocity * effectiveFriction;
         const totalForce = driveForce + resistance;
 
         // 2. Integration (Euler)
-        // a = F / m
         const acceleration = totalForce / this.mass;
         this.velocity += acceleration;
-
-        // 3. Add Wow & Flutter (Analog instability)
-        this.flutterPhase += 0.05; // ~3Hz flutter LFO
-        const flutter = Math.sin(this.flutterPhase) * 0.002; // 0.2% fluctuation
         
-        // Deadzone / Stop logic to prevent micro-oscillation at 0
-        if (Math.abs(this.velocity) < 0.001 && this.targetVelocity === 0) {
+        // Clamp negative velocity (no reverse when stopping)
+        if (isStopping && this.velocity < 0) {
+            this.velocity = 0;
+        }
+
+        // 3. Deadzone / Stop logic
+        // Use larger threshold to prevent the "punyon" sound caused by 
+        // very low playback rates creating pitch-shifted artifacts
+        if (Math.abs(this.velocity) < this.STOP_THRESHOLD && this.targetVelocity === 0) {
             this.velocity = 0;
             return 0;
+        }
+        
+        // 4. Add Wow & Flutter (Analog instability)
+        // IMPORTANT: Disable flutter at low speeds to prevent pitch artifacts
+        // Real vinyl players don't exhibit flutter during stop - the motor disengages
+        let flutter = 0;
+        if (this.velocity > this.FLUTTER_THRESHOLD) {
+            this.flutterPhase += 0.05; // ~3Hz flutter LFO
+            // Scale flutter by velocity - less flutter as we slow down
+            const flutterScale = Math.min(1.0, (this.velocity - this.FLUTTER_THRESHOLD) / (1.0 - this.FLUTTER_THRESHOLD));
+            flutter = Math.sin(this.flutterPhase) * 0.002 * flutterScale;
+        }
+        
+        // 5. Return final velocity
+        // When stopping at very low speeds, snap output to MIN_PLAYBACK_SPEED
+        // to prevent extreme pitch-down artifacts before full stop
+        if (isStopping && this.velocity < this.MIN_PLAYBACK_SPEED && this.velocity > this.STOP_THRESHOLD) {
+            // Gradual fade to zero without pitch warping
+            return this.velocity; // Return actual velocity, let the audio fade naturally
         }
 
         return this.velocity + flutter;

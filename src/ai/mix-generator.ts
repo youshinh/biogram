@@ -33,7 +33,8 @@ Your task is to create an "Automation Score (JSON)" to control a DJ application 
   * **Reverb/Echo:** Use liberally for transitions.
 * **Transport (Playback):**
   * **DECK_X_PLAY (True):** Use this to START a deck if it is currently stopped.
-  * **DECK_X_STOP (True):** Use this to STOP a deck when it is done.
+  * **DECK_X_STOP (True):** Use ONLY to stop the **SOURCE** (outgoing) deck. **NEVER stop the TARGET (incoming) deck.**
+  * **CRITICAL:** In A->B mix, stop DECK_A only. In B->A mix, stop DECK_B only. The TARGET deck MUST keep playing after the mix.
   * **Timing:** You MUST specify the exact \`time\` (Bar) for these triggers.
 
 ## JSON Example (One-Shot)

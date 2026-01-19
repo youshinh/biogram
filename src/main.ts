@@ -352,6 +352,11 @@ if (isVizMode) {
         superCtrl.addLog(`MIX ABORTED.`);
     });
 
+    superCtrl.addEventListener('ai-mix-cancel', () => {
+        // Cancel the generated mix without starting - just reset state
+        superCtrl.mixState = 'IDLE';
+        pendingMixContext = null;
+    });
 
     
     // Listen for Deck Events
