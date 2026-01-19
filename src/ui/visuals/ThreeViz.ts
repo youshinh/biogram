@@ -63,7 +63,8 @@ export class ThreeViz extends LitElement {
             const payload = {
                 crossfader: cf,
                 lowA, highA, lowB, highB,
-                spectrum: mixedSpectrum
+                spectrum: mixedSpectrum,
+                ...this.fxParams // Inject FX State
             };
 
             // 2. Update Local Engine
@@ -76,6 +77,16 @@ export class ThreeViz extends LitElement {
             // SLAVE Mode: Do nothing here, waiting for message event
         }
     };
+
+    public sendMessage(id: string, val: any) {
+        // Store FX params locally to send in the loop
+        this.fxParams[id] = val;
+        
+        // Also direct update for immediate response if needed (optional)
+        // this.engine?.updateUniforms({ [id]: val });
+    }
+
+    private fxParams: any = {};
 
     connectedCallback() {
         super.connectedCallback();

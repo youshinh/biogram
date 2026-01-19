@@ -579,6 +579,24 @@ if (isVizMode) {
         if (import.meta.env.DEV) console.log(`[GEN ${deck} (Update)] ${prompt}`);
     };
 
+    // --- VISUAL / FX SYNC ---
+    // Forward FX Rack changes to Visual Engine
+    window.addEventListener('param-change', (e: any) => {
+        const { id, val } = e.detail;
+        // console.log(`[FX->VIZ] ${id}: ${val}`);
+        
+        // Forward as a generic message to ThreeViz
+        // ThreeViz will need to handle these IDs
+        // Map common IDs to visual friendly names if needed, or just pass through
+        threeViz.sendMessage(id, val);
+    });
+
+    // Forward Mixer changes (EQ, Crossfader)
+    window.addEventListener('mixer-change', (e: any) => {
+        const { id, val } = e.detail;
+        threeViz.sendMessage(id, val);
+    });
+
     // Attach specifically to deck instances to avoid global bubbling confusion (though window bubbling should work if deckId is correct)
     deckA.addEventListener('deck-load-random', handleLoadRandom as EventListener);
     deckB.addEventListener('deck-load-random', handleLoadRandom as EventListener);

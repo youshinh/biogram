@@ -68,7 +68,14 @@ export class VisualEngine {
             uHighB: { value: 0 },
             uCameraPos: { value: this.camera.position },
             uMode: { value: 0.0 }, // 0: Organic, 1: Particles
-            uSpectrum: { value: null } // Data map
+            uSpectrum: { value: null }, // Data map
+            
+            // FX Uniforms
+            uDub: { value: 0.0 },
+            uGate: { value: 0.0 },
+            uCloud: { value: 0.0 }, // Mix/Strength
+            uCloudDensity: { value: 0.5 },
+            uDecimator: { value: 0.0 } // 0 = off, 1 = max chaos
         };
 
         // Initialize Spectrum Texture (128 bins for visualization is enough detail)
@@ -103,14 +110,7 @@ export class VisualEngine {
     }
 
     private setupListeners() {
-        // Example: Listen to window events (as per plan)
-        window.addEventListener('mixer-update', (e: any) => {
-            const { parameter, value } = e.detail;
-            if (parameter === 'crossfader') {
-                this.uniforms.uCrossfade.value = value;
-            }
-            // Add more mappings...
-        });
+        // Listeners handled by ThreeViz bridge
     }
 
     private onResize = () => {
@@ -196,27 +196,60 @@ export class VisualEngine {
         this.renderer.render(this.scene, this.camera);
     };
 
-    public updateUniforms(data: { 
-        crossfader?: number, 
-        lowA?: number, highA?: number,
-        lowB?: number, highB?: number,
-        spectrum?: Uint8Array
-    }) {
+    public updateUniforms(data: any) {
         if (data.crossfader !== undefined) this.uniforms.uCrossfade.value = data.crossfader;
         if (data.lowA !== undefined) this.uniforms.uLowA.value = data.lowA;
         if (data.highA !== undefined) this.uniforms.uHighA.value = data.highA;
         if (data.lowB !== undefined) this.uniforms.uLowB.value = data.lowB;
         if (data.highB !== undefined) this.uniforms.uHighB.value = data.highB;
         
+        // Spectrum
         if (data.spectrum) {
-            // Copy data to texture
-            // Assuming data is 128 bytes or we subsample
-            const texData = this.spectrumTexture.image.data;
-            for(let i=0; i<texData.length; i++) {
-                // simple mapping if sizes differ, but simpler creates less overhead
-                texData[i] = data.spectrum[i] || 0; 
-            }
+            this.spectrumTexture.image.data.set(data.spectrum);
             this.spectrumTexture.needsUpdate = true;
+        }
+
+        // FX Mappings
+        // Tape Echo -> uDub (Echo/Trails)
+        if (data.DUB !== undefined) this.uniforms.uDub.value = data.DUB;
+        if (data.TAPE_ACTIVE !== undefined && data.TAPE_ACTIVE === 0) this.uniforms.uDub.value = 0;
+
+        // Spectral Gate -> uGate (Stutter/Flash)
+        // Uses Threshold or Active state
+        if (data.SPECTRAL_GATE_ACTIVE !== undefined) {
+             // If active, use threshold for intensity, or just full on?
+             // Let's rely on GATE_THRESH passing through
+        }
+        if (data.GATE_THRESH !== undefined) {
+             // If GATE ACTIVE is forwarded as 1 or 0 we can gate this
+             // Simpler: Just map Thresh directly to visual gate
+             this.uniforms.uGate.value = data.GATE_THRESH * 5.0; // Boost sensitivity
+        }
+
+        // Cloud Grain -> uCloud (Noise Dissolve)
+        if (data.CLOUD_MIX !== undefined) {
+             this.uniforms.uCloud.value = data.CLOUD_MIX;
+        }
+        if (data.CLOUD_ACTIVE !== undefined) {
+             // If inactive, force 0? 
+             if (data.CLOUD_ACTIVE === 0) this.uniforms.uCloud.value = 0;
+             else if (this.uniforms.uCloud.value === 0) this.uniforms.uCloud.value = 0.5; // Default if active but no mix sent
+        }
+        if (data.CLOUD_DENSITY !== undefined) this.uniforms.uCloudDensity.value = data.CLOUD_DENSITY;
+
+
+        // Decimator -> uDecimator (Pixel/Glitch)
+        if (data.DECIMATOR_ACTIVE !== undefined) {
+             this.uniforms.uDecimator.value = data.DECIMATOR_ACTIVE ? 1.0 : 0.0;
+        }
+        // If we had BITS param, we could modulate intensity
+        if (data.BITS !== undefined) {
+             // Lower bits = Higher distortion visually
+             // 16 bits -> 0 effect, 1 bit -> 1.0 effect
+             const norm = 1.0 - (data.BITS / 16.0);
+             if (this.uniforms.uDecimator.value > 0.5) {
+                 this.uniforms.uDecimator.value = 0.5 + (norm * 0.5);
+             }
         }
     }
 

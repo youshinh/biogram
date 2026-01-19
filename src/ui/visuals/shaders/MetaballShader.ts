@@ -33,12 +33,23 @@ export const MetaballFragmentShader = `
   uniform vec3 uCameraPos;
   uniform float uMode; // 0: Organic, 1: Wireframe
   uniform sampler2D uSpectrum;
+  
+  // FX Uniforms
+  uniform float uDub;
+  uniform float uGate; // 0.0 - 1.0 (Threshold based)
+  uniform float uCloud; // 0.0 - 1.0 (Mix)
+  uniform float uCloudDensity;
+  uniform float uDecimator;
 
   // --- SDF Functions ---
   
   float smin(float a, float b, float k) {
       float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
       return mix(b, a, h) - k * h * (1.0 - h);
+  }
+  
+  float random3d(vec3 p) {
+      return fract(sin(dot(p, vec3(12.9898, 78.233, 45.543))) * 43758.5453);
   }
 
   // Basic Sphere SDF
@@ -72,11 +83,26 @@ export const MetaballFragmentShader = `
       vec3 p1 = p - vec3(-2.0 * uCrossfade, sway, 0.0);
       vec3 p2 = p - vec3(2.0 * (1.0 - uCrossfade), -sway, 0.0);
       
+      // FX: CLOUD GRAIN (Displacement Noise)
+      // Displace surface to look like point cloud / rugged
+      float cloudNoise = 0.0;
+      if (uCloud > 0.05) {
+          float scale = 10.0 * (1.1 - uCloudDensity * 5.0); // Inverted density for more intuitive control
+          cloudNoise = (random3d(p * scale) - 0.5) * uCloud * 0.5;
+      }
+      
+      // FX: DUB (Ripple Echo)
+      // Create concentric ripples based on distance
+      float ripple = 0.0;
+      if (uDub > 0.1) {
+          ripple = sin(length(p) * 20.0 - uTime * 5.0) * 0.05 * uDub;
+      }
+
       float noiseA = sin(p.y * 5.0 + uTime) * uLowA * 0.2;
       float noiseB = cos(p.x * 5.0 + uTime) * uLowB * 0.2;
 
-      float d1 = sdSphere(p1, 1.0 + breath + (uLowA * 0.5)) + noiseA;
-      float d2 = sdSphere(p2, 1.0 - breath + (uLowB * 0.5)) + noiseB;
+      float d1 = sdSphere(p1, 1.0 + breath + (uLowA * 0.5)) + noiseA + cloudNoise + ripple;
+      float d2 = sdSphere(p2, 1.0 - breath + (uLowB * 0.5)) + noiseB + cloudNoise + ripple;
       
       return smin(d1, d2, 0.8); // 0.8 = Gooey factor
   }
@@ -96,6 +122,13 @@ export const MetaballFragmentShader = `
     vec3 ro = uCameraPos; // Camera Position
     vec3 p = vWorldPosition; // Start marching from the surface fragment
     vec3 rd = normalize(p - ro); // Ray Direction: Camera -> Fragment
+    
+    // FX: DECIMATOR (Pixelate Ray Direction or Position?)
+    // Modifying Ray Direction creates a "low res angular resolution" effect
+    if (uDecimator > 0.1) {
+        float steps = 50.0 * (1.1 - uDecimator); // Lower steps = more pixelated
+        rd = floor(rd * steps) / steps;
+    }
     
     // Debug: If we see red, the shader is running and fragment position is valid
     // gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); return; 
@@ -158,6 +191,21 @@ export const MetaballFragmentShader = `
                 // Dot: Light Grey
                 vec3 dotCol = vec3(0.6);
                 
+                // SPECTRUM VISUALIZATION (Particles Mode)
+                // If we have uSpectrum, map Y position to frequency bin
+                // p.y ranges roughly -2 to +2. Map to 0..1
+                float yNorm = (p.y + 2.0) / 4.0;
+                if (yNorm >= 0.0 && yNorm <= 1.0) {
+                     // Sample spectrum at this height
+                     float specVal = texture2D(uSpectrum, vec2(yNorm, 0.5)).r;
+                     // If spectrum value is high at this height, light up!
+                     if (specVal > 0.4) {
+                         dotCol = mix(dotCol, vec3(0.1, 1.0, 0.9), (specVal - 0.4) * 2.0); // Cyan glow
+                         radius *= 1.5; // Bigger dots
+                         isDot = 1.0 - smoothstep(radius, radius + 0.05, distToCenter);
+                     }
+                }
+
                 // Mix
                 col = mix(baseCol, dotCol, isDot);
                 
@@ -167,8 +215,29 @@ export const MetaballFragmentShader = `
             } else {
                 // --- ORGANIC MODE ---
                 vec3 colTex = finalTex * (diff + 0.3); // Ambient
+                
+                // SPECTRUM REFLECTION (Organic Mode)
+                // Map reflection vector to spectrum texture
+                vec3 ref = reflect(-rd, normal);
+                // Simple planar mapping of reflection vector
+                vec2 refUv = ref.xy * 0.5 + 0.5;
+                float specRef = texture2D(uSpectrum, refUv).r;
+                
+                // Add metallic shimmer based on spectrum
+                vec3 metalColor = vec3(1.0, 0.8, 0.6); // Gold/Copper
+                colTex += metalColor * specRef * 2.0 * rim;
+
                 colTex += vec3(rim) * (uHighA + uHighB) * 0.8;
                 col = colTex;
+            }
+            
+            // FX: SLICER / GATE
+            // Stutter black/white based on square wave
+            if (uGate > 0.1) {
+                float sliceSpeed = 20.0; // Hz
+                float slicer = step(0.5, fract(uTime * sliceSpeed));
+                // Only reduce opacity, don't flash white
+                col *= mix(1.0, slicer, uGate); 
             }
 
             gl_FragColor = vec4(col, 1.0);
