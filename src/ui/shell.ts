@@ -291,6 +291,7 @@ export class AppShell extends LitElement {
       align-items: flex-end; /* Keep buttons at bottom */
       padding: 0 20px 20px 20px;
       box-sizing: border-box;
+      pointer-events: none; /* ALLOW CLICK THROUGH */
       /* Visual Hint Area (invisible usually) */
     }
 
@@ -302,6 +303,13 @@ export class AppShell extends LitElement {
     .nav-trigger.right {
       right: 0;
       justify-content: flex-end;
+    }
+
+    /* TRIGGER VISIBILITY CONTROLLED BY JS STATE */
+    .nav-trigger.visible .nav-btn {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
     }
 
     .nav-btn {
@@ -326,12 +334,12 @@ export class AppShell extends LitElement {
       pointer-events: none; /* Ignore clicks when hidden */
     }
     
-    /* Reveal on Hover */
-    .nav-trigger:hover .nav-btn {
+    /* Reveal on Hover - REMOVED CSS HOVER TO ALLOW CLICK THROUGH */
+    /* .nav-trigger:hover .nav-btn {
       opacity: 1;
       transform: translateY(0) scale(1);
       pointer-events: auto;
-    }
+    } */
 
     .nav-btn:hover {
       background: rgba(255, 255, 255, 0.15);
@@ -351,6 +359,19 @@ export class AppShell extends LitElement {
   @property({ type: String }) view: 'DECK' | 'RACK' | 'SUPER' | 'VISUAL' = 'DECK';
   
   @state() private _animClass = ''; // Transient animation class
+  
+  @state() private _showNavLeft = false;
+  @state() private _showNavRight = false;
+  
+  connectedCallback() {
+      super.connectedCallback();
+      window.addEventListener('mousemove', this._handleGlobalMouseMove);
+  }
+
+  disconnectedCallback() {
+      super.disconnectedCallback();
+      window.removeEventListener('mousemove', this._handleGlobalMouseMove);
+  }
 
   // Navigation Logic
   private _viewOrder: Array<'DECK' | 'RACK' | 'VISUAL' | 'SUPER'> = ['DECK', 'RACK', 'VISUAL', 'SUPER'];
@@ -383,6 +404,15 @@ export class AppShell extends LitElement {
       this._animClass = ''; // Reset after animation
   }
 
+  private _handleGlobalMouseMove = (e: MouseEvent) => {
+      const TRIGGER_WIDTH = 120;
+      const x = e.clientX;
+      const width = window.innerWidth;
+      
+      this._showNavLeft = x < TRIGGER_WIDTH;
+      this._showNavRight = x > (width - TRIGGER_WIDTH);
+  }
+
   render() {
     return html`
       <div class="shell-container">
@@ -392,13 +422,13 @@ export class AppShell extends LitElement {
         </div>
 
         <!-- NAVIGATION TRIGGERS (Hover Zones) -->
-        <div class="nav-trigger left">
+        <div class="nav-trigger left ${this._showNavLeft ? 'visible' : ''}">
             <div class="nav-btn" @click="${this._prevTab}">
                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
             </div>
         </div>
 
-        <div class="nav-trigger right">
+        <div class="nav-trigger right ${this._showNavRight ? 'visible' : ''}">
             <div class="nav-btn" @click="${this._nextTab}">
                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/></svg>
             </div>
