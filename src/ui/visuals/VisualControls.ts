@@ -9,72 +9,126 @@ export class VisualControls extends LitElement {
             height: 100%;
             background: rgba(0, 0, 0, 0.4);
             border-radius: 8px;
-            padding: 16px;
+            padding: 8px; /* Reduce padding to allow content to fit flush */
             box-sizing: border-box;
             font-family: 'JetBrains Mono', monospace;
             color: #ccc;
         }
 
-        h2 {
-            font-size: 10px;
-            color: #555;
-            letter-spacing: 0.2em;
-            margin: 0 0 16px 0;
-            border-bottom: 1px solid #333;
-            padding-bottom: 4px;
-        }
-
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(4, 1fr); /* 4 Columns for 4 Panels */
+            gap: 12px;
+            height: 100%;
+        }
+
+        /* Mobile responsive for the grid */
+        @media (max-width: 1024px) {
+            .grid {
+                display: flex; /* Scrolling strip on mobile */
+                overflow-x: auto;
+                width: 100%;
+            }
+            .control-group {
+                min-width: 240px;
+            }
         }
 
         .control-group {
-            background: rgba(255, 255, 255, 0.03);
-            padding: 12px;
-            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 16px;
+            border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100%;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+        
+        .control-group:hover {
+            border-color: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
         }
 
         .label {
-            font-size: 10px;
-            color: #888;
-            margin-bottom: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #666;
+            margin-bottom: 12px;
             display: block;
+            letter-spacing: 0.1em;
         }
 
-        input[type="file"] {
-            font-size: 10px;
-            color: #888;
+        /* Custom File Input Styling */
+        .file-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #18181b;
+            border: 1px solid #333;
+            color: #a1a1aa;
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-align: center;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .file-btn:hover {
+            border-color: #555;
+            color: #fff;
+            background: #27272a;
+        }
+
+        .file-btn:active {
+            transform: scale(0.98);
         }
 
         button {
-            background: #222;
-            border: 1px solid #444;
-            color: #ccc;
-            padding: 4px 8px;
-            border-radius: 4px;
+            background: #18181b;
+            border: 1px solid #333;
+            color: #a1a1aa;
+            padding: 12px;
+            border-radius: 6px;
             cursor: pointer;
-            font-size: 10px;
+            font-size: 11px;
+            font-weight: 600;
             transition: all 0.2s;
+            width: 100%;
+            margin-bottom: 4px;
         }
+        
         button:hover {
-            background: #333;
-            border-color: #666;
+            background: #27272a;
+            border-color: #555;
             color: #fff;
         }
+        
         button.active {
-            background: #e11d48;
-            border-color: #fb7185;
+            background: #be123c; /* Rose-700 */
+            border-color: #f43f5e;
             color: white;
-            box-shadow: 0 0 10px rgba(225, 29, 72, 0.5);
+            box-shadow: 0 0 15px rgba(225, 29, 72, 0.4);
         }
 
         .status {
             font-size: 9px;
-            color: #666;
-            margin-top: 4px;
+            color: #555;
+            margin-top: 8px;
+            font-family: 'Inter', sans-serif;
+            min-height: 14px;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            width: 100%;
         }
     `;
 
@@ -85,35 +139,51 @@ export class VisualControls extends LitElement {
             <div class="grid">
                 <!-- Deck A Texture -->
                 <div class="control-group">
-                    <span class="label">DECK A TEXTURE</span>
-                    <input type="file" accept="image/*,video/*" @change="${(e: any) => this.handleFile(e, 'A')}" />
+                    <div>
+                        <span class="label">DECK A TEXTURE</span>
+                        <label class="file-btn">
+                            SELECT FILE
+                            <input type="file" hidden accept="image/*,video/*" @change="${(e: any) => this.handleFile(e, 'A')}" />
+                        </label>
+                    </div>
                     <div class="status" id="status-a">DEFAULT SKIN</div>
                 </div>
 
                 <!-- Deck B Texture -->
                 <div class="control-group">
-                    <span class="label">DECK B TEXTURE</span>
-                    <input type="file" accept="image/*,video/*" @change="${(e: any) => this.handleFile(e, 'B')}" />
+                    <div>
+                        <span class="label">DECK B TEXTURE</span>
+                        <label class="file-btn">
+                            SELECT FILE
+                            <input type="file" hidden accept="image/*,video/*" @change="${(e: any) => this.handleFile(e, 'B')}" />
+                        </label>
+                    </div>
                     <div class="status" id="status-b">DEFAULT SKIN</div>
                 </div>
 
                 <!-- Webcam Override -->
                 <div class="control-group">
-                    <span class="label">CAMERA OVERRIDE</span>
-                    <button class="${this.webcamActive ? 'active' : ''}" @click="${this.toggleWebcam}">
-                        ${this.webcamActive ? 'LIVE RELAY ACTIVE' : 'ACTIVATE CAMERA'}
-                    </button>
+                    <div>
+                        <span class="label">CAMERA OVERRIDE</span>
+                        <button class="${this.webcamActive ? 'active' : ''}" @click="${this.toggleWebcam}">
+                            ${this.webcamActive ? 'LIVE RELAY ACTIVE' : 'ACTIVATE CAMERA'}
+                        </button>
+                    </div>
                     <div class="status">
-                        Overrides both textures with live feed triplanar mapping.
+                        Triplanar Mapping Override
                     </div>
                 </div>
 
                 <!-- Global Params -->
                 <div class="control-group">
-                    <span class="label">VISUAL MIX MODE</span>
-                    <button @click="${() => this.setMode('organic')}">ORGANIC</button>
-                    <button @click="${() => this.setMode('wireframe')}">PARTICLES</button>
-                    <div class="status">AI Mix automates this during transitions.</div>
+                    <div>
+                        <span class="label">VISUAL MIX MODE</span>
+                        <div class="btn-group">
+                            <button @click="${() => this.setMode('organic')}">ORGANIC</button>
+                            <button @click="${() => this.setMode('wireframe')}">PARTICLES</button>
+                        </div>
+                    </div>
+                    <div class="status">Auto-controlled by AI Mix</div>
                 </div>
             </div>
         `;

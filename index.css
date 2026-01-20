@@ -101,3 +101,23 @@ body {
 }
 
 
+
+/* Responsive Controls Grid */
+.controls-grid {
+  display: grid;
+  height: 100%;
+  align-items: stretch;
+  grid-template-columns: repeat(9, 1fr);
+}
+
+@media (max-width: 1024px) {
+  .controls-grid {
+    display: flex;
+    flex-wrap: nowrap; /* Change to nowrap for horizontal scroll */
+    overflow-x: auto;
+    gap: 12px;
+    height: auto;
+    min-height: 140px;
+    padding-bottom: 8px; /* Scrollbar space */
+  }
+}

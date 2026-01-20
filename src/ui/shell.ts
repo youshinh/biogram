@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 
 @customElement('app-shell')
 export class AppShell extends LitElement {
@@ -122,6 +122,24 @@ export class AppShell extends LitElement {
       overflow: hidden;
     }
 
+    @keyframes slide-in-right {
+      0% { opacity: 0; transform: translateX(20px); }
+      100% { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes slide-in-left {
+      0% { opacity: 0; transform: translateX(-20px); }
+      100% { opacity: 1; transform: translateX(0); }
+    }
+    
+    .anim-next {
+       animation: slide-in-right 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+    }
+    
+    .anim-prev {
+       animation: slide-in-left 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+    }
+
     /* CONTROLS ROW */
     .controls-row {
       display: grid;
@@ -187,10 +205,183 @@ export class AppShell extends LitElement {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
     }
+
+    /* --- MOBILE RESPONSIVE OVERRIDES --- */
+    @media (max-width: 1024px) {
+      .shell-container {
+         overflow-y: auto; /* Enable full page scroll on mobile */
+         -webkit-overflow-scrolling: touch;
+      }
+
+      main {
+        display: flex;
+        flex-direction: column;
+        height: auto;
+        overflow: visible;
+        gap: 24px;
+        padding-bottom: 80px; /* Space for footer */
+      }
+      
+      /* Deck Row becomes responsive vertical stack */
+      .deck-row {
+        display: flex;
+        flex-direction: column;
+        grid-template-columns: none; /* Reset grid */
+        height: auto;
+        gap: 24px;
+      }
+
+      /* Adjust individual deck containers for mobile height */
+      .deck-container {
+        height: 60vh; /* Fixed height for decks on mobile to keep visualizer visible */
+        min-height: 400px;
+        width: 100%;
+      }
+      
+      /* Adjust Mixer for mobile */
+      .mixer-container {
+        height: auto;
+        min-height: 300px;
+        width: 100%;
+        overflow: visible; 
+      }
+
+      /* Control Row changes */
+      .bottom-row {
+        height: auto;
+        overflow: visible;
+      }
+
+      .controls-row {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .controls-panel {
+        /* On mobile, we want this to wrap or scroll horizontally? 
+           Let's standardise on horizontal scroll for controls to keep them accessible */
+        overflow-x: auto;
+        justify-content: flex-start;
+        min-height: 140px; 
+        padding-bottom: 8px;
+      }
+
+      .rack-panel {
+        height: 60vh; /* Give rack space on mobile */
+      }
+
+      /* Footer adjustments */
+      footer {
+        flex-direction: column;
+        gap: 4px;
+        text-align: center;
+        padding-bottom: 16px;
+      }
+    }
+    /* --- NAVIGATION TRIGGERS --- */
+    .nav-trigger {
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      width: 120px;
+      height: 100%; /* Full height */
+      z-index: 1000;
+      display: flex;
+      align-items: flex-end; /* Keep buttons at bottom */
+      padding: 0 20px 20px 20px;
+      box-sizing: border-box;
+      /* Visual Hint Area (invisible usually) */
+    }
+
+    .nav-trigger.left {
+      left: 0;
+      justify-content: flex-start;
+    }
+
+    .nav-trigger.right {
+      right: 0;
+      justify-content: flex-end;
+    }
+
+    .nav-btn {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.05); 
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #e4e4e7; /* Zinc-200 */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.5rem;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+      
+      /* Animation State */
+      opacity: 0;
+      transform: translateY(20px) scale(0.8);
+      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none; /* Ignore clicks when hidden */
+    }
+    
+    /* Reveal on Hover */
+    .nav-trigger:hover .nav-btn {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .nav-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.3);
+      box-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+      transform: scale(1.1);
+      color: #fff;
+    }
+    
+    .nav-btn:active {
+      transform: scale(0.95);
+    }
+
   `;
 
   @property({ type: String }) status = "OFFLINE";
   @property({ type: String }) view: 'DECK' | 'RACK' | 'SUPER' | 'VISUAL' = 'DECK';
+  
+  @state() private _animClass = ''; // Transient animation class
+
+  // Navigation Logic
+  private _viewOrder: Array<'DECK' | 'RACK' | 'VISUAL' | 'SUPER'> = ['DECK', 'RACK', 'VISUAL', 'SUPER'];
+
+  private _nextTab() {
+    this._animClass = 'anim-next';
+    const idx = this._viewOrder.indexOf(this.view);
+    const nextIdx = (idx + 1) % this._viewOrder.length;
+    this.view = this._viewOrder[nextIdx];
+    this._emitChange();
+  }
+
+  private _prevTab() {
+    this._animClass = 'anim-prev';
+    const idx = this._viewOrder.indexOf(this.view);
+    const prevIdx = (idx - 1 + this._viewOrder.length) % this._viewOrder.length;
+    this.view = this._viewOrder[prevIdx];
+    this._emitChange();
+  }
+
+  private _emitChange() {
+    this.dispatchEvent(new CustomEvent('view-change', { 
+        detail: { view: this.view },
+        bubbles: true,
+        composed: true 
+    }));
+  }
+  
+  private _onAnimEnd() {
+      this._animClass = ''; // Reset after animation
+  }
 
   render() {
     return html`
@@ -198,6 +389,19 @@ export class AppShell extends LitElement {
         <!-- Background Layer -->
         <div class="bg-layer">
             <!-- Hydra Placeholder -->
+        </div>
+
+        <!-- NAVIGATION TRIGGERS (Hover Zones) -->
+        <div class="nav-trigger left">
+            <div class="nav-btn" @click="${this._prevTab}">
+               <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
+            </div>
+        </div>
+
+        <div class="nav-trigger right">
+            <div class="nav-btn" @click="${this._nextTab}">
+               <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/></svg>
+            </div>
         </div>
 
         <!-- MAIN LAYOUT -->
@@ -228,7 +432,7 @@ export class AppShell extends LitElement {
           <!-- LOWER ROW: Switches between Sliders/Actions OR FX Rack -->
           <div class="bottom-row">
              ${this.view === 'DECK' ? html`
-                <div class="controls-row">
+                <div class="controls-row ${this._animClass}" @animationend="${this._onAnimEnd}">
                     <!-- CONTROLS SLOT -->
                     <div class="controls-panel">
                         <slot name="controls"></slot>
@@ -240,15 +444,15 @@ export class AppShell extends LitElement {
                     </div>
                 </div>
              ` : this.view === 'SUPER' ? html`
-                <div class="rack-panel">
+                <div class="rack-panel ${this._animClass}" @animationend="${this._onAnimEnd}">
                     <slot name="super"></slot>
                 </div>
              ` : this.view === 'VISUAL' ? html`
-                <div class="rack-panel">
+                <div class="rack-panel ${this._animClass}" @animationend="${this._onAnimEnd}">
                     <slot name="visual-controls"></slot>
                 </div>
              ` : html`
-                <div class="rack-panel">
+                <div class="rack-panel ${this._animClass}" @animationend="${this._onAnimEnd}">
                     <slot name="fx-rack"></slot>
                 </div>
              `}

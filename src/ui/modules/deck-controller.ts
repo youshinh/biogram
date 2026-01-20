@@ -96,8 +96,8 @@ export class DeckController extends LitElement {
               </button>
           </div>
 
-          <!-- CONTROLS CONTAINER (Height 140px) -->
-          <div class="h-[140px] shrink-0 flex gap-2 p-2 bg-[#18181b] border-t border-white/5 items-center justify-center">
+          <!-- CONTROLS CONTAINER (Height 140px on Desktop, Auto on Mobile) -->
+          <div class="shrink-0 flex gap-2 p-2 bg-[#18181b] border-t border-white/5 items-center justify-center lg:h-[140px] lg:flex-nowrap flex-wrap h-auto">
               
               <!-- DECK A LAYOUT: TAP -> CENTER -> TOOLS -> PLAY -->
               ${isDeckA ? this.renderTapSection() : this.renderPlaySection()}
@@ -246,6 +246,7 @@ export class DeckController extends LitElement {
   }
 
   private togglePlay() {
+      console.log(`[DeckController] togglePlay clicked for Deck ${this.deckId}. Current: ${this.isPlaying}`);
       this.isPlaying = !this.isPlaying;
       this.dispatchEvent(new CustomEvent('deck-play-toggle', { 
           detail: { deck: this.deckId, playing: this.isPlaying },
@@ -255,6 +256,7 @@ export class DeckController extends LitElement {
   }
 
   private toggleSync() {
+      console.log(`[DeckController] toggleSync clicked for Deck ${this.deckId}`);
       this.isSync = !this.isSync;
       this.dispatchEvent(new CustomEvent('deck-sync-toggle', {
           detail: { deck: this.deckId, sync: this.isSync },

@@ -289,7 +289,7 @@ export class SuperControls extends LitElement {
                     </button>
                 </div>
             ` : this.mixState === 'MIXING' ? html`
-                <button class="trigger-btn" style="background: #ef4444; border-color:#991b1b; padding:12px;"
+                <button class="trigger-btn" style="background: #7f1d1d; border-color:#450a0a; color: #fca5a5; padding:12px;"
                    @click="${this.stopMix}">
                    ABORT MIX
                 </button>

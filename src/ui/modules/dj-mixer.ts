@@ -117,7 +117,7 @@ export class DjMixer extends LitElement {
            </div>
 
            <!-- CHANNELS (Fixed width, no horizontal scroll) -->
-           <div class="flex-grow w-full grid grid-cols-2 gap-2 min-h-0 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-700/50 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600">
+           <div class="flex-grow w-full grid grid-cols-2 gap-2 min-h-0 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-700/50 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600 lg:h-full lg:overflow-y-auto h-auto overflow-visible">
                <!-- DECK A STRIP -->
                <div class="rounded-2xl border border-tech-cyan/20 bg-black/30 p-2 flex flex-col items-center gap-1 group hover:border-tech-cyan/40 transition-colors min-w-0">
                    <div class="text-xs font-mono text-tech-cyan tracking-widest font-bold">CH.A</div>

@@ -445,6 +445,7 @@ if (isVizMode) {
     window.addEventListener('deck-play-toggle', (e:any) => {
         // Support both manual (deck, playing) and AI (deckId) events
         const deckId = e.detail.deck || e.detail.deckId;
+        console.log(`[Main] deck-play-toggle received: ${deckId}, playing: ${e.detail.playing}`);
         if (!deckId) return;
 
         const deck = deckId as 'A' | 'B';
@@ -459,6 +460,7 @@ if (isVizMode) {
              engine.setTapeStop(deck, false);
              engine.unmute(deck); // Ensure we are unmuted (fixes GEN silence bug)
              engine.resume();
+             console.log('[Main] Engine Resumed (Sync)');
         } else {
              engine.setTapeStop(deck, true);
         }
@@ -790,10 +792,11 @@ if (isVizMode) {
 
 
     // --- AI PARAMETER GRID (7 SLOTS + Custom + KEY/SCALE w/RANDOM) ---
-    controlsContainer.style.height = '100%';
-    controlsContainer.style.alignItems = 'stretch';
+    // controlsContainer.style.height = '100%'; // Handled by class
+    // controlsContainer.style.alignItems = 'stretch';
     // 9 columns: 5 sliders + 2 combos + 1 custom + 1 key/scale with random
-    controlsContainer.style.gridTemplateColumns = 'repeat(9, 1fr)';
+    // controlsContainer.style.gridTemplateColumns = 'repeat(9, 1fr)';
+    controlsContainer.className = 'controls-grid';
 
     // Store references to sliders for randomization
     const sliderRefs: { name: string, wrapper: HTMLElement, slider: HTMLElement }[] = [];

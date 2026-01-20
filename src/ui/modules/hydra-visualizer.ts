@@ -20,6 +20,8 @@ export class HydraVisualizer extends LitElement {
   private isScratching = false;
   private wasPlaying = false;
   private lastX = 0;
+  private clickStartX = 0;
+  private hasDragged = false;
   
   // Zoom State
   private zoomScale = 100; 
@@ -186,31 +188,23 @@ export class HydraVisualizer extends LitElement {
       
       this.isScratching = true;
       this.lastX = e.clientX;
+      this.clickStartX = e.clientX;
+      this.hasDragged = false;
       const engine = (window as any).engine;
       
       if(engine) {
           this.wasPlaying = !engine.isDeckStopped(this.deckId as 'A' | 'B');
-          if (!this.wasPlaying) {
-               const rect = this.canvas.getBoundingClientRect();
-               const x = e.clientX - rect.left;
-               const w = rect.width;
-               
-               const step = Math.ceil(this.zoomScale);
-               const headPos = this.deckId === 'B' ? engine.getHeadB() : engine.getReadPointer();
-               
-               const center = w / 2;
-               const diffPixels = x - center;
-               const diffSamples = diffPixels * step;
-               
-               let targetPos = headPos + diffSamples;
-               engine.skipToPosition(this.deckId, Math.floor(targetPos));
-          }
           engine.updateDspParam('SCRATCH_SPEED', 0.0, this.deckId as 'A'|'B');
       }
   }
 
   private onPointerMove = (e: PointerEvent) => {
       if (!this.isScratching) return;
+      
+      if (Math.abs(e.clientX - this.clickStartX) > 5) {
+          this.hasDragged = true;
+      }
+
       const deltaX = e.clientX - this.lastX;
       this.lastX = e.clientX;
       const speed = deltaX * -0.1; 
@@ -235,6 +229,22 @@ export class HydraVisualizer extends LitElement {
               window.dispatchEvent(new CustomEvent('deck-play-sync', { 
                   detail: { deck: this.deckId, playing: false }
               }));
+              
+              if (!this.hasDragged) {
+                   const rect = this.canvas!.getBoundingClientRect();
+                   const x = e.clientX - rect.left;
+                   const w = rect.width;
+                   
+                   const step = Math.ceil(this.zoomScale);
+                   const headPos = this.deckId === 'B' ? engine.getHeadB() : engine.getReadPointer();
+                   
+                   const center = w / 2;
+                   const diffPixels = x - center;
+                   const diffSamples = diffPixels * step;
+                   
+                   let targetPos = headPos + diffSamples;
+                   engine.skipToPosition(this.deckId, Math.floor(targetPos));
+              }
           }
       }
   }

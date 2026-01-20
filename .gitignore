@@ -19,6 +19,7 @@ updateDEV/
 
 # Editor directories and files
 .vscode/*
+.agent/*
 !.vscode/extensions.json
 .idea
 .DS_Store

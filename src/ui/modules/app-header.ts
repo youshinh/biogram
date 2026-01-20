@@ -9,6 +9,26 @@ export class AppHeader extends LitElement {
 
   @state() currentView: 'DECK' | 'RACK' | 'SUPER' | 'VISUAL' = 'DECK';
 
+  connectedCallback() {
+      super.connectedCallback();
+      // Listen for view changes from the shell (bubbling up)
+      window.addEventListener('view-change', this.handleViewChange);
+  }
+
+  disconnectedCallback() {
+      super.disconnectedCallback();
+      window.removeEventListener('view-change', this.handleViewChange);
+  }
+
+  // Bound handler to preserve 'this'
+  private handleViewChange = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.view) {
+          // Update local state to reflect external changes (e.g. from partial nav buttons)
+          this.currentView = detail.view;
+      }
+  }
+
   render() {
     return html`
       <div class="flex justify-between items-center border-b border-white/10 px-4 py-2 bg-black/90 backdrop-blur z-50 h-[40px]">
@@ -54,6 +74,7 @@ export class AppHeader extends LitElement {
   }
 
   private switchView(view: 'DECK' | 'RACK' | 'SUPER' | 'VISUAL') {
+    if (this.currentView === view) return;
     this.currentView = view;
     this.dispatchEvent(new CustomEvent('view-change', {
       detail: { view },
