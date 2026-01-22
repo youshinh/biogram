@@ -322,6 +322,13 @@ if (isVizMode) {
         threeViz.setMode(e.detail.mode);
     });
 
+    vizControls.addEventListener('visual-render-toggle', (e: any) => {
+        if (threeViz.setRendering) {
+            threeViz.setRendering(e.detail.active);
+            if (import.meta.env.DEV) console.log(`[Main] Visual Rendering: ${e.detail.active}`);
+        }
+    });
+
 
     // AI Mix Event Handling
     let pendingMixContext: { sourceId: string, targetId: string } | null = null;

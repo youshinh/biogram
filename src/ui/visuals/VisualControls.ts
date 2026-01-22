@@ -130,6 +130,14 @@ export class VisualControls extends LitElement {
             gap: 8px;
             width: 100%;
         }
+
+        .btn-group button {
+            flex: 1;
+            padding: 12px 4px; /* Reduce padding to fit text */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
     `;
 
     @state() webcamActive = false;
@@ -174,13 +182,30 @@ export class VisualControls extends LitElement {
                     </div>
                 </div>
 
+                <!-- Projector Control -->
+                <div class="control-group">
+                    <div>
+                        <span class="label">PROJECTOR</span>
+                        <button class="${this._projectorWin && !this._projectorWin.closed ? 'active' : ''}" 
+                                @click="${this.toggleProjector}">
+                            ${this._projectorWin && !this._projectorWin.closed ? 'CLOSE PROJECTOR' : 'OPEN PROJECTOR'}
+                        </button>
+                    </div>
+                    <div class="status">
+                        ${this._projectorWin && !this._projectorWin.closed ? 'Main Viz Paused' : 'Window Inactive'}
+                    </div>
+                </div>
+
                 <!-- Global Params -->
                 <div class="control-group">
                     <div>
                         <span class="label">VISUAL MIX MODE</span>
                         <div class="btn-group">
                             <button @click="${() => this.setMode('organic')}">ORGANIC</button>
-                            <button @click="${() => this.setMode('wireframe')}">PARTICLES</button>
+                            <button @click="${() => this.setMode('wireframe')}">MONO</button>
+                            <button @click="${() => this.setMode('monochrome')}">PARTICLES</button>
+                            <button @click="${() => this.setMode('rings')}">RINGS</button>
+                            <button @click="${() => this.setMode('waves')}">WAVES</button>
                         </div>
                     </div>
                     <div class="status">Auto-controlled by AI Mix</div>
@@ -232,9 +257,53 @@ export class VisualControls extends LitElement {
         }));
     }
 
-    private setMode(mode: 'organic' | 'wireframe') {
+    private setMode(mode: 'organic' | 'wireframe' | 'monochrome' | 'rings' | 'waves') {
         this.dispatchEvent(new CustomEvent('visual-mode-change', {
             detail: { mode },
+            bubbles: true,
+            composed: true
+        }));
+    }
+
+    private _projectorWin: Window | null = null;
+
+    private toggleProjector() {
+        if (this._projectorWin && !this._projectorWin.closed) {
+            this._projectorWin.close();
+            this._projectorWin = null;
+            this.setMainRendering(true);
+        } else {
+            // Open Projector
+            const width = 800;
+            const height = 600;
+            const left = (window.screen.width - width) / 2;
+            const top = (window.screen.height - height) / 2;
+            
+            this._projectorWin = window.open(
+                '/?mode=viz', 
+                'biogram-projector', 
+                `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no`
+            );
+            
+            // Disable Main Rendering to save GPU
+            this.setMainRendering(false);
+            
+            // Check for close
+            const timer = setInterval(() => {
+                if (!this._projectorWin || this._projectorWin.closed) {
+                    clearInterval(timer);
+                    this._projectorWin = null;
+                    this.setMainRendering(true);
+                    this.requestUpdate();
+                }
+            }, 1000);
+        }
+        this.requestUpdate();
+    }
+
+    private setMainRendering(active: boolean) {
+         this.dispatchEvent(new CustomEvent('visual-render-toggle', {
+            detail: { active },
             bubbles: true,
             composed: true
         }));

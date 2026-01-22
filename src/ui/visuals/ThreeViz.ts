@@ -64,6 +64,7 @@ export class ThreeViz extends LitElement {
                 crossfader: cf,
                 lowA, highA, lowB, highB,
                 spectrum: mixedSpectrum,
+                mode: this.engine.mode, // Sync Mode constantly
                 ...this.fxParams // Inject FX State
             };
 
@@ -94,6 +95,12 @@ export class ThreeViz extends LitElement {
         this.broadcast.onmessage = (ev) => {
             if (this.mode === 'SLAVE' && this.engine) {
                 const data = ev.data;
+                
+                // Continuous Sync
+                if (data.mode && data.mode !== this.engine.mode) {
+                    this.engine.setMode(data.mode);
+                }
+                
                 // 1. Texture Update
                 if (data.type === 'TEXTURE') {
                     this.engine.updateTexture(data.deck, data.url, data.mimeType);
@@ -105,9 +112,6 @@ export class ThreeViz extends LitElement {
                 // 3. Param Update (Default)
                 else if (data.type === 'COLOR_RND') {
                     this.engine.randomizeColor(data.deck);
-                }
-                else if (data.type === 'MODE') {
-                    this.engine.setMode(data.mode);
                 }
                 else {
                      this.engine.updateUniforms(data);
@@ -170,7 +174,7 @@ export class ThreeViz extends LitElement {
         }
     }
 
-    public setMode(mode: 'organic' | 'wireframe') {
+    public setMode(mode: 'organic' | 'wireframe' | 'monochrome' | 'rings' | 'waves') {
         this.engine?.setMode(mode);
         if (this.mode === 'MASTER') {
              this.broadcast.postMessage({
@@ -178,6 +182,10 @@ export class ThreeViz extends LitElement {
                 mode
             });
         }
+    }
+
+    public setRendering(active: boolean) {
+        this.engine?.setRendering(active);
     }
 
     render() {

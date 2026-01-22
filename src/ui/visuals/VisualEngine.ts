@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { MetaballVertexShader, MetaballFragmentShader } from './shaders/MetaballShader';
 import { TextureManager } from './TextureManager';
+import { MonochromeFlow } from './MonochromeFlow';
+import { RingDimensions } from './RingDimensions';
+import { WaveTerrain } from './WaveTerrain';
 
 export class VisualEngine {
     private container: HTMLElement;
@@ -13,11 +16,32 @@ export class VisualEngine {
     private textureManager: TextureManager;
     private spectrumTexture!: THREE.DataTexture;
     
+    // Modes
+    private monochromeFlow!: MonochromeFlow;
+    private ringDimensions!: RingDimensions;
+    private waveTerrain!: WaveTerrain;
+
     private requestID: number = 0;
     private startTime: number = 0;
 
     // State
     private uniforms: { [uniform: string]: THREE.IUniform } = {};
+
+    // --- Blending State Machine ---
+    private activeModes: Set<any> = new Set();
+    private currentModeName: string = 'organic'; // active target
+    
+    // We map string names to instances
+    private modeMap: { [key: string]: any } = {};
+    
+    // Transition
+    private transition = {
+        active: false,
+        fromMode: null as any,
+        toMode: null as any,
+        progress: 0.0,
+        speed: 1.5 // Transition speed
+    };
 
     constructor(container: HTMLElement) {
         this.container = container;
@@ -44,9 +68,21 @@ export class VisualEngine {
         // 2. Scene
         this.scene = new THREE.Scene();
 
+        // Lights for Physical Materials (Organdy)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        this.scene.add(ambientLight);
+
+        const pointLight = new THREE.PointLight(0xffffff, 1.0);
+        pointLight.position.set(10, 20, 20);
+        this.scene.add(pointLight);
+        
+        const blueLight = new THREE.PointLight(0x00ffff, 0.8);
+        blueLight.position.set(-20, -10, 10);
+        this.scene.add(blueLight);
+
         // 3. Camera
         this.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
-        this.camera.position.set(0, 0, 6); // Slightly further back for rotation room
+        this.camera.position.set(0, 0, 6); 
 
         // 4. Object (Bounded Box for Raymarching)
         const geometry = new THREE.BoxGeometry(6, 4, 4);
@@ -67,18 +103,18 @@ export class VisualEngine {
             uLowB: { value: 0 },
             uHighB: { value: 0 },
             uCameraPos: { value: this.camera.position },
-            uMode: { value: 0.0 }, // 0: Organic, 1: Particles
-            uSpectrum: { value: null }, // Data map
+            uMode: { value: 0.0 }, // 0: Organic, 1: Particles (Shader Mode)
+            uSpectrum: { value: null }, 
             
             // FX Uniforms
             uDub: { value: 0.0 },
             uGate: { value: 0.0 },
-            uCloud: { value: 0.0 }, // Mix/Strength
+            uCloud: { value: 0.0 },
             uCloudDensity: { value: 0.5 },
-            uDecimator: { value: 0.0 } // 0 = off, 1 = max chaos
+            uDecimator: { value: 0.0 }
         };
 
-        // Initialize Spectrum Texture (128 bins for visualization is enough detail)
+        // Initialize Spectrum Texture (128 bins)
         const size = 128;
         const data = new Uint8Array(size);
         this.spectrumTexture = new THREE.DataTexture(data, size, 1, THREE.RedFormat);
@@ -90,27 +126,85 @@ export class VisualEngine {
             fragmentShader: MetaballFragmentShader,
             uniforms: this.uniforms,
             transparent: true,
-            side: THREE.FrontSide // Camera is outside, so we render front face to start raymarch
+            side: THREE.FrontSide
         });
 
         this.mesh = new THREE.Mesh(geometry, this.material);
         this.scene.add(this.mesh);
+        
+        // DEBUG CUBE (To verify renderer works on Projector)
+        // const debugGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        // const debugMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+        // this.debugMesh = new THREE.Mesh(debugGeo, debugMat);
+        // this.debugMesh.position.set(3, 3, 0); // Corner
+        // this.scene.add(this.debugMesh);
+        
+        // Used for 'organic' and 'wireframe' modes (Shader-based)
+        // We treat it as one visualizer instance
+        const standardVisualizer = {
+            mesh: this.mesh,
+            update: (dt: number, data: any) => {}, // Logic is in shader
+            setOpacity: (alpha: number) => { 
+                // We don't have global opacity uniform in shader yet?
+                // Let's just hack visible/hidden or let it stay 1.0 for now if active.
+                // Or better, set uCloud to 1.0-alpha? No.
+                // For now, standard visualizer just Pops in/out or we ignore opacity.
+                // Actually, let's keep it simple: Standard modes just stay fully opaque if "active".
+            } 
+        };
+
+        // Initialize Custom Visualizers
+        try {
+            this.monochromeFlow = new MonochromeFlow();
+            this.monochromeFlow.mesh.visible = false; 
+            this.scene.add(this.monochromeFlow.mesh);
+        } catch (e) {
+            console.error("Failed to init MonochromeFlow", e);
+            this.monochromeFlow = { mesh: { visible: false }, update: () => {} } as any;
+        }
+        
+        try {
+            this.ringDimensions = new RingDimensions(this.spectrumTexture);
+            this.ringDimensions.mesh.visible = false; 
+            this.scene.add(this.ringDimensions.mesh);
+        } catch (e) {
+            console.error("Failed to init RingDimensions", e);
+            this.ringDimensions = { mesh: { visible: false }, update: () => {}, setOpacity: () => {} } as any;
+        }
+
+        try {
+            this.waveTerrain = new WaveTerrain(this.spectrumTexture);
+            this.waveTerrain.mesh.visible = false;
+            this.scene.add(this.waveTerrain.mesh);
+        } catch (e) {
+             console.error("Failed to init WaveTerrain", e);
+             this.waveTerrain = { mesh: { visible: false }, update: () => {} } as any;
+        }
+
+        // Setup Mode Map
+        this.modeMap = {
+            'organic': standardVisualizer,
+            'wireframe': standardVisualizer, // Share same mesh
+            'monochrome': this.monochromeFlow,
+            'rings': this.ringDimensions,
+            'waves': this.waveTerrain
+        };
+        
+        // Initial State: Force Organic
+        // We manually ensure correct initial visibility
+        this.mesh.visible = true; // Standard shader mesh
+        this.uniforms.uMode.value = 0.0;
+        this.currentModeName = 'organic';
 
         // Start Loop
         this.startTime = performance.now();
         this.animate();
         
-        console.log("[VisualEngine] Initialized. Camera Z:", this.camera.position.z);
-        
-        // Resize Listener
         window.addEventListener('resize', this.onResize);
-        
-        // Init MIDI / Audio Listeners (To be wired in externally or here)
-        this.setupListeners();
     }
 
     private setupListeners() {
-        // Listeners handled by ThreeViz bridge
+        // ...
     }
 
     private onResize = () => {
@@ -122,79 +216,143 @@ export class VisualEngine {
         this.camera.updateProjectionMatrix();
     };
 
+    private lastTime: number = 0;
+
     private animate = () => {
         this.requestID = requestAnimationFrame(this.animate);
         
         const now = performance.now();
         const elapsed = (now - this.startTime) * 0.001;
+        const delta = Math.min((now - this.lastTime) * 0.001, 0.1); 
+        this.lastTime = now;
         
         this.uniforms.uTime.value = elapsed;
 
-        // --- Camera Crossfader Rotation ---
-        // Rotate camera around center based on Crossfader
-        // CF 0.0 (Deck A) -> Angle -1.4 rad (~80 deg)
-        // CF 1.0 (Deck B) -> Angle +1.4 rad
-        // Radius = 6.0
-        const cf = this.uniforms.uCrossfade.value;
-        const angle = (cf - 0.5) * 2.8; 
-        const rad = 6.0;
-        
-        this.camera.position.x = Math.sin(angle) * rad;
-        this.camera.position.z = Math.cos(angle) * rad;
-        this.camera.lookAt(0, 0, 0);
+        this.uniforms.uTime.value = elapsed;
 
-        this.uniforms.uCameraPos.value.copy(this.camera.position); // Sync uniform
+        // --- Camera Crossfader Rotation (DISABLED for Rings Depth Control) ---
+        // const cf = this.uniforms.uCrossfade.value;
+        // const angle = (cf - 0.5) * 2.8; 
+        // const rad = 6.0;
+        // this.camera.position.x = Math.sin(angle) * rad;
+        // this.camera.position.z = Math.cos(angle) * rad;
+        this.camera.position.set(0, 0, 6); // Fixed Camera
+        this.camera.lookAt(0, 0, 0);
+        this.uniforms.uCameraPos.value.copy(this.camera.position);
+
+        // --- Transition Logic ---
+        if (this.transition.active) {
+            this.transition.progress += delta * this.transition.speed;
+            const t = Math.min(this.transition.progress, 1.0);
+            
+            // Fade Out From
+            if (this.transition.fromMode && this.transition.fromMode.setOpacity) {
+                this.transition.fromMode.setOpacity(1.0 - t);
+            }
+            
+            // Fade In To
+            if (this.transition.toMode && this.transition.toMode.setOpacity) {
+                this.transition.toMode.setOpacity(t);
+            }
+            
+            if (t >= 1.0) {
+                // Done
+                this.transition.active = false;
+                if (this.transition.fromMode) {
+                    this.transition.fromMode.mesh.visible = false;
+                }
+                this.transition.fromMode = null;
+                this.transition.toMode = null;
+            }
+        }
+
+        // --- Update Active Visualizers ---
+        const low = Math.max(this.uniforms.uLowA.value, this.uniforms.uLowB.value);
+        const high = Math.max(this.uniforms.uHighA.value, this.uniforms.uHighB.value);
+        const kick = low > 0.7;
+        const spectrum = this.spectrumTexture.image.data;
+        const audioData = { low, high, kick, spectrum };
+
+        // Update all visible meshes in map (brute force or just smart check)
+        // We iterate "activeModes"? No, let's just update all known visualizers if visible
         
-        // --- Chaos / FX Simulation ---
-        // Map High Frequency to "Chaos" (Displacement / Noise)
-        // If we had a specific "Chaos Mode" boolean, we'd use that.
-        // For now, let's make it reactive to high energy.
-        // const chaos = Math.max(this.uniforms.uHighA.value, this.uniforms.uHighB.value);
-        // this.uniforms.uChaos.value = chaos; // Need to add this uniform if we use it
-        
-        // --- Trails / Echo Effect ---
-        // Instead of clearing, we draw a semi-transparent black quad to fade out the previous frame.
-        // This fails if preserveDrawingBuffer or autoClear is wrong, but we set autoClear=false.
-        
-        // We need a way to draw a fullscreen quad. 
-        // Quickest way in ThreeJS without full Composer is to use a 2nd Ortho Camera and a Plane.
-        // But for simply keeping the buffer, we just DON'T clear. 
-        // BUT we need to fade it. 
-        // Actually, with `alpha: true`, the background of the DOM is visible.
-        // If we don't clear, we paint OVER the previous frame. 
-        // To FADE, we need to draw a black rect with alpha 0.1 on top? 
-        // No, that just darkens. 
-        // If we want "Trails", we want the old pixel to persist but get dimmer.
-        // Since `alpha:true` and we want to see the HTML background, we actually CANNOT easily do "trails" 
-        // involving the background unless we render the background IN WebGL.
-        // Current Setup: Background is HTML (Transparent Canvas). 
-        // If we want trails of the 3D object, we must NOT clear, but the background will accumulate? 
-        // No, the background is empty (0,0,0,0).
-        // If we don't clear, the 3D object smears. 
-        // To fade the smear, we need to manually attenuate alpha of the buffer? Hard in basic WebGL.
-        
-        // Alternative: "Echo" using multiple draw calls (Ghosting)? Too heavy.
-        
-        // Compromise for "Living Biogram" on Transparent Background:
-        // We accept that "Trails" might look messy over transparent background if not careful.
-        // Let's stick to standard clear for clean cut, BUT...
-        // The user asked for "Tape Echo".
-        // Let's implement a "Motion Blur" uniform in the shader? No.
-        
-        // Let's try the simple "Feedback" approach if we were opaque, but since we are transparent:
-        // We can just skip clearing? 
-        // Let's stick to `renderer.clear()` to be safe for now, as transparency + trails is a can of worms.
-        // Wait, I can enable trails by just changing opacity of the clear color?
-        // renderer.setClearColor(0x000000, 0.1); renderer.clear(); -> No, that clears to a color.
-        
-        // Let's REVERT the 'manual clear' to standard `autoClear=true` behavior via clear() 
-        // unless I implement a FullscreenQuad.
-        // Given complexity and "allow implementation to proceed", I will just clear for now to ensure sharpness.
-        // If I leave trails on transparent bg, it becomes an opaque smudge quickly.
-        
-        this.renderer.clear(); 
-        this.renderer.render(this.scene, this.camera);
+        if (this.monochromeFlow.mesh.visible) this.monochromeFlow.update(delta, audioData);
+        if (this.ringDimensions.mesh.visible) this.ringDimensions.update(delta, audioData);
+        if (this.waveTerrain.mesh.visible) this.waveTerrain.update(delta, audioData);
+
+        if (this.isRendering) {
+            this.renderer.clear(); 
+            this.renderer.render(this.scene, this.camera);
+            
+            // if (this.debugMesh) {
+            //    this.debugMesh.rotation.x += 0.01;
+            //    this.debugMesh.rotation.y += 0.01;
+            // }
+        }
     };
+
+    // private debugMesh: THREE.Mesh | null = null;
+
+    public setMode(mode: 'organic' | 'wireframe' | 'monochrome' | 'rings' | 'waves') {
+        if (mode === this.currentModeName) return;
+
+        console.log(`[VisualEngine] Switching: ${this.currentModeName} -> ${mode}`);
+
+        // FIX: If transition is already active, force clean up previous state
+        if (this.transition.active) {
+            // Force hide the 'from' mode of the interrupted transition
+            if (this.transition.fromMode) {
+                this.transition.fromMode.mesh.visible = false;
+                if (this.transition.fromMode.setOpacity) this.transition.fromMode.setOpacity(0.0);
+            }
+            // The 'to' mode of the interrupted transition becomes the 'from' mode?
+            // Or just force everything off except current target?
+            // Safer: Just force hide everything except the one we are switching TO (which handles fade in)
+            // But we want to smooth blend from 'current visible'.
+            // If interrupted, 'toMode' (partial opacity) is the new 'oldViz'.
+            
+            // Actually, simplest fix for "Everything Displayed" bug:
+            // Ensure we update 'fromMode' to be the currently active visualizer.
+        }
+
+        let oldViz = this.modeMap[this.currentModeName];
+        // If we were transitioning, the 'oldViz' based on name might be wrong if we hadn't finished swapping names?
+        // No, we update currentModeName at end? No, we updated it at start in previous code?
+        // In previous code: this.currentModeName = mode; (at end).
+        // So oldViz is correct.
+        
+        // However, if transition active, 'oldViz' (currentModeName) is actually the one FADING IN. 
+        // The one fading OUT (transition.fromMode) needs to be killed immediately.
+        if (this.transition.active && this.transition.fromMode) {
+             this.transition.fromMode.mesh.visible = false;
+        }
+
+        const newViz = this.modeMap[mode];
+        
+        // Handle Shader Modes separately?
+        if ((mode === 'organic' || mode === 'wireframe') && (this.currentModeName === 'organic' || this.currentModeName === 'wireframe')) {
+             this.uniforms.uMode.value = (mode === 'wireframe') ? 1.0 : 0.0;
+             this.currentModeName = mode;
+             newViz.mesh.visible = true;
+             // Ensure transition is killed if we were doing one?
+             this.transition.active = false;
+             return;
+        }
+        
+        // Standard Transition
+        this.transition.fromMode = oldViz;
+        this.transition.toMode = newViz;
+        this.transition.active = true;
+        this.transition.progress = 0.0;
+        
+        // Ensure new viz is visible for fade in
+        if (newViz) {
+            newViz.mesh.visible = true;
+            if (newViz.setOpacity) newViz.setOpacity(0.0);
+        }
+        
+        this.currentModeName = mode;
+    }
 
     public updateUniforms(data: any) {
         if (data.crossfader !== undefined) this.uniforms.uCrossfade.value = data.crossfader;
@@ -210,42 +368,17 @@ export class VisualEngine {
         }
 
         // FX Mappings
-        // Tape Echo -> uDub (Echo/Trails)
         if (data.DUB !== undefined) this.uniforms.uDub.value = data.DUB;
         if (data.TAPE_ACTIVE !== undefined && data.TAPE_ACTIVE === 0) this.uniforms.uDub.value = 0;
-
-        // Spectral Gate -> uGate (Stutter/Flash)
-        // Uses Threshold or Active state
-        if (data.SPECTRAL_GATE_ACTIVE !== undefined) {
-             // If active, use threshold for intensity, or just full on?
-             // Let's rely on GATE_THRESH passing through
-        }
-        if (data.GATE_THRESH !== undefined) {
-             // If GATE ACTIVE is forwarded as 1 or 0 we can gate this
-             // Simpler: Just map Thresh directly to visual gate
-             this.uniforms.uGate.value = data.GATE_THRESH * 5.0; // Boost sensitivity
-        }
-
-        // Cloud Grain -> uCloud (Noise Dissolve)
-        if (data.CLOUD_MIX !== undefined) {
-             this.uniforms.uCloud.value = data.CLOUD_MIX;
-        }
+        if (data.GATE_THRESH !== undefined) this.uniforms.uGate.value = data.GATE_THRESH * 5.0; 
+        if (data.CLOUD_MIX !== undefined) this.uniforms.uCloud.value = data.CLOUD_MIX;
         if (data.CLOUD_ACTIVE !== undefined) {
-             // If inactive, force 0? 
              if (data.CLOUD_ACTIVE === 0) this.uniforms.uCloud.value = 0;
-             else if (this.uniforms.uCloud.value === 0) this.uniforms.uCloud.value = 0.5; // Default if active but no mix sent
+             else if (this.uniforms.uCloud.value === 0) this.uniforms.uCloud.value = 0.5;
         }
         if (data.CLOUD_DENSITY !== undefined) this.uniforms.uCloudDensity.value = data.CLOUD_DENSITY;
-
-
-        // Decimator -> uDecimator (Pixel/Glitch)
-        if (data.DECIMATOR_ACTIVE !== undefined) {
-             this.uniforms.uDecimator.value = data.DECIMATOR_ACTIVE ? 1.0 : 0.0;
-        }
-        // If we had BITS param, we could modulate intensity
+        if (data.DECIMATOR_ACTIVE !== undefined) this.uniforms.uDecimator.value = data.DECIMATOR_ACTIVE ? 1.0 : 0.0;
         if (data.BITS !== undefined) {
-             // Lower bits = Higher distortion visually
-             // 16 bits -> 0 effect, 1 bit -> 1.0 effect
              const norm = 1.0 - (data.BITS / 16.0);
              if (this.uniforms.uDecimator.value > 0.5) {
                  this.uniforms.uDecimator.value = 0.5 + (norm * 0.5);
@@ -253,65 +386,55 @@ export class VisualEngine {
         }
     }
 
-    public randomizeColor(deck: 'A' | 'B') {
-        const h = Math.random();
-        const s = 0.5 + Math.random() * 0.5;
-        const l = 0.5 + Math.random() * 0.5;
-        const color = new THREE.Color().setHSL(h, s, l);
-        
-        if (deck === 'A') {
-            this.uniforms.uColorA.value = color;
-        } else {
-            this.uniforms.uColorB.value = color;
-        }
+    private isRendering: boolean = true;
+
+    public setRendering(active: boolean) {
+        this.isRendering = active;
     }
 
-    public setMode(mode: 'organic' | 'wireframe') {
-        this.uniforms.uMode.value = (mode === 'wireframe') ? 1.0 : 0.0;
-        // Also reset wireframe on material if it was set
-        if (this.material) this.material.wireframe = false;
+    public get mode(): string {
+        return this.currentModeName;
     }
 
-    public async updateTexture(deck: 'A' | 'B', url: string, type: 'video' | 'image') {
-        let tex: THREE.Texture;
-        
-        if (type === 'video') {
-            tex = this.textureManager.createVideoTexture(url);
-        } else {
-            tex = await this.textureManager.loadTexture(url);
-        }
-
-        if (deck === 'A') {
-            this.uniforms.uTextureA.value = tex;
-        } else {
-            this.uniforms.uTextureB.value = tex;
-        }
-    }
-
-    public async toggleWebcam(active: boolean) {
-        if (active) {
-            try {
-                const tex = await this.textureManager.createWebcamTexture();
-                // Override both for now, or just overlay?
-                // For "Living Biogram", let's make it the "fused" texture 
-                // but technically we have A and B. Let's set both or add a mix uniform?
-                // Simplest: Set both to Webcam.
+    public updateTexture(id: 'A' | 'B', url: string, mimeType: string) {
+        this.textureManager.loadTexture(url).then(tex => {
+            if (id === 'A') {
                 this.uniforms.uTextureA.value = tex;
+            } else {
                 this.uniforms.uTextureB.value = tex;
-            } catch (e) {
-                console.error("Webcam failed", e);
             }
+        });
+    }
+
+    public toggleWebcam(active: boolean) {
+        if (active) {
+            this.textureManager.createWebcamTexture().then(tex => {
+                this.uniforms.uTextureA.value = tex; 
+                this.uniforms.uTextureB.value = tex;
+            });
+        }
+    }
+
+    public randomizeColor(deck: 'A' | 'B') {
+        const r = Math.random();
+        const g = Math.random();
+        const b = Math.random();
+        const col = new THREE.Color(r, g, b);
+        
+        if (deck === 'A') {
+            this.uniforms.uColorA.value = col;
         } else {
-            // Revert? For now we don't store history. User has to reload file.
-            // Or we could store 'default'
+            this.uniforms.uColorB.value = col;
         }
     }
 
     public dispose() {
         cancelAnimationFrame(this.requestID);
-        window.removeEventListener('resize', this.onResize);
-        this.container.removeChild(this.renderer.domElement);
         this.renderer.dispose();
+        // Dispose textures/materials if needed
         this.textureManager.dispose();
+        
+        // Remove listeners
+        window.removeEventListener('resize', this.onResize);
     }
 }
