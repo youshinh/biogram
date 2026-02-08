@@ -1,22 +1,12 @@
-// @ts-ignore
 import { TapeTransport } from './dsp/tape-model';
-// @ts-ignore
 import { Decimator } from './dsp/decimator';
-// @ts-ignore
 import { TapeDelay } from './dsp/tape-delay';
-// @ts-ignore
 import { SpectralGate } from './dsp/spectral-gate';
-// @ts-ignore
 import { BloomReverb } from './dsp/bloom-reverb';
-// @ts-ignore
 import { Limiter } from './dsp/limiter';
-// @ts-ignore
 import { IsolatorEQ } from './dsp/isolator';
-// @ts-ignore
 import { SmoothValue } from './dsp/smooth-value';
-// @ts-ignore
 import { CloudGrain } from './dsp/cloud-grain';
-// @ts-ignore
 import { PinkNoise } from './dsp/pink-noise';
 import { BiquadFilter } from './dsp/biquad-filter';
 

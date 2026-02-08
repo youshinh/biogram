@@ -70,7 +70,6 @@ export class MusicClient {
         this.deckId = deckId;
         this.onAnalysis = onAnalysis;
         this.onTrackStart = onTrackStart;
-        this.onTrackStart = onTrackStart;
         this.visualAnalyzer = new VisualAnalyzer(apiKey);
         this.library = new LibraryStore();
         this.library.init().then(() => {
@@ -176,6 +175,12 @@ export class MusicClient {
         // Reset buffer immediately
         this.archiveBuffer = [];
         this.archiveSampleCount = 0;
+
+        // Capture audio-frame timing at chunk creation time.
+        // This avoids drift caused by async visual analysis latency.
+        const endFrame = this.adapter.getWritePointer(this.deckId);
+        const chunkFrames = Math.floor(totalLen / 2); // Stereo interleaved -> frames
+        const startFrame = Math.max(0, endFrame - chunkFrames);
         
     // Analyze & Save (Async)
         const stats = AudioAnalyser.analyze(merged);
@@ -205,7 +210,9 @@ export class MusicClient {
                          detail: {
                              deck: this.deckId,
                              score: visualScore,
-                             timestamp: Date.now() // For debug latency check
+                             timestamp: Date.now(), // Legacy debug field
+                             startFrame,
+                             endFrame
                          }
                      }));
                 }
@@ -281,7 +288,7 @@ export class MusicClient {
     }
 
     // AI Configuration State
-    private currentConfig: any = {
+    private currentConfig: { bpm?: number; density?: number } = {
         bpm: 120, // Default
         density: 0.5, // Default density if needed?
         // Add other defaults if known, or rely on merging
@@ -290,10 +297,11 @@ export class MusicClient {
     async setConfig(config: { bpm?: number }) {
         if (!this.session) return;
         try {
-            // @ts-ignore - API signature might vary in alpha
-            if (this.session.setMusicGenerationConfig) {
-                 // @ts-ignore
-                await this.session.setMusicGenerationConfig({ musicGenerationConfig: config });
+            const session = this.session as LiveMusicSession & {
+                setMusicGenerationConfig?: (payload: { musicGenerationConfig: { bpm?: number } }) => Promise<void>;
+            };
+            if (session.setMusicGenerationConfig) {
+                await session.setMusicGenerationConfig({ musicGenerationConfig: config });
                 console.log(`MusicClient[${this.deckId}]: Config updated`, config);
             }
         } catch(e) {
@@ -362,13 +370,16 @@ export class MusicClient {
         return this.isConnected && !this.isSmartPaused;
     }
 
+    public isConnectedState(): boolean {
+        return this.isConnected;
+    }
+
     async resetSession() {
         if (this.session) {
             console.log(`MusicClient[${this.deckId}]: Resetting session...`);
-            // @ts-ignore - Check if close exists or just rely on disconnect
-            if (this.session.close) {
-                 // @ts-ignore
-                this.session.close();
+            const session = this.session as LiveMusicSession & { close?: () => void };
+            if (session.close) {
+                session.close();
             }
             this.session = null;
             this.isConnected = false;

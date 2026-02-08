@@ -121,7 +121,7 @@ export const MetaballFragmentShader = `
 
   // Triplanar Mapping for seamless texturing
   vec3 triplanar(sampler2D tex, vec3 p, vec3 normal, float scale) {
-      vec3 blend = abs(normal);
+      vec3 blend = pow(abs(normal), vec3(0.75));
       blend /= (blend.x + blend.y + blend.z);
       
       vec2 uvX = p.yz * scale;
@@ -395,7 +395,7 @@ export const MetaballFragmentShader = `
           float kickPulse = uKickImpulse * 0.1; // Very subtle
           
           // 2. BASS BREATHING: Slow organic breathing
-          float breath = lowEnergy * 0.08 + kickPulse; // Gentle
+          float breath = lowEnergy * 0.095 + kickPulse; // Slightly stronger
           
           // 3. AUDIO-REACTIVE ROTATION ACCELERATION
           // Very gentle acceleration - mostly constant slow rotation
@@ -408,25 +408,25 @@ export const MetaballFragmentShader = `
           pCenter = rotateX(dynamicRotX) * pCenter;
           
           // 4. SURFACE DEFORMATIONS (Gentle - close to original)
-          float deformA = sin(pCenter.y * 4.0 + uTime * 2.0) * uLowA * 0.2;
-          float deformB = cos(pCenter.x * 5.0 - uTime * 1.5) * uLowB * 0.2;
+          float deformA = sin(pCenter.y * 2.0 + uTime * 1.2) * uLowA * 0.14;
+          float deformB = cos(pCenter.x * 2.4 - uTime * 1.0) * uLowB * 0.14;
           
           // 5. HIGH-FREQ SPIKES (Subtle)
-          float spikeA = sin(length(pCenter) * 8.0 - uTime * 4.0) * uHighA * 0.12;
-          float spikeB = -cos(length(pCenter) * 6.0 + uTime * 3.0) * uHighB * 0.12;
+          float spikeA = sin(dot(pCenter, vec3(1.2, 0.9, 0.7)) * 2.0 - uTime * 1.6) * uHighA * 0.05;
+          float spikeB = -cos(dot(pCenter, vec3(0.8, 1.1, 1.0)) * 1.8 + uTime * 1.3) * uHighB * 0.05;
           
           // Crossfade blend
           float deformBlend = mix(deformA + spikeA, deformB + spikeB, uCrossfade);
           
           // 6. ORGANIC UNDULATION (Base motion)
-          float organic1 = sin(pCenter.x * 2.0 + pCenter.y * 1.5 + uTime * 0.5) * 0.08;
-          float organic2 = cos(pCenter.y * 4.0 + pCenter.z * 3.0 + uTime * 0.8) * 0.05;
-          float organic3 = sin(pCenter.z * 8.0 + uTime * 3.0) * 0.02;
+          float organic1 = sin(pCenter.x * 1.4 + pCenter.y * 1.1 + uTime * 0.45) * 0.07;
+          float organic2 = cos(pCenter.y * 2.2 + pCenter.z * 1.8 + uTime * 0.65) * 0.048;
+          float organic3 = sin(pCenter.z * 2.6 + uTime * 1.4) * 0.012;
           float organicTotal = organic1 + organic2 + organic3;
           
           // 7. KICK WOBBLE: Very subtle asymmetric distortion
           if (uKickImpulse > 0.3) { // Higher threshold
-              float wobble = sin(pCenter.y * 6.0) * uKickImpulse * 0.04;
+              float wobble = sin(pCenter.y * 6.0) * uKickImpulse * 0.06;
               pCenter.x += wobble;
           }
           
@@ -534,7 +534,7 @@ export const MetaballFragmentShader = `
     vec3 rd = normalize(p - ro); 
     
     // FX: DECIMATOR
-    if (uDecimator > 0.1) {
+    if (uDecimator > 0.1 && uMode > 0.5) {
         float steps = 50.0 * (1.1 - uDecimator); 
         rd = floor(rd * steps) / steps;
     }
@@ -546,38 +546,37 @@ export const MetaballFragmentShader = `
     float tMax = 12.0; 
     
     // Raymarch Loop
-    for(int i = 0; i < 80; i++) { // Max steps for Gallery Detail
+    for(int i = 0; i < 96; i++) { // Slightly higher for smoother organic convergence
         float d = map(p);
-        
-        if(d < 0.01) { // Hit
+
+        float hitEps = (uMode < 0.5) ? 0.002 : 0.01;
+        if(d < hitEps) { // Hit
+            // Small backstep refinement to reduce contour-like raymarch banding
+            p -= rd * d * 0.5;
             vec3 normal = calcNormal(p);
             vec3 col = vec3(0.0);
             
             // Texture for Organic Mode (Original)
             if (uMode < 0.5) {
-                // Recover Object Space Coordinates to fix "swimming" textures
-                // 1. Re-apply rotations
+                // Recover Object Space Coordinates to keep texture locked to the body
                 float rotSpeed = 0.2;
                 vec3 pRot = rotateY(uTime * rotSpeed) * p;
                 pRot = rotateX(sin(uTime * 0.25) * 0.2) * pRot;
-                
-                // 2. Re-apply centering/drift
                 vec3 pCenter = pRot - vec3(0.0, sin(uTime * 0.5)*0.1, 0.0);
-                
-                // 3. Rotate Normal to match Object Space
+
                 vec3 nRot = rotateY(uTime * rotSpeed) * normal;
                 nRot = rotateX(sin(uTime * 0.25) * 0.2) * nRot;
 
                 vec3 lightPos = vec3(2.0, 4.0, 5.0);
                 float diff = max(dot(normal, normalize(lightPos - p)), 0.0);
-                
-                // Use Object Space (pCenter, nRot) for triplanar mapping
-                vec3 texA = triplanar(uTextureA, pCenter, nRot, 0.5); 
-                vec3 texB = triplanar(uTextureB, pCenter, nRot, 0.5);
-                
-                vec3 finalTex = mix(texA, texB, uCrossfade);
-                col = finalTex * (diff + 0.3);
-                col += vec3(1.0, 0.8, 0.6) * uLowA * 0.5; // Glow
+
+                vec3 texA = triplanar(uTextureA, pCenter, nRot, 0.45);
+                vec3 texB = triplanar(uTextureB, pCenter, nRot, 0.45);
+                vec3 texColor = mix(texA, texB, uCrossfade);
+
+                // Texture-first matte shading (no color overlay, no glossy glow)
+                float ambient = 0.28;
+                col = texColor * (ambient + diff * 0.82);
             } 
 
             else {

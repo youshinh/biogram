@@ -264,7 +264,7 @@ export class AppShell extends LitElement {
         height: auto;
         min-height: 100vh;
         overflow: visible;
-        padding-bottom: 80px; /* Space for bottom content */
+        padding-bottom: calc(92px + env(safe-area-inset-bottom)); /* Space for mobile tab bar */
       }
       
       /* Deck Row: Vertical stack */

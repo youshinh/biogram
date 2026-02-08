@@ -1,5 +1,6 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import type { AudioEngine } from '../../audio/engine';
 
 @customElement('hydra-visualizer')
 export class HydraVisualizer extends LitElement {
@@ -15,6 +16,9 @@ export class HydraVisualizer extends LitElement {
   private ctx: CanvasRenderingContext2D | null = null;
   private animationId: number = 0;
   private vjChannel: BroadcastChannel = new BroadcastChannel('vj_link');
+  private resizeObserver: ResizeObserver | null = null;
+  private lastCanvasWidth = 0;
+  private lastCanvasHeight = 0;
 
   // Interaction State
   private isScratching = false;
@@ -25,6 +29,8 @@ export class HydraVisualizer extends LitElement {
   
   // Zoom State
   private zoomScale = 100; 
+  private lastStableZoom = 100;
+  private static zoomByDeck: Record<string, number> = {};
   
   // Spectrogram History
   private spectrogramHistory: Uint8Array[] = [];
@@ -44,15 +50,34 @@ export class HydraVisualizer extends LitElement {
   @state() private loopCount = -1; 
   @state() private hasLoopConfigured = false;
 
+  private getEngine(): AudioEngine | null {
+      return window.engine ?? null;
+  }
+
+  private getCurrentDeck(): 'A' | 'B' {
+      return this.deckId === 'B' ? 'B' : 'A';
+  }
+
   firstUpdated() {
     this.canvas = this.querySelector('canvas');
     if (this.canvas) {
         this.ctx = this.canvas.getContext('2d');
+        this.applyCanvasSize(this.canvas.clientWidth, this.canvas.clientHeight, true);
         
-        // Initial Zoom to 16 seconds
-        const initialWidth = this.canvas.clientWidth;
-        if (initialWidth > 0) {
-            this.zoomScale = (16 * 44100) / initialWidth;
+        // Restore previous zoom for this deck if available.
+        // This prevents GEN/reset flows from collapsing the window scale.
+        const savedZoom = HydraVisualizer.zoomByDeck[this.deckId];
+        if (savedZoom && Number.isFinite(savedZoom)) {
+            this.zoomScale = savedZoom;
+            this.lastStableZoom = savedZoom;
+        } else {
+            // Initial Zoom to 16 seconds
+            const initialWidth = this.canvas.clientWidth;
+            if (initialWidth > 0) {
+                this.zoomScale = (16 * 44100) / initialWidth;
+                this.lastStableZoom = this.zoomScale;
+            }
+            HydraVisualizer.zoomByDeck[this.deckId] = this.zoomScale;
         }
 
         this.canvas.addEventListener('pointerdown', this.onPointerDown);
@@ -61,12 +86,12 @@ export class HydraVisualizer extends LitElement {
         this.canvas.addEventListener('pointerleave', this.onPointerUp);
         this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
         
-        new ResizeObserver(() => {
-            if(this.canvas) {
-                this.canvas.width = this.canvas.clientWidth;
-                this.canvas.height = this.canvas.clientHeight;
-            }
-        }).observe(this.canvas);
+        this.resizeObserver = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (!entry) return;
+            this.applyCanvasSize(entry.contentRect.width, entry.contentRect.height);
+        });
+        this.resizeObserver.observe(this.canvas);
         
         this.runLoop();
     }
@@ -74,8 +99,13 @@ export class HydraVisualizer extends LitElement {
 
   disconnectedCallback() {
       super.disconnectedCallback();
+      HydraVisualizer.zoomByDeck[this.deckId] = this.zoomScale;
       cancelAnimationFrame(this.animationId);
       this.vjChannel.close();
+      if (this.resizeObserver) {
+          this.resizeObserver.disconnect();
+          this.resizeObserver = null;
+      }
       if (this.canvas) {
           this.canvas.removeEventListener('pointerdown', this.onPointerDown);
           this.canvas.removeEventListener('pointermove', this.onPointerMove);
@@ -85,14 +115,35 @@ export class HydraVisualizer extends LitElement {
       }
   }
 
+  private applyCanvasSize(width: number, height: number, force = false) {
+      if (!this.canvas) return;
+      if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+      if (width <= 0 || height <= 0) return;
+
+      // Ignore transient tiny sizes during GEN/render churn.
+      // Keep the last known good canvas size to avoid WIN collapsing to ~0s.
+      const hasStableSize = this.lastCanvasWidth > 0 && this.lastCanvasHeight > 0;
+      const isTinyTransient = width < 100 || height < 40;
+      if (!force && hasStableSize && isTinyTransient) return;
+
+      const nextW = Math.round(width);
+      const nextH = Math.round(height);
+      if (nextW <= 0 || nextH <= 0) return;
+
+      this.canvas.width = nextW;
+      this.canvas.height = nextH;
+      this.lastCanvasWidth = nextW;
+      this.lastCanvasHeight = nextH;
+  }
+
   // --- LOOP LOGIC ---
 
   private toggleLoopMode() {
       this.isLoopMode = !this.isLoopMode;
       if (!this.isLoopMode) {
           this.hasLoopConfigured = false;
-          const engine = (window as any).engine;
-          if (engine) engine.setLoop(this.deckId, 0, 0, 0, -1, false);
+          const engine = this.getEngine();
+          if (engine) engine.setLoop(this.getCurrentDeck(), 0, 0, 0, -1, false);
       }
   }
   
@@ -104,7 +155,7 @@ export class HydraVisualizer extends LitElement {
   private setLoopPoint(sampleIndex: number) {
       if (!this.isLoopMode) return;
       
-      const engine = (window as any).engine;
+      const engine = this.getEngine();
       if (!engine) return;
       
       const isDeckA = this.deckId === 'A';
@@ -133,20 +184,20 @@ export class HydraVisualizer extends LitElement {
           this.loopStart = quantizedSample;
           this.loopEnd = null;
           this.hasLoopConfigured = false;
-          engine.setLoop(this.deckId, 0, 0, 0, -1, false);
+          engine.setLoop(this.getCurrentDeck(), 0, 0, 0, -1, false);
       }
       this.requestUpdate();
   }
   
   private updateEngineLoop() {
-      const engine = (window as any).engine;
+      const engine = this.getEngine();
       if (!engine || this.loopStart === null || this.loopEnd === null) return;
       
       const fadeSamples = this.loopCrossfadeVal > 0 ? (44100 * 0.1) : 0; 
       
       this.hasLoopConfigured = true;
       engine.setLoop(
-          this.deckId, 
+          this.getCurrentDeck(), 
           this.loopStart, 
           this.loopEnd, 
           fadeSamples, 
@@ -163,6 +214,8 @@ export class HydraVisualizer extends LitElement {
       if (e.deltaY > 0) this.zoomScale *= zoomFactor;
       else this.zoomScale /= zoomFactor;
       this.zoomScale = Math.max(1, Math.min(this.zoomScale, 5000));
+      this.lastStableZoom = this.zoomScale;
+      HydraVisualizer.zoomByDeck[this.deckId] = this.zoomScale;
   }
 
   private onPointerDown = (e: PointerEvent) => {
@@ -174,7 +227,8 @@ export class HydraVisualizer extends LitElement {
            const x = e.clientX - rect.left;
            const w = rect.width;
            const step = Math.ceil(this.zoomScale);
-           const engine = (window as any).engine;
+           const engine = this.getEngine();
+           if (!engine) return;
            const headPos = this.deckId === 'B' ? engine.getHeadB() : engine.getReadPointer();
            
            const center = w / 2;
@@ -190,11 +244,11 @@ export class HydraVisualizer extends LitElement {
       this.lastX = e.clientX;
       this.clickStartX = e.clientX;
       this.hasDragged = false;
-      const engine = (window as any).engine;
+      const engine = this.getEngine();
       
       if(engine) {
-          this.wasPlaying = !engine.isDeckStopped(this.deckId as 'A' | 'B');
-          engine.updateDspParam('SCRATCH_SPEED', 0.0, this.deckId as 'A'|'B');
+          this.wasPlaying = !engine.isDeckStopped(this.getCurrentDeck());
+          engine.updateDspParam('SCRATCH_SPEED', 0.0, this.getCurrentDeck());
       }
   }
 
@@ -208,24 +262,24 @@ export class HydraVisualizer extends LitElement {
       const deltaX = e.clientX - this.lastX;
       this.lastX = e.clientX;
       const speed = deltaX * -0.1; 
-      const engine = (window as any).engine;
-      if(engine) engine.updateDspParam('SCRATCH_SPEED', speed, this.deckId as 'A'|'B');
+      const engine = this.getEngine();
+      if(engine) engine.updateDspParam('SCRATCH_SPEED', speed, this.getCurrentDeck());
   }
 
   private onPointerUp = (e: PointerEvent) => {
       if (!this.isScratching) return;
       this.canvas?.releasePointerCapture(e.pointerId);
       this.isScratching = false;
-      const engine = (window as any).engine;
+      const engine = this.getEngine();
       if(engine) {
           if (this.wasPlaying) {
-              engine.updateDspParam('SPEED', 1.0, this.deckId as 'A'|'B');
+              engine.updateDspParam('SPEED', 1.0, this.getCurrentDeck());
               window.dispatchEvent(new CustomEvent('deck-play-sync', { 
                   detail: { deck: this.deckId, playing: true }
               }));
           } else {
-              engine.updateDspParam('SCRATCH_SPEED', 0.0, this.deckId as 'A'|'B');
-              engine.setTapeStop(this.deckId as 'A'|'B', true);
+              engine.updateDspParam('SCRATCH_SPEED', 0.0, this.getCurrentDeck());
+              engine.setTapeStop(this.getCurrentDeck(), true);
               window.dispatchEvent(new CustomEvent('deck-play-sync', { 
                   detail: { deck: this.deckId, playing: false }
               }));
@@ -250,6 +304,7 @@ export class HydraVisualizer extends LitElement {
   }
 
   public clear() {
+      const keepZoom = this.zoomScale;
       if (this.ctx && this.canvas) {
           this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       }
@@ -258,7 +313,10 @@ export class HydraVisualizer extends LitElement {
           if (this.spectrogramHistory[i]) this.spectrogramHistory[i].fill(0);
         }
       }
-      this.zoomScale = 1.0; 
+      // Keep current zoom/time window. GEN reset should not change user-selected scale.
+      this.zoomScale = keepZoom;
+      this.lastStableZoom = keepZoom;
+      HydraVisualizer.zoomByDeck[this.deckId] = this.zoomScale;
   }
 
   private runLoop = () => {
@@ -270,15 +328,27 @@ export class HydraVisualizer extends LitElement {
     
     // Guard: Skip rendering if canvas has no size (mobile layout transition)
     if (w <= 0 || h <= 0) return;
+
+    // Guard: if GEN/reset flow accidentally collapses scale, restore last known value.
+    if (this.zoomScale <= 1.001) {
+      const savedZoom = HydraVisualizer.zoomByDeck[this.deckId];
+      const fallbackZoom = savedZoom && savedZoom > 1.001 ? savedZoom : this.lastStableZoom;
+      if (fallbackZoom > 1.001) {
+        this.zoomScale = fallbackZoom;
+      }
+    } else {
+      this.lastStableZoom = this.zoomScale;
+      HydraVisualizer.zoomByDeck[this.deckId] = this.zoomScale;
+    }
     
     this.ctx.clearRect(0, 0, w, h);
 
-    const engine = (window as any).engine;
+    const engine = this.getEngine();
     if (!engine || !engine.masterAnalyser) {
         return;
     }
 
-    let spectrum = engine.getSpectrum(this.deckId as 'A' | 'B'); 
+    let spectrum = engine.getSpectrum(this.getCurrentDeck()); 
     const audioData = engine.getAudioData(); 
     
     const isDeckB = this.deckId === 'B';
@@ -288,7 +358,7 @@ export class HydraVisualizer extends LitElement {
     const latencySamples = Math.floor(latencySec * 44100);
     
     // FIX: Only compensate latency when playing to avoid jitter when stopped
-    if (!engine.isDeckStopped(this.deckId as 'A' | 'B')) {
+    if (!engine.isDeckStopped(this.getCurrentDeck())) {
         headPos -= latencySamples;
     }
     
@@ -354,7 +424,7 @@ export class HydraVisualizer extends LitElement {
      const totalSamples = w * this.zoomScale;
      const totalTimeSec = Math.round(totalSamples / 44100 * 100) / 100;
      const infoEl = this.querySelector('.info-display');
-     const isGenerating = engine.isGenerating(this.deckId) && (Date.now() % 1000 < 500);
+     const isGenerating = engine.isGenerating(this.getCurrentDeck()) && (Date.now() % 1000 < 500);
      
      const stateChanged = 
        this.lastInfoState.isGenerating !== isGenerating ||
@@ -511,7 +581,8 @@ export class HydraVisualizer extends LitElement {
       const step = Math.ceil(this.zoomScale);
       let diff = targetHeadPos - mainHeadPos;
       
-      const engine = (window as any).engine;
+      const engine = this.getEngine();
+      if (!engine) return;
       const bufferLen = engine.getAudioData().length;
       const maxFrames = Math.floor(bufferLen / 4); // Total samples / 4 (2 decks * 2 channels)
       
@@ -534,7 +605,7 @@ export class HydraVisualizer extends LitElement {
 
   private drawBarMarkers(w: number, h: number, headPos: number) {
       if (!this.ctx) return;
-      const engine = (window as any).engine;
+      const engine = this.getEngine();
       if (!engine) return;
       const isDeckA = this.deckId === 'A';
       const deckBpm = isDeckA ? engine.bpmA : engine.bpmB;

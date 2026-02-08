@@ -44,7 +44,7 @@ export class MixerControls extends LitElement {
   }
 
   private animateValues = () => {
-      const engine = (window as any).engine;
+      const engine = window.engine;
       if (!engine || !engine.context) return;
       
       const time = engine.context.currentTime;

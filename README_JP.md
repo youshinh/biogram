@@ -1,112 +1,175 @@
 # Bio:gram (Ghost in the Groove)
 
-> "Noise is where the universe resides. (ノイズこそが、宇宙の所在である)"
-
-**Bio:gram** は、**Google Gemini Flash** と高忠実度音楽生成モデル **Lyria** を搭載した実験的な AI DJ システムです。従来の線形的なオートミックスを超越し、**Deep Spectral Architect (深層スペクトル設計)** を採用することで、AI が「Ghost (幽霊)」のようなパートナーとして振る舞い、周波数帯域の譲り合い、有機的なパラメータ操作、そして物語性のあるトランジションをリアルタイムに実行します。
+現行実装（`src/`）を起点に再構成したコード準拠ドキュメントです。
+「理想仕様」ではなく、現在のコードで実際に動作している内容を記載しています。
 
 [🇺🇸 English](README.md)
 
 ![Main Interface](assets/screenshot1.png)
-*図1: AI Director パネルとデュアルデッキを備えたメインインターフェース*
 
-## 🌌 Core Philosophy (中心哲学)
+## 現在のプロダクト概要
+Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な要素は以下です。
+- Google Lyria (`lyria-realtime-exp`) によるデュアルデッキのリアルタイム音楽生成
+- Gemini Flash Lite (`gemini-flash-lite-latest`) によるミックス用オートメーションJSON生成
+- AudioWorklet ベースのDSPとミキシング
+- Three.js ベースのライブビジュアル
+- IndexedDB を使ったローカルループライブラリ
 
-### 1. Organic "Gardening" vs. Mechanical Mixing
-Bio:gram は DJ ミックスを単なるイベントの連鎖ではなく、**「生きた庭 (Living Garden)」** として扱います。AI は単にクロスフェードするのではなく、音響空間を「耕作（Cultivate）」します。パラメータのカーブに「Wobble (揺らぎ)」や「Drift (漂い)」といった人間特有の不完全性 (**Wabi-Sabi**) を意図的に導入し、計算された機械的な音ではなく、呼吸するようなミックスを生み出します。
+## 実装済み機能（コード基準）
 
-### 2. Deep Spectral Architecture
-音量を下げるだけの一般的なオートミックスとは異なり、Bio:gram は **Spectral Handoff (スペクトル譲渡)** 戦略を採用します。周波数帯域（低域、中域、高域）を外科的に分析・切除し、2つのキックドラムが決して衝突しないように制御しながら、高域のテクスチャだけを美しく織り交ぜます。
+### 1. デッキとトランスポート
+- Deck A / Deck B の独立再生・停止
+- SYNC トグル、BPM調整、TAP BPM
+- デッキごとのプロンプト入力と `GEN` トリガー
+- デッキ単位の可視化（`hydra-visualizer`）
+- `AudioEngine` 側で BPM 比率同期 + 位相合わせ
 
----
+関連:
+- `src/ui/modules/deck-controller.ts`
+- `src/audio/engine.ts`
 
-## ✨ Features
+### 2. AI Prompt-to-Music フロー
+- 初回は `INITIALIZE SYSTEM` で初期化
+- AudioWorklet ロード後、両デッキの Lyria セッションを接続
+- `GEN` でプロンプト更新（停止中デッキはハードリセット経由）
+- プロンプトは UI 状態（Ambient/Minimal/Dub/Impact/Color、Texture/Pulse、Key/Scale、Deck特性、SLAM状態）から生成
 
-### 🎹 Generative Audio Engine (Lyria)
-Google の音楽生成モデル **Lyria** (`lyria-realtime-exp`) を搭載し、Bio:gram は単にファイルを再生するだけでなく、リアルタイムにオーディオを生成します。
--   **Prompt-to-Music**: "Acid Techno 135BPM" と入力するだけで、スタジオ品質のループが即座に生成されます。
--   **Infinite Extension**: 4小節のループを、終わりのない進化し続けるストリームへと拡張できます。
+関連:
+- `src/main.ts`
+- `src/ai/prompt-generator.ts`
+- `src/ai/music-client.ts`
 
-### 🎛️ AI Mix Phase Architecture
-AI は、以下の4つの物語的フェーズを通じてミックスを指揮します。
-1.  **Presence (予兆)**: 次の曲はまだ実体を持たず、リバーブの残響やハイパスフィルタを通した「気配」としてのみ漂います。
-2.  **Spectral Handoff (交換)**: シグモイド曲線を用いて低域（Bass）を滑らかに入れ替え、エネルギーの主導権を有機的に移行させます。
-3.  **Wash Out (風化)**: 去りゆく曲はテープディレイやフィードバックループによって「風化」し、記憶の彼方へ溶けていきます。
-4.  **Silent Reset (浄化)**: ユーザーには見えない舞台裏で行われるパラメータのリセットフェーズです。
+### 3. AI Mix（Director Panel）
+- `A->B` / `B->A` のミックス生成要求
+- Duration（16/32/64/128）、Mood、Visual指定を付与
+- Gemini が `AutomationScore` JSON を返却
+- `AutomationEngine` が小節進行で補間実行（安全制御・禁止パラメータ制御あり）
+- UI 状態遷移: `IDLE -> GENERATING -> READY -> MIXING`
 
-### 👻 Ghost Faders & Vector Library
--   **Ghost Faders**: **Gemini Flash** が生成した「オートメーション・スコア」に基づき、画面上のスライダーやノブがまるで幽霊が触れているかのように自律的に動きます。
--   **Vector Loop Library**: 保存されたループは「Energy (エネルギー)」「Brightness (明るさ)」「Rhythm (リズム)」といった特徴ベクトルとして解析されます。システムはローカルのベクトルデータベース (IndexedDB) を使用し、単なるBPMの一致ではなく、音楽的な意味合いでの「類似性」や「相補性」に基づいたトラックの推薦を行います。
+関連:
+- `src/ui/modules/super-controls.ts`
+- `src/ai/mix-generator.ts`
+- `src/ai/automation-engine.ts`
 
-### 🧬 Living Biogram (Visuals)
-**Three.js + GLSL Raymarching** エンジンによる専用のビジュアライザ「Living Biogram」を搭載しています。2つのメタボールが曲を表し、ミックスに合わせて融合します。
--   **Organic Mode**: スペクトラム反射を伴う、液体的かつ金属的な表面表現。
--   **Particles Mode**: 周波数帯域に反応して明滅する無数の粒子（グレーの斑点）によるデータ駆動型ビジュアル。
--   **Projector Mode**: `?mode=viz` を別ウィンドウで開くことで、プロジェクターやサブモニターへの全画面出力に対応します。
+### 4. DSP / Mixer / FX
+- AudioWorklet Processor を中心にDSPを処理
+- クロスフェーダー、EQ/KILL、TRIM/DRIVE 連携
+- FXラック（Filter/Tape Echo/Bloom Verb/Spectral Gate/Cloud Grain/Decimator/Dynamics など）
+- SLAM マクロ（Filter/Res/Drive/Noise を連動）
 
----
+関連:
+- `src/audio/worklet/processor.ts`
+- `src/audio/worklet/dsp/*`
+- `src/ui/modules/dj-mixer.ts`
+- `src/ui/modules/fx-rack.ts`
 
-## 🎚️ Effects & DSP
+### 5. Visual System
+- 背景 `three-viz` を中心にビジュアル描画
+- Visual Controls:
+  - モード切替（`organic`, `wireframe`, `monochrome`, `rings`, `waves`, `suibokuga`, `grid`, `ai_grid`）
+  - Deckごとの画像/動画テクスチャ投入、Webcam入力
+  - Blur FX、描画ON/OFF
+  - `/?mode=viz` プロジェクターモード
+  - Zen Mode オーバーレイ
+- AI Grid パラメータ生成
+- Visualスコア同期は `MusicClient` が出すオーディオフレーム時刻（`startFrame/endFrame`）を優先し、ドリフトを抑制
 
-Bio:gram は AudioWorklet 上に構築されたカスタムオーディオエンジンにより、サンプル単位の正確な処理を実現しています。
+関連:
+- `src/ui/visuals/ThreeViz.ts`
+- `src/ui/visuals/VisualControls.ts`
+- `src/ai/grid-generator.ts`
 
--   **Slicer**: BPMに同期してオーディオを切り刻み、持続音からリズミカルなパターンを生成するゲートエフェクト。
--   **Tape Echo**: ダブスタイルのディレイ。フィードバックを上げることで「Wash Out」効果を生み出します。
--   **SLAM**: コンプレッサー、リミッター、ピンクノイズジェネレーターを統合したマスターバス用のエナジーライザー。劇的なビルドアップを作ります。
--   **Cloud Grain**: オーディオを微細な粒子（グレイン）へと分解し、雲のようなテクスチャに変えるグラニュラーエフェクト。
--   **Isolator EQ**: 特定の帯域を完全に消音（Kill）できるDJ仕様の3バンドEQ。
+### 6. ループライブラリ
+- 現在デッキ音声を 8/16/32/64/128 小節で保存
+- 保存前に音声有効率チェック
+- IndexedDB にタグ・ベクトル・BPM・プロンプト付きで保存
+- インポート/エクスポート（WAV）/削除
+- 現在デッキ特徴量との類似推薦
+- サイドバー開閉は明示制御（`setLibraryPanelVisible`）に変更し、開いた後に閉じられない問題を回避
 
----
+関連:
+- `src/ui/modules/loop-library-panel.ts`
+- `src/audio/db/library-store.ts`
+- `src/audio/utils/audio-analysis.ts`
+- `src/ui/bootstrap/library-sidebar.ts`
 
-## 🛠️ Tech Stack
+### 7. モバイルUI（現状）
+- 下部固定タブバーでビュー切替（`DECK / FX / VISUAL / AI MIX`）
+- デッキのモバイルミニ操作をタッチ向けに拡大（PLAY/GEN/BPM）
+- GENボタンに短いパルス演出を追加（押下フィードバック）
 
--   **Framework**: Vite + TypeScript
--   **Generative AI**: 
-    -   **Logic**: Google Gemini Flash (via `@google/genai`)
-    -   **Audio**: Google Lyria (`lyria-realtime-exp`)
--   **Audio Engine**: Web Audio API + AudioWorklet (DSP)
--   **Database**: IndexedDB + Vector Search (Local-First)
--   **Visuals**: Three.js + Custom Raymarching Shaders (GLSL)
--   **UI**: Lit (Web Components) + TailwindCSS
+## 実行アーキテクチャ
+- Main/UIスレッド:
+  - Lit コンポーネント
+  - `main.ts` で全体オーケストレーション
+  - AI API 呼び出し（Mix生成、Visual解析）
+  - bootstrap モジュールでイベント配線とクリーンアップを管理:
+    - `src/ui/bootstrap/deck-transport-events.ts`
+    - `src/ui/bootstrap/visual-sync-events.ts`
+    - `src/ui/bootstrap/library-sidebar.ts`
+    - `src/ui/bootstrap/zen-overlay.ts`
+- Audioスレッド:
+  - AudioWorklet + SharedArrayBuffer
+  - DSPチェーン処理
+- データ層:
+  - IndexedDB（`promptdj-ghost-memory`）
 
----
+## セットアップ
 
-## 🚀 Setup
+### 前提
+- Node.js 18+
+- コード内で使用する Gemini/Lyria へアクセスできる API キー
 
-### 1. Prerequisites
--   Node.js (v18以上推奨)
--   Google AI Studio API Key (Gemini)
-
-### 2. Installation
+### インストール
 ```bash
-git clone https://github.com/youshinh/biogram.git
-cd biogram
 npm install
 ```
 
-### 3. Environment Variables
-プロジェクトルートに `.env` ファイルを作成し、API キーを設定してください。
+### 環境変数
+プロジェクトルートに `.env` を作成:
 ```env
-GEMINI_API_KEY=your_api_key_here
+VITE_GEMINI_API_KEY=your_api_key_here
 ```
 
-### 4. Start
+補足:
+- 現在のクライアント実装は `VITE_GEMINI_API_KEY` を使用します。
+
+### 起動
 ```bash
 npm run dev
 ```
-ブラウザで `http://localhost:3000` を開き、庭園（Garden）に入場してください。
+`http://localhost:3000` を開きます。
 
-## 🎮 Usage
+## 基本操作フロー
+1. `INITIALIZE SYSTEM` を押す
+2. Deck A/B の再生と BPM・プロンプトを調整
+3. `GEN` でデッキの生成文脈を更新
+4. `SUPER` 画面で `A->B` または `B->A` を生成要求
+5. `START MIX` で実行開始
+6. 必要に応じて Visual モード切替 / Projector 利用
+7. ループを保存し、ライブラリから再読込
 
-1.  **Load & Play**: Deck A/B の "PLAY" ボタンを押して再生を開始します。
-2.  **Direct**: 中央の "SUPER CONTROLS" パネルを開きます。
-3.  **Prompt**: モード（例: "Deep Blend"）と長さ（例: "64 Bars"）を選択します。
-4.  **Influence**: "Mood" スライダー（Ambient, Acid など）を動かし、AI の生成傾向にバイアスを与えます。
-5.  **Inject**: **[ Deep Mix -> ]** ボタンを押すと、Ghost Fader が操作を開始します。
+## 評価・検証アセット
+現時点では `npm test` は未定義です。補助スクリプトとして以下があります。
+- `scripts/eval-beat-detector.ts`
+- `scripts/eval-beat-detector.js`
+- `py_bridge/analyze.py`
+- `py_bridge/test_analyze.py`
 
----
+## 重要な制約
+- `SharedArrayBuffer` 利用のため、Vite 開発サーバーでは COOP/COEP ヘッダを設定しています（`vite.config.ts`）。
+- Docker/Nginx 側は SPA 配信設定はありますが、COOP/COEP ヘッダはデフォルトで追加していません。
+- 品質・応答速度は外部モデルの可用性、API制限、レイテンシに依存します。
 
-## 🤝 Contributing
-Issue や Pull Request は歓迎します。投稿前に [CONTRIBUTING.md](CONTRIBUTING.md) をご一読ください。
+## ディレクトリ概要
+```text
+src/
+  ai/           Gemini/Lyria クライアント、Mix生成
+  audio/        AudioEngine、解析、Worklet DSP、IndexedDB
+  ui/           Lit UI（deck/mixer/super/visual）
+  midi/         MIDI 管理
+  types/        型定義
+```
 
-## 📄 License
-[MIT License](LICENSE)
+## ライセンス
+MIT

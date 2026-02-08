@@ -30,6 +30,33 @@ export class AppHeader extends LitElement {
       letter-spacing: 0.2em;
     }
 
+    .right-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .api-btn {
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #0b0b0b;
+      color: #9ca3af;
+      font-family: monospace;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .api-btn:hover {
+      color: #fff;
+      border-color: #06b6d4;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+    }
+
     /* DESKTOP NAV */
     .desktop-nav {
       display: none;
@@ -194,6 +221,78 @@ export class AppHeader extends LitElement {
       color: white;
       border-color: #059669;
     }
+
+    .mobile-tabbar {
+      display: none;
+    }
+
+    .mobile-tab-btn {
+      min-height: 54px;
+      border-radius: 12px;
+      border: 1px solid #2a2a2a;
+      background: #0c0c0c;
+      color: #8b8b8b;
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .mobile-tab-btn:active {
+      transform: scale(0.97);
+    }
+
+    .mobile-tab-btn.active {
+      background: #ffffff;
+      border-color: #ffffff;
+      color: #000000;
+    }
+
+    .mobile-tab-btn.active-rack {
+      background: #22d3ee;
+      border-color: #22d3ee;
+      color: #000;
+      box-shadow: 0 0 12px rgba(34, 211, 238, 0.35);
+    }
+
+    .mobile-tab-btn.active-visual {
+      background: #f43f5e;
+      border-color: #f43f5e;
+      color: #000;
+      box-shadow: 0 0 12px rgba(244, 63, 94, 0.35);
+    }
+
+    .mobile-tab-btn.active-super {
+      background: #a855f7;
+      border-color: #a855f7;
+      color: #000;
+      box-shadow: 0 0 12px rgba(168, 85, 247, 0.35);
+    }
+
+    @media (max-width: 1024px) {
+      .mobile-menu-btn,
+      .mobile-menu-overlay {
+        display: none !important;
+      }
+
+      .mobile-tabbar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.95));
+        backdrop-filter: blur(14px);
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        z-index: 1200;
+      }
+    }
   `;
 
   @state() currentView: 'DECK' | 'RACK' | 'SUPER' | 'VISUAL' = 'DECK';
@@ -261,6 +360,13 @@ export class AppHeader extends LitElement {
       }, 100);
   }
 
+  private openApiSettings() {
+      this.dispatchEvent(new CustomEvent('api-settings-open', {
+          bubbles: true,
+          composed: true
+      }));
+  }
+
   render() {
     return html`
       <div class="header-container">
@@ -278,29 +384,22 @@ export class AppHeader extends LitElement {
                       @click="${() => this.switchView('SUPER')}">AI_MIX</button>
           </div>
 
-          <!-- MOBILE MENU BTN -->
-          <button class="mobile-menu-btn ${this.mobileMenuOpen ? 'open' : ''}" @click="${this.toggleMenu}">
-              <div class="bar"></div>
-              <div class="bar"></div>
-              <div class="bar"></div>
-          </button>
+          <div class="right-controls">
+              <button class="api-btn" @click="${this.openApiSettings}">API</button>
+          </div>
+
       </div>
 
-      <!-- MOBILE OVERLAY -->
-      <div class="mobile-menu-overlay ${this.mobileMenuOpen ? 'open' : ''}">
-          <div class="menu-header">MENU</div>
-          
-          <button class="mobile-nav-item ${this.currentView === 'DECK' ? 'active' : ''}" 
-                  @click="${() => this.switchView('DECK')}">DECK VIEW</button>
-          
-          <button class="mobile-nav-item ${this.currentView === 'RACK' ? 'active-rack' : ''}" 
-                  @click="${() => this.switchView('RACK')}">FX RACK</button>
-          
-          <button class="mobile-nav-item ${this.currentView === 'VISUAL' ? 'active-visual' : ''}" 
-                  @click="${() => this.switchView('VISUAL')}">VISUAL (ZEN)</button>
-          
-          <button class="mobile-nav-item ${this.currentView === 'SUPER' ? 'active-super' : ''}" 
-                  @click="${() => this.switchView('SUPER')}">AI AUTO-MIX</button>
+      <!-- MOBILE TAB BAR -->
+      <div class="mobile-tabbar">
+          <button class="mobile-tab-btn ${this.currentView === 'DECK' ? 'active' : ''}"
+                  @click="${() => this.switchView('DECK')}">Deck</button>
+          <button class="mobile-tab-btn ${this.currentView === 'RACK' ? 'active-rack' : ''}"
+                  @click="${() => this.switchView('RACK')}">FX</button>
+          <button class="mobile-tab-btn ${this.currentView === 'VISUAL' ? 'active-visual' : ''}"
+                  @click="${() => this.switchView('VISUAL')}">Visual</button>
+          <button class="mobile-tab-btn ${this.currentView === 'SUPER' ? 'active-super' : ''}"
+                  @click="${() => this.switchView('SUPER')}">AI Mix</button>
       </div>
     `;
   }

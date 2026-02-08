@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
-import type { LoopSample } from '../../audio/db/library-store';
+import { LibraryStore, type LoopSample } from '../../audio/db/library-store';
 import { BeatDetector } from '../../audio/analysis/beat-detector';
 import { calculateVector } from '../../audio/utils/audio-analysis';
 
@@ -264,7 +264,7 @@ export class LoopLibraryPanel extends LitElement {
   @state() private isRecommendMode: boolean = false;
   @property({ type: String }) targetDeck: 'A' | 'B' = 'A';
 
-  private libraryStore: any = null;
+  private libraryStore: LibraryStore | null = null;
   
   // Minimum valid audio ratio for displaying samples (lower than this will be hidden)
   private static readonly MIN_VALID_AUDIO_RATIO = 0.8;
@@ -276,13 +276,12 @@ export class LoopLibraryPanel extends LitElement {
 
   private async loadLibrary() {
     try {
-      const { LibraryStore } = await import('../../audio/db/library-store');
       this.libraryStore = new LibraryStore();
       await this.libraryStore.init();
       const allSamples = await this.libraryStore.getAllSamples();
       
       // Filter out samples with insufficient audio (but keep legacy samples without validAudioRatio)
-      this.samples = allSamples.filter((s: any) => {
+      this.samples = allSamples.filter((s) => {
         // If validAudioRatio is not set (legacy data), show it
         if (s.validAudioRatio === undefined) return true;
         // Otherwise, only show samples with enough valid audio
@@ -312,11 +311,12 @@ export class LoopLibraryPanel extends LitElement {
     
     if (this.isRecommendMode) {
       // Get current deck vector from engine
-      const engine = (window as any).engine;
+      const engine = window.engine;
       if (engine && engine.getCurrentVector) {
         const vector = engine.getCurrentVector(this.targetDeck);
+        if (!this.libraryStore) return;
         this.filteredSamples = await this.libraryStore.findSimilar(vector, 10);
-        console.log('[LoopLibrary] Showing recommendations based on deck', this.targetDeck);
+        if (import.meta.env.DEV) console.log('[LoopLibrary] Showing recommendations based on deck', this.targetDeck);
       }
     } else {
       this.filteredSamples = this.samples;
@@ -355,6 +355,7 @@ export class LoopLibraryPanel extends LitElement {
     if (!confirm(`"${sample.name}" を削除しますか?`)) return;
     
     try {
+      if (!this.libraryStore) return;
       await this.libraryStore.deleteSample(sample.id);
       this.samples = this.samples.filter(s => s.id !== sample.id);
     } catch (err) {
@@ -377,7 +378,7 @@ export class LoopLibraryPanel extends LitElement {
     reader.onload = async (e) => {
       try {
         const arrayBuffer = e.target?.result as ArrayBuffer;
-        const engine = (window as any).engine;
+        const engine = window.engine;
 
         if (!engine || !engine.context) {
           console.error('[LoopLibrary] Audio engine not available');
@@ -395,6 +396,7 @@ export class LoopLibraryPanel extends LitElement {
         const bpm = beatInfo.bpm > 0 ? beatInfo.bpm : 120; // Default if failed
 
         // Save to Library
+        if (!this.libraryStore) return;
         await this.libraryStore.saveSample({
             name: file.name.replace(/\.[^/.]+$/, ""), // Remove extension
             prompt: 'Imported',

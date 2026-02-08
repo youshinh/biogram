@@ -16,6 +16,12 @@ export class TextureManager {
                 (tex) => {
                     tex.wrapS = THREE.RepeatWrapping;
                     tex.wrapT = THREE.RepeatWrapping;
+                    // Raymarch + triplanar sampling is sensitive to mip LOD transitions.
+                    // Disable mipmaps to avoid contour-like banding artifacts.
+                    tex.generateMipmaps = false;
+                    tex.minFilter = THREE.LinearFilter;
+                    tex.magFilter = THREE.LinearFilter;
+                    tex.needsUpdate = true;
                     resolve(tex);
                 },
                 undefined,

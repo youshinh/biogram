@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import type { VisualMode } from './modes';
 
 @customElement('visual-controls')
 export class VisualControls extends LitElement {
@@ -68,14 +69,6 @@ export class VisualControls extends LitElement {
                 min-height: 48px;
                 font-size: 14px;
                 padding: 14px;
-            }
-            
-            /* Zen Mode Button - Made prominent on mobile */
-            .panel:has(.panel-header:contains("ZEN")) button,
-            button.zen-btn {
-                min-height: 56px;
-                font-size: 16px;
-                background: linear-gradient(135deg, #be123c 0%, #9f1239 100%);
             }
             
             .viz-grid {
@@ -295,7 +288,7 @@ export class VisualControls extends LitElement {
 
     @state() webcamActive = false;
     @state() renderingEnabled = true;
-    @state() currentMode = 'organic';
+    @state() currentMode: VisualMode = 'organic';
     @state() zenModeActive = false;
 
     render() {
@@ -440,14 +433,6 @@ export class VisualControls extends LitElement {
         reader.readAsDataURL(file);
     }
 
-    private randomizeColor(deck: 'A' | 'B') {
-        this.dispatchEvent(new CustomEvent('visual-color-random', {
-            detail: { deck },
-            bubbles: true,
-            composed: true
-        }));
-    }
-
     private toggleWebcam() {
         this.webcamActive = !this.webcamActive;
         // Dispatch Event
@@ -470,7 +455,7 @@ export class VisualControls extends LitElement {
         }));
     }
 
-    private setMode(mode: 'organic' | 'wireframe' | 'monochrome' | 'rings' | 'waves' | 'suibokuga' | 'grid' | 'ai_grid') {
+    private setMode(mode: VisualMode) {
         this.currentMode = mode;
         this.dispatchEvent(new CustomEvent('visual-mode-change', {
             detail: { mode },
@@ -542,9 +527,9 @@ export class VisualControls extends LitElement {
     }
 
     private toggleZenMode() {
-        console.log('[VisualControls] toggleZenMode called, current state:', this.zenModeActive);
+        if (import.meta.env.DEV) console.log('[VisualControls] toggleZenMode called, current state:', this.zenModeActive);
         this.zenModeActive = !this.zenModeActive;
-        console.log('[VisualControls] Dispatching zen-mode-toggle to WINDOW, new state:', this.zenModeActive);
+        if (import.meta.env.DEV) console.log('[VisualControls] Dispatching zen-mode-toggle to WINDOW, new state:', this.zenModeActive);
         // Dispatch to window to ensure event reaches main.ts listener
         window.dispatchEvent(new CustomEvent('zen-mode-toggle', {
             detail: { active: this.zenModeActive }

@@ -1,7 +1,6 @@
 
 import { GoogleGenAI } from '@google/genai';
-import { AiGridParams, GridShape, WaveFunc } from '../ui/visuals/AiDynamicGrid';
-import { VJState } from '../../visual/types'; // Optional, if needed
+import { AiGridParams } from '../ui/visuals/AiDynamicGrid';
 
 const SYSTEM_PROMPT = `
 You are a Generative Visual Artist.

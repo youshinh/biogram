@@ -20,7 +20,7 @@ export class AudioEngine {
   public musicClientB: MusicClient;
   private isPlaying = false;
 
-  constructor() {
+  constructor(apiKey: string = '') {
     this.context = new AudioContext({ 
         sampleRate: 48000, // Updated to match Gemini Model Output Spec
         latencyHint: 'interactive' 
@@ -39,10 +39,6 @@ export class AudioEngine {
 
     // Initialize adapters
     this.adapter = new StreamAdapter(this.sab);
-    // Support both Vite env and process.env (legacy/fallback)
-    // @ts-ignore
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
-    
     this.musicClientA = new MusicClient(this.adapter, apiKey, 'A', (bpm, offset) => {
         if (import.meta.env.DEV) console.log(`[Engine] Auto-detected BPM for A: ${bpm}`);
         this.setDeckBpm('A', bpm);
@@ -81,7 +77,6 @@ export class AudioEngine {
         outputChannelCount: [2, 2, 2]
       });
 
-      // Force Pause State (Stop Tape)
       // This ensures we buffer content but don't play it until user asks.
       // Force Pause State (Stop Tape)
       // This ensures we buffer content but don't play it until user asks.
@@ -551,8 +546,8 @@ export class AudioEngine {
   }
   
   getAiStatus(): string {
-      const a = this.musicClientA ? (this.musicClientA as any).isConnected ? 'ON' : 'OFF' : 'OFF';
-      const b = this.musicClientB ? (this.musicClientB as any).isConnected ? 'ON' : 'OFF' : 'OFF';
+      const a = this.musicClientA?.isConnectedState() ? 'ON' : 'OFF';
+      const b = this.musicClientB?.isConnectedState() ? 'ON' : 'OFF';
       return `A:${a} B:${b}`; 
   }
 

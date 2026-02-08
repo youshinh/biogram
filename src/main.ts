@@ -16,9 +16,15 @@ import './ui/modules/super-controls';
 import './ui/visuals/ThreeViz';
 import './ui/visuals/VisualControls';
 import type { ThreeViz } from './ui/visuals/ThreeViz';
+import type { VisualControls } from './ui/visuals/VisualControls';
 import { AutomationEngine } from './ai/automation-engine';
 import { MixGenerator } from './ai/mix-generator';
 import { GridGenerator } from './ai/grid-generator';
+import { setupLibrarySidebar } from './ui/bootstrap/library-sidebar';
+import { setupZenOverlay } from './ui/bootstrap/zen-overlay';
+import { setupDeckTransportEvents } from './ui/bootstrap/deck-transport-events';
+import { setupVisualSyncEvents } from './ui/bootstrap/visual-sync-events';
+import { ApiKeyManager } from './config/api-key-manager';
 import type { AppShell } from './ui/shell';
 import type { FxRack } from './ui/modules/fx-rack';
 import type { DeckController } from './ui/modules/deck-controller';
@@ -33,7 +39,9 @@ import {
     mkOverlay, 
     mkSliderHelper 
 } from './ui/ui-helpers';
-import { generatePrompt, generateNegativePrompt, getDisplayPromptParts, PromptState } from './ai/prompt-generator';
+import { generatePrompt, getDisplayPromptParts } from './ai/prompt-generator';
+import { LibraryStore } from './audio/db/library-store';
+import { analyzeAudioValidity } from './audio/utils/audio-analysis';
 
 // 1. ROOT (基音) のリスト
 const ROOT_OPTIONS = [
@@ -62,22 +70,24 @@ const SCALE_OPTIONS = [
   { label: "ATONAL",     prompt: "Atonal, no key, chaotic, avant-garde" }
 ];
 
+type BioSliderElement = HTMLElement & { value?: number | string };
 
-console.log("Bio:gram v2.0 'Ghost in the Groove' initializing...");
+if (import.meta.env.DEV) {
+    console.log("Bio:gram v2.0 'Ghost in the Groove' initializing...");
+}
 
 // Init Engine Early (but don't start audio context yet)
-const engine = new AudioEngine();
+const apiKeyManager = new ApiKeyManager(import.meta.env.VITE_GEMINI_API_KEY || '');
+const apiKey = apiKeyManager.getApiKey();
+const engine = new AudioEngine(apiKey);
 window.engine = engine;
 
-// Init MIDI
 // Init MIDI
 const midiManager = new MidiManager();
 window.midiManager = midiManager;
 
 // Init AI Mix Engine
 const autoEngine = new AutomationEngine(engine);
-// @ts-ignore
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
 const mixGen = new MixGenerator(apiKey);
 const gridGen = new GridGenerator(apiKey);
 
@@ -113,6 +123,147 @@ if (isVizMode) {
     const viewContainer = document.createElement('div');
     viewContainer.id = "app-root"; // Control via CSS instead of inline styles
 
+    const hasApiKey = () => apiKeyManager.hasApiKey();
+    let apiSettingsOverlay: HTMLDivElement | null = null;
+
+    const openApiSettingsModal = (required: boolean = false) => {
+        if (apiSettingsOverlay) return;
+
+        const overlay = document.createElement('div');
+        apiSettingsOverlay = overlay;
+        Object.assign(overlay.style, {
+            position: 'fixed',
+            inset: '0',
+            background: 'rgba(0,0,0,0.78)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: '2500'
+        });
+
+        const panel = document.createElement('div');
+        Object.assign(panel.style, {
+            width: 'min(92vw, 460px)',
+            background: '#0b0b0b',
+            border: '1px solid #2c2c2c',
+            borderRadius: '14px',
+            padding: '18px',
+            color: '#ddd',
+            fontFamily: 'monospace',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.45)'
+        });
+
+        const title = document.createElement('h3');
+        title.textContent = 'API SETTINGS';
+        title.style.margin = '0 0 10px 0';
+        title.style.fontSize = '14px';
+        title.style.letterSpacing = '0.12em';
+        panel.appendChild(title);
+
+        const desc = document.createElement('p');
+        desc.textContent = required
+            ? 'APIキーが未設定です。ローカル保存して初期化を続行してください。'
+            : 'Gemini APIキーをローカル保存します。保存後、ページを再読み込みします。';
+        Object.assign(desc.style, {
+            margin: '0 0 12px 0',
+            color: '#a1a1aa',
+            fontSize: '12px',
+            lineHeight: '1.5'
+        });
+        panel.appendChild(desc);
+
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.value = apiKeyManager.getStoredApiKey();
+        input.placeholder = 'AIza...';
+        Object.assign(input.style, {
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '10px 12px',
+            borderRadius: '10px',
+            border: '1px solid #3a3a3a',
+            background: '#111',
+            color: '#fff',
+            marginBottom: '12px'
+        });
+        panel.appendChild(input);
+
+        const actions = document.createElement('div');
+        Object.assign(actions.style, {
+            display: 'flex',
+            gap: '8px',
+            justifyContent: 'flex-end'
+        });
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'CLOSE';
+        Object.assign(closeBtn.style, {
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid #3a3a3a',
+            background: '#161616',
+            color: '#a1a1aa',
+            cursor: required ? 'not-allowed' : 'pointer',
+            opacity: required ? '0.5' : '1'
+        });
+        closeBtn.disabled = required;
+
+        const clearBtn = document.createElement('button');
+        clearBtn.textContent = 'CLEAR';
+        Object.assign(clearBtn.style, {
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid #5b1f1f',
+            background: '#1a0d0d',
+            color: '#fca5a5',
+            cursor: 'pointer'
+        });
+
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = 'SAVE';
+        Object.assign(saveBtn.style, {
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid #06b6d4',
+            background: '#08363d',
+            color: '#e0f2fe',
+            cursor: 'pointer'
+        });
+
+        const closeModal = () => {
+            overlay.remove();
+            apiSettingsOverlay = null;
+        };
+
+        closeBtn.onclick = () => closeModal();
+        overlay.onclick = (e) => {
+            if (required) return;
+            if (e.target === overlay) closeModal();
+        };
+        clearBtn.onclick = () => {
+            apiKeyManager.clearApiKey();
+            input.value = '';
+        };
+        saveBtn.onclick = () => {
+            const key = input.value.trim();
+            if (!key) {
+                alert('APIキーを入力してください。');
+                return;
+            }
+            apiKeyManager.setApiKey(key);
+            alert('APIキーを保存しました。再読み込みして反映します。');
+            window.location.reload();
+        };
+
+        actions.appendChild(closeBtn);
+        actions.appendChild(clearBtn);
+        actions.appendChild(saveBtn);
+        panel.appendChild(actions);
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+        input.focus();
+    };
+
     // --- PROMPT STATE MANAGEMENT (Centralized) ---
     // Central State (UI Values are shared, Context is per-deck)
     const uiState = {
@@ -125,7 +276,6 @@ if (isVizMode) {
         valTexture: 0, 
         typePulse: 'Sub-bass Pulse',
         valPulse: 0,
-        // Scale Params
         // Scale Params
         keyRoot: "",
         scaleLabel: "",
@@ -186,13 +336,8 @@ if (isVizMode) {
     // 1. HEADER (Navigation)
     const header = document.createElement('app-header');
     header.style.flexShrink = '0';
+    header.addEventListener('api-settings-open', () => openApiSettingsModal(false));
     viewContainer.appendChild(header);
-
-    // View State
-    header.addEventListener('view-change', (e: any) => {
-         const view = e.detail.view;
-         shell.view = view; // Update Shell View State
-    });
     
     // 2. VIEWS
     // A. Main Shell (Default Full)
@@ -203,6 +348,18 @@ if (isVizMode) {
     shell.style.minHeight = '0';
     shell.style.borderBottom = "1px solid #333";
     viewContainer.appendChild(shell);
+
+    // View State
+    const applyViewChange = (e: Event) => {
+        const detail = (e as CustomEvent).detail;
+        const view = detail?.view as AppShell['view'] | undefined;
+        if (!view) return;
+        shell.view = view; // Update Shell View State
+    };
+
+    // Primary path (header local event) + fallback path (window-level propagation)
+    header.addEventListener('view-change', applyViewChange as EventListener);
+    window.addEventListener('view-change', applyViewChange as EventListener);
     
     // B. FX Rack
     const fxRack = document.createElement('fx-rack') as FxRack;
@@ -226,10 +383,8 @@ if (isVizMode) {
     deckA.slot = 'deck-a';
     shell.appendChild(deckA);
 
-    // 1. Mixer
-    const mixer = document.createElement('dj-mixer') as DjMixer;
-    mixer.slot = 'mixer';
-    mixer.addEventListener('mixer-change', (e: any) => {
+    // Shared mixer change handler for dj-mixer and mixer-controls
+    const handleMixerChange = (e: any) => {
         const { id, val } = e.detail;
             
         if (id === 'CROSSFADER') {
@@ -254,12 +409,18 @@ if (isVizMode) {
         } else if (type === 'KILL') {
             engine.setKill(deck, band, val > 0.5);
         }
-    });
+    };
+
+    // 1. Mixer
+    const mixer = document.createElement('dj-mixer') as DjMixer;
+    mixer.slot = 'mixer';
+    mixer.addEventListener('mixer-change', handleMixerChange);
     shell.appendChild(mixer);
 
     // 1.5 Mixer Controls (BPM & Crossfader)
     const mixerControls = document.createElement('mixer-controls');
     mixerControls.slot = 'mixer-controls';
+    mixerControls.addEventListener('mixer-change', handleMixerChange);
     shell.appendChild(mixerControls);
 
     // 2. Deck B
@@ -274,7 +435,7 @@ if (isVizMode) {
     shell.appendChild(superCtrl);
 
     // 4. Visual Controls (Tab)
-    const vizControls = document.createElement('visual-controls');
+    const vizControls = document.createElement('visual-controls') as VisualControls;
     vizControls.slot = 'visual-controls'; // Correct slot name
     shell.appendChild(vizControls);
 
@@ -302,7 +463,6 @@ if (isVizMode) {
     // Shell CSS has `background-color: #0a0a0c`. We need to remove that or make it transparent.
     // Let's append to body directly underneath viewContainer?
     // viewContainer has `background: #000`.
-    viewContainer.style.background = 'transparent'; // Allow viz to show
     viewContainer.style.background = 'transparent'; // Allow viz to show
     
     // Move threeViz to Body (Behind ViewContainer)
@@ -347,14 +507,14 @@ if (isVizMode) {
     });
 
     vizControls.addEventListener('ai-grid-gen-trigger', async () => {
-        console.log('[Main] Generating AI Grid Params...');
+        if (import.meta.env.DEV) console.log('[Main] Generating AI Grid Params...');
         // Context: Current BPM, Mood from UI State?
         const context = `BPM: ${engine.masterBpm}, Mood: ${uiState.theme || 'Dynamic Flow'}`;
         
         try {
             const params = await gridGen.generateParams(context);
             if (params) {
-                console.log('[Main] AI Grid Params Applied:', params);
+                if (import.meta.env.DEV) console.log('[Main] AI Grid Params Applied:', params);
                 threeViz.setAiGridParams(params);
             }
         } catch (e) {
@@ -363,7 +523,6 @@ if (isVizMode) {
     });
 
 
-    // AI Mix Event Handling
     let pendingMixContext: { sourceId: string, targetId: string } | null = null;
 
     // AI Mix Event Handling
@@ -441,7 +600,7 @@ if (isVizMode) {
     superCtrl.addEventListener('ai-mix-start', () => {
         if (superCtrl.mixState !== 'READY') return;
         
-        console.log(`[AI Mix] Starting Mix...`);
+        if (import.meta.env.DEV) console.log(`[AI Mix] Starting Mix...`);
         superCtrl.mixState = 'MIXING';
         superCtrl.addLog(`MIX STARTED.`);
 
@@ -454,11 +613,11 @@ if (isVizMode) {
 
             // 1. Force Source Deck to Play (The track leaving)
             // Always force play state to ensure sync
-            console.log(`[SafetyNet] Force Ensuring Source Deck ${sourceId} Playing`);
+            if (import.meta.env.DEV) console.log(`[SafetyNet] Force Ensuring Source Deck ${sourceId} Playing`);
             window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: sourceId, playing: true } }));
             
             // 2. Force Target Deck to Play (The track entering)
-            console.log(`[SafetyNet] Force Ensuring Target Deck ${targetId} Playing`);
+            if (import.meta.env.DEV) console.log(`[SafetyNet] Force Ensuring Target Deck ${targetId} Playing`);
             window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: targetId, playing: true } }));
         }
 
@@ -482,74 +641,10 @@ if (isVizMode) {
     });
 
     
-    // Listen for Deck Events
-    // Listen for Deck Events
-    window.addEventListener('deck-play-toggle', (e:any) => {
-        // Support both manual (deck, playing) and AI (deckId) events
-        const deckId = e.detail.deck || e.detail.deckId;
-        console.log(`[Main] deck-play-toggle received: ${deckId}, playing: ${e.detail.playing}`);
-        if (!deckId) return;
-
-        const deck = deckId as 'A' | 'B';
-        let playing = e.detail.playing;
-
-        // If playing state is not specified (e.g. from AI Automation), toggle based on current engine state
-        if (playing === undefined) {
-            playing = engine.isDeckStopped(deck);
-        }
-
-        if (playing) {
-             engine.setTapeStop(deck, false);
-             engine.unmute(deck); // Ensure we are unmuted (fixes GEN silence bug)
-             engine.resume();
-             console.log('[Main] Engine Resumed (Sync)');
-        } else {
-             engine.setTapeStop(deck, true);
-        }
-
-        // Sync UI (DeckController listens to this)
-        window.dispatchEvent(new CustomEvent('deck-play-sync', {
-            detail: { deck: deck, playing: playing }
-        }));
-    });
-
-    window.addEventListener('deck-bpm-change', (e:any) => {
-        const { deck, bpm } = e.detail;
-        if (import.meta.env.DEV) console.log(`Deck ${deck} BPM: ${bpm}`);
-        engine.setDeckBpm(deck as 'A' | 'B', bpm);
-    });
-    
-    window.addEventListener('deck-sync-toggle', (e:any) => {
-        const { deck, sync } = e.detail;
-        // Access specific instances directly to guarantee correctness
-        const deckEl = deck === 'A' ? deckA : deckB;
-        
-        if (sync) {
-            // Sync implies Play in this workflow? User says "auto plays".
-            // Let's enforce Play state to match user experience & fix UI Sync.
-            if (deckEl) {
-                deckEl.isPlaying = true; // Update UI
-                if (import.meta.env.DEV) console.log(`[UI SYNC] Set Deck ${deck} UI to PLAYING`);
-            } else {
-                console.warn(`[UI SYNC] Could not find deck element for ${deck}`);
-            }
-            engine.setTapeStop(deck as 'A' | 'B', false); // Update Engine check
-            engine.syncDeck(deck as 'A' | 'B');
-        } else {
-            engine.unsyncDeck(deck as 'A' | 'B');
-            // Do we stop on unsync? Usually no, just decouple.
-        }
-    });
-
-    window.addEventListener('bpm-change', (e:any) => {
-        const bpm = e.detail;
-        engine.setMasterBpm(bpm);
-    });
-
-    window.addEventListener('deck-prompt-change', (e: any) => {
-        const { deck, prompt } = e.detail;
-        uiState.theme = prompt; // Use as theme
-        // updatePrompts(); // Latch: Wait for GEN
+    const { dispose: disposeDeckTransportEvents } = setupDeckTransportEvents({
+        engine,
+        deckA,
+        deckB
     });
 
     // Shared Handler
@@ -623,87 +718,18 @@ if (isVizMode) {
         if (import.meta.env.DEV) console.log(`[GEN ${deck} (Update)] ${prompt}`);
     };
 
-    // --- VISUAL / FX SYNC ---
-    // Forward FX Rack changes to Visual Engine
-    window.addEventListener('param-change', (e: any) => {
-        const { id, val } = e.detail;
-        // console.log(`[FX->VIZ] ${id}: ${val}`);
-        
-        // Forward as a generic message to ThreeViz
-        // ThreeViz will need to handle these IDs
-        // Map common IDs to visual friendly names if needed, or just pass through
-        threeViz.sendMessage(id, val);
-    });
-
-    // Forward Mixer changes (EQ, Crossfader)
-    window.addEventListener('mixer-change', (e: any) => {
-        const { id, val } = e.detail;
-        threeViz.sendMessage(id, val);
-    });
-
     // Attach specifically to deck instances to avoid global bubbling confusion (though window bubbling should work if deckId is correct)
     deckA.addEventListener('deck-load-random', handleLoadRandom as EventListener);
     deckB.addEventListener('deck-load-random', handleLoadRandom as EventListener);
-    
-    // --- LOOK-AHEAD VISUAL SYNC ---
-    window.addEventListener('visual-score-update', (e: any) => {
-        const { deck, score } = e.detail;
-        
-        // Calculate Stream Time
-        // The chunk just arrived at the WRITE buffer.
-        // So its start time is (writePointer - offset) / 44100 ?
-        // Actually, let's assume the score corresponds to the *latest* audio written.
-        // AudioEngine write pointer is global for the circular buffer (infinite stream simulation?)
-        // Actually AudioEngine uses Read/Write pointers on SAB.
-        
-        // We need the Write Pointer converted to seconds.
-        // Note: MusicClient logic in flushArchive() processes 'merged' chunk.
-        // It pushes to 'archiveBuffer' as it plays? No, MusicClient writes to SAB.
-        // 'archiveBuffer' accumulates what WAS written.
-        // So this chunk represents the audio ending at Current Write Pointer.
-        
-        const writePtr = engine.getWritePointer(); // Frames?
-        // AudioEngine.getWritePointer returns index.
-        // Since it's a ring buffer, the index wraps.
-        // BUT MusicClient tracks "Total Samples Written"? No.
-        
-        // Simpler approach for now:
-        // Use `audioContext.currentTime` + BufferLatency?
-        // Or assumes 'writePtr' is monotonically increasing in the underlying engine/processor?
-        // Processor usually increments monotonic pointers.
-        
-        // Let's use `engine.getWritePointer()` assuming it's monotonic (from Processor logic).
-        // If it wraps, we have a problem. 
-        // Processor usually: `Atomics.store(..., ptr + 128)`. It does NOT wrap in value, only in access.
-        // So it is monotonic.
-        
-        const endFrame = engine.getWritePointer();
-        // The chunk size ... we don't know exact chunk size here unless passed.
-        // VisualChunk doesn't have duration? It has timeline events with 'time'.
-        // Assuming chunk is recent.
-        // Let's rely on MusicClient to eventually pass exact timestamp or we approximate.
-        
-        // Approximation: This chunk ends NOW at the write head.
-        // So Start Time = End Time - (Duration of Chunk).
-        // Duration ~ 4 seconds (from MusicClient constant).
-        
-        const nowSeconds = endFrame / 44100.0;
-        const estimatedDuration = 4.0; // Fixed in MusicClient
-        const startTime = Math.max(0, nowSeconds - estimatedDuration);
-        
-        if (import.meta.env.DEV) {
-            // console.log(`[Main] Visual Update [${deck}] @ ${startTime.toFixed(2)}s`);
-        }
-        
-        threeViz.addVisualScore(deck, score, startTime);
+    const { dispose: disposeVisualSyncEvents } = setupVisualSyncEvents({
+        engine,
+        threeViz
     });
 
     // --- SAVE LOOP HANDLER ---
-    // Import LibraryStore dynamically to avoid circular deps
-    let libraryStore: any = null;
+    let libraryStore: LibraryStore | null = null;
     const getLibraryStore = async () => {
         if (!libraryStore) {
-            const { LibraryStore } = await import('./audio/db/library-store');
             libraryStore = new LibraryStore();
             await libraryStore.init();
         }
@@ -786,7 +812,7 @@ if (isVizMode) {
         // Show save dialog
         const result = await showSaveDialog();
         if (!result) {
-            console.log('[SAVE HANDLER] Save cancelled by user');
+            if (import.meta.env.DEV) console.log('[SAVE HANDLER] Save cancelled by user');
             return;
         }
         const { bars, name } = result;
@@ -799,7 +825,6 @@ if (isVizMode) {
         }
 
         // --- Audio Validity Check ---
-        const { analyzeAudioValidity } = await import('./audio/utils/audio-analysis');
         const validityResult = analyzeAudioValidity(loopData.pcmData, 44100, 0.001, 0.8);
         
         if (!validityResult.hasEnoughAudio) {
@@ -810,14 +835,14 @@ if (isVizMode) {
                 `このまま保存しますか？`
             );
             if (!proceed) {
-                console.log('[SAVE HANDLER] Save cancelled due to insufficient audio');
+                if (import.meta.env.DEV) console.log('[SAVE HANDLER] Save cancelled due to insufficient audio');
                 return;
             }
         }
 
         // Get current prompt for metadata
         const targetDeck = deck === 'A' ? deckA : deckB;
-        const prompt = (targetDeck as any).generatedPrompt || uiState.theme || 'Unknown';
+        const prompt = targetDeck.generatedPrompt || uiState.theme || 'Unknown';
 
         // --- Auto-generate tags from UI state ---
         const currentBpm = engine.masterBpm;
@@ -861,7 +886,9 @@ if (isVizMode) {
                 pcmData: loopData.pcmData,
                 validAudioRatio: validityResult.validRatio
             });
-            console.log(`[SAVE HANDLER] Loop saved: ${name} (${loopData.duration.toFixed(1)}s @ ${loopData.bpm} BPM) [Valid: ${Math.round(validityResult.validRatio * 100)}%] [Tags: ${tags.join(', ')}]`);
+            if (import.meta.env.DEV) {
+                console.log(`[SAVE HANDLER] Loop saved: ${name} (${loopData.duration.toFixed(1)}s @ ${loopData.bpm} BPM) [Valid: ${Math.round(validityResult.validRatio * 100)}%] [Tags: ${tags.join(', ')}]`);
+            }
             
             // Visual feedback
             alert(`ループを保存しました: ${name}\nタグ: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
@@ -894,13 +921,21 @@ if (isVizMode) {
     controlsContainer.className = 'controls-grid';
 
     // Store references to sliders for randomization
-    const sliderRefs: { name: string, wrapper: HTMLElement, slider: HTMLElement }[] = [];
-    const comboRefs: { name: string, wrapper: HTMLElement, select: HTMLSelectElement, slider: HTMLElement }[] = [];
+    const sliderRefs: { name: string, wrapper: HTMLElement, slider: BioSliderElement }[] = [];
+    const comboRefs: { name: string, wrapper: HTMLElement, select: HTMLSelectElement, slider: BioSliderElement }[] = [];
+    const setBioSliderValue = (slider: BioSliderElement, value: number) => {
+        slider.value = value;
+        slider.dispatchEvent(new CustomEvent('change', {
+            detail: value,
+            bubbles: true,
+            composed: true
+        }));
+    };
 
     // Helper to create slider with reference
     const createAiSliderWithRef = (label: string, onChange: (val: number) => void): HTMLElement => {
         const wrapper = createAiSlider(label, onChange);
-        const slider = wrapper.querySelector('bio-slider') as HTMLElement;
+        const slider = wrapper.querySelector('bio-slider') as BioSliderElement | null;
         if (slider) {
             sliderRefs.push({ name: label, wrapper, slider });
         }
@@ -911,7 +946,7 @@ if (isVizMode) {
     const createComboSlotWithRef = (label: string, options: string[], onChange: (sel: string, val: number) => void): HTMLElement => {
         const wrapper = createComboSlot(label, options, onChange);
         const select = wrapper.querySelector('select') as HTMLSelectElement;
-        const slider = wrapper.querySelector('bio-slider') as HTMLElement;
+        const slider = wrapper.querySelector('bio-slider') as BioSliderElement | null;
         if (select && slider) {
             comboRefs.push({ name: label, wrapper, select, slider });
         }
@@ -1066,12 +1101,7 @@ if (isVizMode) {
         // Randomize all main sliders (0-100)
         sliderRefs.forEach(ref => {
             const randomVal = Math.floor(Math.random() * 100);
-            (ref.slider as any).value = randomVal;
-            ref.slider.dispatchEvent(new CustomEvent('change', { 
-                detail: randomVal, 
-                bubbles: true, 
-                composed: true 
-            }));
+            setBioSliderValue(ref.slider, randomVal);
         });
 
         // Randomize combo slot types and values
@@ -1082,12 +1112,7 @@ if (isVizMode) {
             ref.select.dispatchEvent(new Event('change', { bubbles: true }));
 
             const randomVal = Math.floor(Math.random() * 100);
-            (ref.slider as any).value = randomVal;
-            ref.slider.dispatchEvent(new CustomEvent('change', { 
-                detail: randomVal, 
-                bubbles: true, 
-                composed: true 
-            }));
+            setBioSliderValue(ref.slider, randomVal);
         });
 
         // Randomize KEY
@@ -1290,9 +1315,10 @@ if (isVizMode) {
              slider.value = String(slamConfig[configKey]);
              slider.className = "w-full h-1 bg-zinc-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-red-500 [&::-webkit-slider-thumb]:rounded-full";
              
-             slider.oninput = (e: any) => {
-                 const v = parseFloat(e.target.value);
-                 // @ts-ignore
+             slider.oninput = (e: Event) => {
+                 const target = e.target as HTMLInputElement | null;
+                 if (!target) return;
+                 const v = parseFloat(target.value);
                  slamConfig[configKey] = v;
                  valSpan.textContent = v.toFixed(2);
              };
@@ -1321,9 +1347,10 @@ if (isVizMode) {
         if (!isSlamming) return;
         isSlamming = false;
         
-        // Reset Params to Safe Defaults
-        engine.updateDspParam('SLAM_CUTOFF', 20.0); // Open/Low HPF (Pass-through if logic dictates, but HPF @ 20Hz is safe)
-        engine.updateDspParam('SLAM_RES', 1.0);
+        // Reset to neutral values for current DSP implementation.
+        // SLAM filter is LP in processor.ts, so low cutoff (20Hz) can mute output.
+        engine.updateDspParam('SLAM_CUTOFF', 20000.0);
+        engine.updateDspParam('SLAM_RES', 0.0);
         engine.updateDspParam('SLAM_DRIVE', 1.0);
         engine.updateDspParam('SLAM_NOISE', 0.0);
         
@@ -1399,117 +1426,15 @@ if (isVizMode) {
 
     actionsContainer.appendChild(slamWrapper);
 
-    // --- LOOP LIBRARY PANEL ---
-    let libraryPanelVisible = false;
-    const libraryPanel = document.createElement('loop-library-panel') as any;
-    const libraryPanelContainer = document.createElement('div');
-    Object.assign(libraryPanelContainer.style, {
-        position: 'fixed',
-        top: '0',
-        right: '-300px', // Start off-screen
-        width: '300px',
-        height: '100vh',
-        background: '#0a0a0a',
-        borderLeft: '1px solid #222',
-        zIndex: '500',
-        transition: 'right 0.3s ease-in-out',
-        boxShadow: '-4px 0 20px rgba(0,0,0,0.5)'
-    });
-    libraryPanelContainer.appendChild(libraryPanel);
-    document.body.appendChild(libraryPanelContainer);
-
-    const toggleLibraryPanel = () => {
-        libraryPanelVisible = !libraryPanelVisible;
-        libraryPanelContainer.style.right = libraryPanelVisible ? '0' : '-300px';
-        if (libraryPanelVisible) {
-            libraryPanel.refresh?.();
-        }
-    };
-
-    // --- SIDE TOGGLE BUTTON (Right Edge) ---
-    const sideToggleBtn = document.createElement('button');
-    sideToggleBtn.innerHTML = `
-        <span style="writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);">LIBRARY</span>
-    `;
-    Object.assign(sideToggleBtn.style, {
-        position: 'fixed',
-        top: '160px', // Higher up (below header area)
-        right: '0',
-        // transform: 'translateY(-50%)', // Removed centering
-        padding: '24px 8px', // Larger click area
-        background: '#18181b', // zinc-900
-        color: '#a1a1aa', // zinc-400
-        border: '1px solid #27272a', // zinc-800
-        borderRight: 'none',
-        borderRadius: '8px 0 0 8px', // Slightly more rounded
-        cursor: 'pointer',
-        zIndex: '499', // Just below panel
-        fontSize: '12px', // Larger text
-        fontFamily: 'monospace',
-        letterSpacing: '3px',
-        boxShadow: '-2px 0 10px rgba(0,0,0,0.5)',
-        transition: 'right 0.3s ease-in-out, background 0.2s'
-    });
-    
-    sideToggleBtn.onmouseenter = () => { sideToggleBtn.style.background = '#27272a'; sideToggleBtn.style.color = 'white'; };
-    sideToggleBtn.onmouseleave = () => { sideToggleBtn.style.background = '#18181b'; sideToggleBtn.style.color = '#a1a1aa'; };
-    sideToggleBtn.onclick = toggleLibraryPanel;
-    document.body.appendChild(sideToggleBtn);
-
-    // --- CLOSE BUTTON (Inside Panel) ---
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '×';
-    Object.assign(closeBtn.style, {
-        position: 'absolute',
-        top: '10px',
-        right: '10px',
-        width: '24px',
-        height: '24px',
-        background: 'transparent',
-        border: 'none',
-        color: '#71717a', // zinc-500
-        fontSize: '20px',
-        cursor: 'pointer',
-        zIndex: '501',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: '4px'
-    });
-    closeBtn.onmouseenter = () => { closeBtn.style.color = 'white'; closeBtn.style.background = '#7f1d1d'; }; // Dark Red
-    closeBtn.onmouseleave = () => { closeBtn.style.color = '#71717a'; closeBtn.style.background = 'transparent'; };
-    closeBtn.onclick = toggleLibraryPanel;
-    
-    // Prepend close button to container so it stays on top/accessible
-    libraryPanelContainer.appendChild(closeBtn);
-    // Panel logic updates toggle
-    // We also need to update side button visibility/position if needed?
-    // Actually, when panel is open (right=0), it covers the button if button is right=0.
-    // The spec says "Open button... change to Close button?" No, "× to close".
-    // So if panel covers the button, that's fine.
-    
-    // Also remove the old link from actionsContainer if it was added there in previous lines
-    // (The replace logic removes the creation lines of libLink, so we just don't add it)
-
-
-
-    // Handle Loop Load from Library
-    window.addEventListener('loop-load', (e: any) => {
-        const { sample, deck } = e.detail;
-        console.log(`[LIBRARY] Loading ${sample.name} to Deck ${deck}`);
-        
-        // Load sample PCM data into deck buffer
-        engine.loadSampleToBuffer(deck as 'A' | 'B', sample.pcmData, sample.bpm);
-        
-        // Update deck UI - set BPM display
-        const targetDeck = deck === 'A' ? deckA : deckB;
-        (targetDeck as any).bpm = sample.bpm;
-        (targetDeck as any).generatedPrompt = `[LOOP] ${sample.name}`;
-        
-        // Close panel after load
-        toggleLibraryPanel();
-        
-        console.log(`[LIBRARY] Loaded "${sample.name}" to Deck ${deck}`);
+    const {
+        sideToggleBtn,
+        libraryPanelContainer,
+        isPanelVisible: isLibraryPanelVisible,
+        dispose: disposeLibrarySidebar
+    } = setupLibrarySidebar({
+        engine,
+        deckA,
+        deckB
     });
     
     shell.appendChild(actionsContainer);
@@ -1522,13 +1447,17 @@ if (isVizMode) {
         zIndex: 1000
     });
     const startBtn = document.createElement('button');
-    startBtn.textContent = "INITIALIZE SYSTEM";
+    startBtn.textContent = hasApiKey() ? "INITIALIZE SYSTEM" : "SET API KEY";
     startBtn.style.padding = "20px";
     startBtn.style.fontFamily = "monospace";
     overlay.appendChild(startBtn);
     document.body.appendChild(overlay);
 
     startBtn.onclick = async () => {
+        if (!hasApiKey()) {
+            openApiSettingsModal(true);
+            return;
+        }
         startBtn.textContent = "INITIALIZING...";
         await engine.init();
         engine.startAI(true); // Start Server Stream
@@ -1547,6 +1476,10 @@ if (isVizMode) {
         overlay.remove();
     };
 
+    if (!hasApiKey()) {
+        openApiSettingsModal(true);
+    }
+
     // Global Key Handlers
     window.addEventListener('keydown', (e) => {
         if (e.code === 'Space') {
@@ -1560,265 +1493,24 @@ if (isVizMode) {
             }
         }
     });
-    // --- ZEN MODE OVERLAY ---
-    const zenOverlay = document.createElement('div');
-    Object.assign(zenOverlay.style, {
-        position: 'fixed', top: '0', left: '0',
-        width: '100vw', height: '100vh',
-        pointerEvents: 'none',
-        display: 'none',
-        zIndex: '1500'
+    const { dispose: disposeZenOverlay } = setupZenOverlay({
+        engine,
+        threeViz,
+        vizControls,
+        viewContainer,
+        sideToggleBtn,
+        libraryPanelContainer,
+        isLibraryPanelVisible
     });
 
-    // OFF BUTTON (Bottom Right)
-    const zenOffBtn = document.createElement('button');
-    zenOffBtn.textContent = 'OFF';
-    Object.assign(zenOffBtn.style, {
-        position: 'absolute', bottom: '20px', right: '20px',
-        padding: '10px 20px',
-        background: 'rgba(0,0,0,0.6)',
-        color: '#fff',
-        border: '1px solid rgba(255,255,255,0.3)',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        pointerEvents: 'auto',
-        opacity: '0',
-        transition: 'opacity 0.3s',
-        fontFamily: 'monospace',
-        fontWeight: 'bold',
-        zIndex: '1501',
-        fontSize: '12px',
-        letterSpacing: '1px'
-    });
-    zenOffBtn.onclick = () => {
-        // Toggle back via VisualControls
-        (vizControls as any).toggleZenMode();
+    const cleanup = () => {
+        window.removeEventListener('view-change', applyViewChange as EventListener);
+        disposeVisualSyncEvents();
+        disposeDeckTransportEvents();
+        disposeZenOverlay();
+        disposeLibrarySidebar();
     };
-    zenOverlay.appendChild(zenOffBtn);
-
-    // VISUAL PATTERN BUTTONS (Above OFF Button)
-    const zenPatternContainer = document.createElement('div');
-    Object.assign(zenPatternContainer.style, {
-        position: 'absolute', bottom: '70px', right: '20px',
-        display: 'flex', flexDirection: 'column', gap: '6px',
-        pointerEvents: 'auto',
-        opacity: '0',
-        transition: 'opacity 0.3s'
-    });
-
-    const patterns: Array<{id: 'organic' | 'wireframe' | 'monochrome' | 'rings' | 'suibokuga' | 'waves' | 'grid', label: string}> = [
-        { id: 'organic', label: 'ORG' },
-        { id: 'wireframe', label: 'MTH' },
-        { id: 'monochrome', label: 'PRT' },
-        { id: 'rings', label: 'RNG' },
-        { id: 'suibokuga', label: 'INK' },
-        { id: 'waves', label: 'WAV' },
-        { id: 'grid', label: 'GRZ' }
-    ];
-
-    let currentZenPattern = 'organic';
-
-    // Function to update zen pattern button styles
-    const updateZenPatternButtons = (activeId: string) => {
-        currentZenPattern = activeId;
-        zenPatternContainer.querySelectorAll('button').forEach((b: any) => {
-            b.style.color = b.dataset.pattern === activeId ? '#fff' : '#888';
-            b.style.borderColor = b.dataset.pattern === activeId ? '#06b6d4' : 'rgba(255,255,255,0.2)';
-        });
-    };
-
-    patterns.forEach(p => {
-        const btn = document.createElement('button');
-        btn.textContent = p.label;
-        btn.dataset.pattern = p.id;
-        Object.assign(btn.style, {
-            padding: '10px 20px', // Same as OFF button
-            fontSize: '12px',
-            fontFamily: 'monospace',
-            fontWeight: 'bold',
-            letterSpacing: '1px',
-            background: 'rgba(0,0,0,0.6)',
-            color: '#888',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '6px', // Same as OFF button
-            cursor: 'pointer',
-            transition: 'all 0.2s'
-        });
-        btn.onclick = () => {
-            // Call threeViz.setMode directly
-            threeViz.setMode(p.id);
-            // Update zen pattern button styles
-            updateZenPatternButtons(p.id);
-            // Sync with VisualControls
-            (vizControls as any).currentMode = p.id === 'wireframe' ? 'wireframe' : p.id;
-            (vizControls as any).requestUpdate?.();
-        };
-        zenPatternContainer.appendChild(btn);
-    });
-
-    zenOverlay.appendChild(zenPatternContainer);
-
-    // Listen for visual mode changes from VisualControls to sync Zen buttons
-    vizControls.addEventListener('visual-mode-change', (e: any) => {
-        updateZenPatternButtons(e.detail.mode);
-    });
-
-    // MINI CONTROLLER (Bottom Center)
-    const zenMiniCtrl = document.createElement('div');
-    Object.assign(zenMiniCtrl.style, {
-        position: 'absolute', bottom: '30px', left: '50%', transform: 'translateX(-50%)',
-        display: 'flex', gap: '30px', alignItems: 'center',
-        padding: '12px 40px',
-        background: 'rgba(0,0,0,0.3)',
-        borderRadius: '40px',
-        backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        pointerEvents: 'auto',
-        opacity: '0',
-        transition: 'opacity 0.3s'
-    });
-
-    // Play A
-    const zenPlayA = document.createElement('button');
-    zenPlayA.innerHTML = '<div style="width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 10px solid #ccc;"></div>';
-    Object.assign(zenPlayA.style, {
-        width: '40px', height: '40px', borderRadius: '50%',
-        background: '#18181b', border: '1px solid #333',
-        display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer',
-        transition: 'all 0.2s'
-    });
-    const updateZenPlayA = (playing: boolean) => {
-        zenPlayA.style.borderColor = playing ? '#06b6d4' : '#333';
-        zenPlayA.style.boxShadow = playing ? '0 0 10px rgba(6,182,212,0.4)' : 'none';
-        zenPlayA.innerHTML = playing 
-            ? '<div style="width: 10px; height: 10px; background: #06b6d4; border-radius: 2px;"></div>'
-            : '<div style="width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 10px solid #ccc;"></div>';
-    };
-    zenPlayA.onclick = () => {
-        // Toggle A: if stopped, play; if playing, stop
-        const shouldPlay = engine.isDeckStopped('A');
-        window.dispatchEvent(new CustomEvent('deck-play-toggle', { 
-            detail: { deck: 'A', playing: shouldPlay } 
-        }));
-    };
-
-    // Crossfader
-    const zenFader = document.createElement('input');
-    zenFader.type = 'range';
-    zenFader.min = '0'; zenFader.max = '1'; zenFader.step = '0.01'; zenFader.value = '0.5'; // 0=A, 1=B, center=0.5
-    Object.assign(zenFader.style, {
-        width: '180px', height: '4px', appearance: 'none', background: '#333', borderRadius: '2px', cursor: 'pointer',
-        accentColor: '#ccc' // Simple styling
-    });
-    zenFader.oninput = (e: any) => {
-        const val = parseFloat(e.target.value);
-        engine.setCrossfader(val);
-        // Sync Mixer Controls UI via event
-        window.dispatchEvent(new CustomEvent('mixer-update', {
-            detail: { parameter: 'crossfader', value: val }
-        }));
-    };
-
-    // Play B
-    const zenPlayB = document.createElement('button');
-    zenPlayB.innerHTML = '<div style="width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 10px solid #ccc;"></div>';
-    Object.assign(zenPlayB.style, {
-        width: '40px', height: '40px', borderRadius: '50%',
-        background: '#18181b', border: '1px solid #333',
-        display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer',
-        transition: 'all 0.2s'
-    });
-    const updateZenPlayB = (playing: boolean) => {
-        zenPlayB.style.borderColor = playing ? '#10b981' : '#333';
-        zenPlayB.style.boxShadow = playing ? '0 0 10px rgba(16,185,129,0.4)' : 'none';
-        zenPlayB.innerHTML = playing 
-            ? '<div style="width: 10px; height: 10px; background: #10b981; border-radius: 2px;"></div>'
-            : '<div style="width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 10px solid #ccc;"></div>';
-    };
-    zenPlayB.onclick = () => {
-        window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deck: 'B', playing: engine.isDeckStopped('B') } }));
-    };
-
-    zenMiniCtrl.appendChild(zenPlayA);
-    zenMiniCtrl.appendChild(zenFader);
-    zenMiniCtrl.appendChild(zenPlayB);
-    zenOverlay.appendChild(zenMiniCtrl);
-
-    document.body.appendChild(zenOverlay);
-
-    // Sync crossfader: Mixer Controls -> Zen Fader
-    window.addEventListener('mixer-change', (e: any) => {
-        if (e.detail.id === 'CROSSFADER') {
-            zenFader.value = String(e.detail.val);
-        }
-    });
-
-    // ZEN MODE TOGGLE LOGIC
-    console.log('[Main] Registering zen-mode-toggle listener on window...');
-    window.addEventListener('zen-mode-toggle', (e: any) => {
-        console.log('[Main] Zen Mode Toggle:', e.detail.active);
-        const isActive = e.detail.active;
-        
-        if (isActive) {
-            viewContainer.style.display = 'none';
-            // Hide Library Controls
-            sideToggleBtn.style.display = 'none';
-            libraryPanelContainer.style.display = 'none'; // Force hide panel if open
-            
-            zenOverlay.style.display = 'block';
-            document.body.style.cursor = 'none'; 
-        } else {
-            viewContainer.style.display = 'flex';
-            // Show Library Controls
-            sideToggleBtn.style.display = 'block';
-            // Restore library panel only if it was supposed to be visible? 
-            // Actually libraryPanelVisible tracks state. 
-            // If it was open, we should check `libraryPanelVisible`.
-            // But simplify: valid state is panel hidden, button visible.
-            // If user had panel open, effectively close it or restore state?
-            // Let's rely on libraryPanelVisible state variable?
-            // libraryPanelContainer.style.right is used for visibility.
-            // libraryPanelContainer.style.display was not toggled before.
-            // Let's just toggle the button visibility. The panel is "off screen" if closed.
-            // If it was OPEN, we should hide it.
-            
-            if (libraryPanelVisible) {
-                 libraryPanelContainer.style.display = 'block';
-            } else {
-                 libraryPanelContainer.style.display = 'block'; // It's usually block but off-screen.
-            }
-            
-            zenOverlay.style.display = 'none';
-            document.body.style.cursor = 'auto';
-        }
-    });
-
-    // MOUSE HOVER LOGIC for OFF Button, Mini Controller, and Pattern Buttons
-    let zenMouseTimer: any;
-    window.addEventListener('mousemove', () => {
-        if (zenOverlay.style.display === 'block') {
-            zenOffBtn.style.opacity = '1';
-            zenMiniCtrl.style.opacity = '1';
-            zenPatternContainer.style.opacity = '1';
-            document.body.style.cursor = 'auto'; // Show cursor
-            
-            clearTimeout(zenMouseTimer);
-            zenMouseTimer = setTimeout(() => {
-                if (zenOverlay.style.display === 'block') {
-                    zenOffBtn.style.opacity = '0';
-                    zenMiniCtrl.style.opacity = '0';
-                    zenPatternContainer.style.opacity = '0';
-                    document.body.style.cursor = 'none'; // Hide cursor for full immersion
-                }
-            }, 1000); // 1 second timeout
-        }
-    });
-
-    // Sync Zen Buttons with Engine State
-    window.addEventListener('deck-play-sync', (e: any) => {
-        if (e.detail.deck === 'A') updateZenPlayA(e.detail.playing);
-        if (e.detail.deck === 'B') updateZenPlayB(e.detail.playing);
-    });
+    window.addEventListener('beforeunload', cleanup, { once: true });
 
 }
 

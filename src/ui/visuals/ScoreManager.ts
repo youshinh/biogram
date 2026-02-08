@@ -25,6 +25,24 @@ export interface VisualScore {
     };
 }
 
+const toVisualStateEvent = (event: string): VisualState['event'] => {
+    switch (event) {
+        case 'DROP':
+            return 'DROP_IMPACT';
+        case 'BUILD':
+            return 'BUILDUP_START';
+        case 'BREAK':
+            return 'FADE_OUT';
+        case 'KICK':
+        case 'SNARE':
+            return 'NOTE_ON';
+        case 'NONE':
+            return 'NONE';
+        default:
+            return 'NONE';
+    }
+};
+
 export class ScoreManager {
     private score: VisualScore | null = null;
     private currentTrack: 'A' | 'B' | 'MASTER' = 'MASTER'; // For now just use A/B or blend? 
@@ -37,7 +55,7 @@ export class ScoreManager {
         try {
             // Basic validation could go here
             this.score = json as VisualScore;
-            console.log('[ScoreManager] Score loaded.', this.score);
+            if (import.meta.env.DEV) console.log('[ScoreManager] Score loaded.', this.score);
         } catch (e) {
             console.error('[ScoreManager] Failed to load score', e);
         }
@@ -66,7 +84,7 @@ export class ScoreManager {
                     chaos: event.brightness, // Map Brightness -> Chaos
                     distortion: 0,
                     cloud: event.brightness * 0.5, // Map Brightness -> Cloud
-                    event: event.event as any // Cast string to enum (validate if needed)
+                    event: toVisualStateEvent(event.event)
                 }
             };
         });
@@ -152,7 +170,7 @@ export class ScoreManager {
     public clearTrack(deck: 'A' | 'B') {
         if (this.score && this.score.tracks[deck]) {
             this.score.tracks[deck] = [];
-            console.log(`[ScoreManager] Cleared track ${deck}`);
+            if (import.meta.env.DEV) console.log(`[ScoreManager] Cleared track ${deck}`);
         }
     }
 

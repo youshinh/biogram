@@ -84,7 +84,7 @@ export class TestScoreVisual {
             
         // Console Debug Throtthle (every ~1s)
         if (Math.floor(time) !== Math.floor(time - 0.016)) {
-             console.log('[TestScoreVisual] Update', time.toFixed(2));
+             if (import.meta.env.DEV) console.log('[TestScoreVisual] Update', time.toFixed(2));
         }
     }
 

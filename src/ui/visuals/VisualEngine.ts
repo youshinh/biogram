@@ -13,6 +13,16 @@ import { ScoreManager } from './ScoreManager';
 import { TestScoreVisual } from './TestScoreVisual';
 import { DebugScoreVisual } from './DebugScoreVisual';
 import { VisualChunk } from '../../ai/visual-analyzer';
+import type { VisualMode } from './modes';
+
+type InternalVisualMode = VisualMode | 'test_score' | 'debug_ai';
+type VisualizerController = {
+    mesh: { visible: boolean };
+    update: (dt: number, data: unknown) => void;
+    setOpacity?: (alpha: number) => void;
+    setVisible?: (visible: boolean) => void;
+    setParams?: (params: unknown) => void;
+};
 
 export class VisualEngine {
     private container: HTMLElement;
@@ -46,17 +56,16 @@ export class VisualEngine {
     private cameraDistanceOffset: number = 0; // Driven by AI Energy
 
     // --- Blending State Machine ---
-    private activeModes: Set<any> = new Set();
-    private currentModeName: string = 'organic'; // active target
+    private currentModeName: InternalVisualMode = 'organic'; // active target
     
     // We map string names to instances
-    private modeMap: { [key: string]: any } = {};
+    private modeMap: Partial<Record<InternalVisualMode, VisualizerController>> = {};
     
     // Transition
     private transition = {
         active: false,
-        fromMode: null as any,
-        toMode: null as any,
+        fromMode: null as VisualizerController | null,
+        toMode: null as VisualizerController | null,
         progress: 0.0,
         speed: 1.5 // Transition speed
     };
@@ -71,7 +80,7 @@ export class VisualEngine {
     private resizeObserver: ResizeObserver | null = null;
     
     // AI State (Shared across visualizers)
-    private currentAiParams: any = null;
+    private currentAiParams: unknown = null;
 
     // --- Post-Processing Blur (Math Mode) ---
     private blurRenderTarget1!: THREE.WebGLRenderTarget;
@@ -208,10 +217,21 @@ export class VisualEngine {
         
         // Used for 'organic' and 'wireframe' modes (Shader-based)
         // We treat it as one visualizer instance
-        const standardVisualizer = {
+        const standardVisualizer: VisualizerController = {
             mesh: this.mesh,
-            update: (dt: number, data: any) => {}, // Logic is in shader
+            update: (_dt: number, _data: unknown) => {}, // Logic is in shader
             setOpacity: (alpha: number) => { } 
+        };
+
+        const noOpVisualizer: VisualizerController = {
+            mesh: { visible: false },
+            update: () => {}
+        };
+
+        const noOpFadeVisualizer: VisualizerController = {
+            mesh: { visible: false },
+            update: () => {},
+            setOpacity: () => {}
         };
 
         // Initialize Custom Visualizers
@@ -233,8 +253,7 @@ export class VisualEngine {
             this.scene.add(this.monochromeFlow.mesh);
         } catch (e) {
             console.error("Failed to init MonochromeFlow", e);
-             // Fallback to avoid crash
-            this.monochromeFlow = { mesh: { visible: false }, update: () => {}, setOpacity: () => {} } as any;
+            this.monochromeFlow = noOpFadeVisualizer as unknown as MonochromeFlow;
         }
 
         try {
@@ -243,7 +262,7 @@ export class VisualEngine {
             this.scene.add(this.ringDimensions.mesh);
         } catch (e) {
             console.error("Failed to init RingDimensions", e);
-            this.ringDimensions = { mesh: { visible: false }, update: () => {}, setOpacity: () => {} } as any;
+            this.ringDimensions = noOpFadeVisualizer as unknown as RingDimensions;
         }
 
         try {
@@ -252,7 +271,7 @@ export class VisualEngine {
             this.scene.add(this.waveTerrain.mesh);
         } catch (e) {
              console.error("Failed to init WaveTerrain", e);
-             this.waveTerrain = { mesh: { visible: false }, update: () => {} } as any;
+             this.waveTerrain = noOpVisualizer as unknown as WaveTerrain;
         }
 
         // INIT Suibokuga
@@ -262,7 +281,7 @@ export class VisualEngine {
             this.scene.add(this.suibokuga.mesh);
         } catch (e) {
             console.error("Failed to init SuibokugaViz", e);
-            this.suibokuga = { mesh: { visible: false }, update: () => {}, setVisible: () => {} } as any;
+            this.suibokuga = { ...noOpVisualizer, setVisible: () => {} } as unknown as SuibokugaViz;
         }
 
         // INIT SpectrumGrid
@@ -272,7 +291,7 @@ export class VisualEngine {
             this.scene.add(this.spectrumGrid.mesh);
         } catch (e) {
             console.error("Failed to init SpectrumGrid", e);
-            this.spectrumGrid = { mesh: { visible: false }, update: () => {}, setOpacity: () => {} } as any;
+            this.spectrumGrid = noOpFadeVisualizer as unknown as SpectrumGrid;
         }
 
         // INIT AiDynamicGrid
@@ -282,7 +301,7 @@ export class VisualEngine {
             this.scene.add(this.aiDynamicGrid.mesh);
         } catch (e) {
             console.error("Failed to init AiDynamicGrid", e);
-            this.aiDynamicGrid = { mesh: { visible: false }, update: () => {}, setParams: () => {} } as any;
+            this.aiDynamicGrid = { ...noOpVisualizer, setParams: () => {} } as unknown as AiDynamicGrid;
         }
 
         // Setup Mode Map
@@ -343,7 +362,7 @@ export class VisualEngine {
         this.blurScene.add(this.blurQuad);
 
         // PRE-COMPILE SHADERS to prevent freeze on first use
-        console.log('[VisualEngine] Pre-compiling shaders...');
+        if (import.meta.env.DEV) console.log('[VisualEngine] Pre-compiling shaders...');
         this.renderer.compile(this.scene, this.camera);
         this.renderer.compile(this.blurScene, this.blurCamera);
         // Force GPU upload for blur materials
@@ -359,7 +378,7 @@ export class VisualEngine {
         this.blurQuad.material = this.blurMaterialV;
         this.renderer.setRenderTarget(null);
         this.renderer.render(this.blurScene, this.blurCamera);
-        console.log('[VisualEngine] Shader pre-compilation complete.');
+        if (import.meta.env.DEV) console.log('[VisualEngine] Shader pre-compilation complete.');
 
         // Start Loop
         this.startTime = performance.now();
@@ -398,10 +417,6 @@ export class VisualEngine {
             }
         };
         this.scoreManager.loadScore(dummyScore);
-    }
-
-    private setupListeners() {
-        // ...
     }
 
     private onResize = () => {
@@ -536,11 +551,6 @@ export class VisualEngine {
                 const blurSpeed = isHolding ? 10.0 : 2.0; // Fast down, slow up
                 this.currentBlurLevel += (targetBlur - this.currentBlurLevel) * Math.min(1.0, delta * blurSpeed);
                 
-                // Debug: Log blur state occasionally
-                if (Math.random() < 0.02) {
-                    console.log(`[Blur] trigger=${hihatTrigger.toFixed(2)}, hold=${this.blurHoldTimer.toFixed(2)}, blur=${this.currentBlurLevel.toFixed(2)}`);
-                }
-                
                 this.blurMaterialH.uniforms.blurAmount.value = this.currentBlurLevel;
                 this.blurMaterialV.uniforms.blurAmount.value = this.currentBlurLevel;
                 
@@ -623,10 +633,10 @@ export class VisualEngine {
         }
     }
 
-    public setMode(mode: 'organic' | 'wireframe' | 'monochrome' | 'rings' | 'waves' | 'suibokuga' | 'grid' | 'ai_grid') {
+    public setMode(mode: VisualMode) {
         if (mode === this.currentModeName) return;
 
-        console.log(`[VisualEngine] Switching: ${this.currentModeName} -> ${mode}`);
+        if (import.meta.env.DEV) console.log(`[VisualEngine] Switching: ${this.currentModeName} -> ${mode}`);
 
         // FIX: If transition is already active, force clean up previous state
         if (this.transition.active) {
@@ -645,7 +655,7 @@ export class VisualEngine {
             // Ensure we update 'fromMode' to be the currently active visualizer.
         }
 
-        let oldViz = this.modeMap[this.currentModeName];
+        const oldViz = this.modeMap[this.currentModeName] ?? null;
         // If we were transitioning, the 'oldViz' based on name might be wrong if we hadn't finished swapping names?
         // No, we update currentModeName at end? No, we updated it at start in previous code?
         // In previous code: this.currentModeName = mode; (at end).
@@ -657,7 +667,8 @@ export class VisualEngine {
              this.transition.fromMode.mesh.visible = false;
         }
 
-        const newViz = this.modeMap[mode];
+        const newViz = this.modeMap[mode] ?? null;
+        if (!newViz) return;
         
         // Handle Shader Modes separately?
         if ((mode === 'organic' || mode === 'wireframe') && (this.currentModeName === 'organic' || this.currentModeName === 'wireframe')) {
@@ -828,27 +839,12 @@ export class VisualEngine {
         this.isRendering = active;
     }
 
-    public get mode(): string {
+    public get mode(): InternalVisualMode {
         return this.currentModeName;
     }
 
-    public addVisualScore(deck: 'A' | 'B', chunk: VisualChunk, timestamp: number) {
-        // Timestamp from event is Date.now().
-        // We need to convert this to "Stream Time" used by getInterpolatedState.
-        // In animate(), time = (now - this.startTime) * 0.001 (seconds).
-        // Wait, Engine Time starts at 0 when app starts.
-        // Audio Stream Time starts at 0 when... ?
-        // AudioEngine.getReadPointer() returns samples since ?? 
-        // If we use AudioEngine time, we need to map the chunk's position to that time base.
-        
-        // MusicClient dispatches 'visual-score-update'.
-        // It should provide the PREDICTED START TIME of the chunk in the Audio Engine's timeline.
-        // Currently proper mapping is tricky without shared clock.
-        // HACK: Use AudioEngine.getWritePointer() as the approximate start time of this chunk?
-        // Since MusicClient writes immediately.
-        // Yes, pass that in from main.ts.
-        
-        this.scoreManager.addChunk(deck, chunk, timestamp);
+    public addVisualScore(deck: 'A' | 'B', chunk: VisualChunk, startTimeSec: number) {
+        this.scoreManager.addChunk(deck, chunk, startTimeSec);
     }
 
     public updateTexture(id: 'A' | 'B', url: string, mimeType: string) {
@@ -908,7 +904,13 @@ export class VisualEngine {
 
     public dispose() {
         cancelAnimationFrame(this.requestID);
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
         this.renderer.dispose();
+        this.blurRenderTarget1?.dispose();
+        this.blurRenderTarget2?.dispose();
+        this.blurMaterialH?.dispose();
+        this.blurMaterialV?.dispose();
         // Dispose textures/materials if needed
         this.textureManager.dispose();
         

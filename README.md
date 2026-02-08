@@ -1,112 +1,174 @@
 # Bio:gram (Ghost in the Groove)
 
-> "Noise is where the universe resides."
+Code-first documentation for the current implementation.
+This README is derived from the code in `src/` and reflects how the app behaves today.
 
-**Bio:gram** is an experimental AI-driven DJ system powered by **Google's Gemini Flash** and the high-fidelity **Lyria** model. It transcends traditional linear mixing by employing a **Deep Spectral Architect**, allowing the AI to act as a "Ghost" partner that performs spectral handoffs, organic parameter manipulation, and narrative-driven transitions.
-
-[🇯🇵 日本語 (Japanese)](README_JP.md)
+[🇯🇵 日本語版](README_JP.md)
 
 ![Main Interface](assets/screenshot1.png)
-*Figure 1: Main Interface featuring the AI Director Panel and Dual Decks.*
 
-## 🌌 Core Philosophy
+## Current Product Summary
+Bio:gram is a browser-based AI DJ system with:
+- Dual-deck realtime music generation via Google Lyria (`lyria-realtime-exp`)
+- AI-generated automation score (JSON) via Gemini Flash Lite (`gemini-flash-lite-latest`)
+- AudioWorklet-based DSP and deck mixing
+- Live visuals (Three.js-based) that react to mixer/FX/analysis events
+- Local loop library (IndexedDB) with save/load/import/export/recommend features
 
-### 1. Organic "Gardening" vs. Mechanical Mixing
-Bio:gram treats a DJ mix not as a sequence of triggered events, but as a **living garden**. The AI doesn't just "crossfade"; it cultivates the soundscape. It introduces "wobble" (hesitation) and "drift" into parameter curves to mimic human imperfection (**Wabi-Sabi**), creating a mix that breathes rather than computes.
+## What Is Implemented Now
 
-### 2. Deep Spectral Architecture
-Unlike standard auto-mixers that simply lower volume, Bio:gram employs a **Spectral Handoff** strategy. It analyzes and carves out frequency bands (Bass, Mids, Highs) to ensure that two kick drums never clash, while allowing high-frequency textures to weave together seamlessly.
+### 1. Decks and Transport
+- Two decks (`A` / `B`) with independent play/stop, sync toggle, BPM adjust, TAP BPM, prompt input, GEN trigger
+- Deck waveform/visual area (`hydra-visualizer`) and deck-level generated prompt display
+- Deck sync logic with BPM ratio + phase alignment in `AudioEngine`
 
----
+Relevant code:
+- `src/ui/modules/deck-controller.ts`
+- `src/audio/engine.ts`
 
-## ✨ Features
+### 2. AI Prompt-to-Music Flow
+- App starts with an initialization overlay (`INITIALIZE SYSTEM`)
+- On init, AudioWorklet is loaded, Lyria sessions connect for both decks, and generation begins
+- Deck GEN updates or resets prompt context (hard reset when deck is stopped)
+- Prompt text is built from UI state (ambient/minimal/dub/impact/color, texture/pulse, key/scale, deck personality, slam state)
 
-### 🎹 Generative Audio Engine (Lyria)
-Powered by Google's **Lyria** (`lyria-realtime-exp`), Bio:gram doesn't just play files—it generates audio in real-time.
--   **Prompt-to-Music**: Type "Acid Techno 135BPM" and getting a studio-grade loop instantly.
--   **Infinite Extension**: The AI can extend a 4-bar loop into an endless, evolving stream.
+Relevant code:
+- `src/main.ts`
+- `src/ai/prompt-generator.ts`
+- `src/ai/music-client.ts`
 
-### 🎛️ AI Mix Phase Architecture
-The AI orchestrates mixes through four narrative phases:
-1.  **Presence**: The incoming track manifests only as a "ghost"—reverb tails and high-pass filtered textures.
-2.  **Spectral Handoff**: Low frequencies are swapped with surgical precision using sigmoid curves.
-3.  **Wash Out**: The outgoing track is eroded using tape delays and feedback loops.
-4.  **Silent Reset**: A hidden cleanup phase where the AI resets all parameters.
+### 3. AI Mix (Director Panel)
+- Super Controls can request mix generation for `A->B` or `B->A`
+- Mix request includes direction, duration (16/32/64/128), mood, preferred visual mode
+- Gemini returns an `AutomationScore` JSON
+- `AutomationEngine` executes score curves over bars with interpolation and safety guards
+- UI states: `IDLE -> GENERATING -> READY -> MIXING`
 
-### 👻 Ghost Faders & Vector Library
--   **Ghost Faders**: Sliders and knobs move by themselves, executing the AI's "Automation Score" in real-time.
--   **Vector Loop Library**: Stored loops are analyzed for characteristics like **Energy**, **Brightness**, and **Rhythm**. The system uses a local Vector Database (IndexedDB) to recommend "Complementary" or "Similar" tracks based on semantic distance, not just BPM.
+Relevant code:
+- `src/ui/modules/super-controls.ts`
+- `src/ai/mix-generator.ts`
+- `src/ai/automation-engine.ts`
 
-### 🧬 Living Biogram (Visuals)
-A dedicated **Three.js + GLSL Raymarching** engine creates a "Living Biogram"—two metaballs representing the mixing tracks.
--   **Organic Mode**: A liquid, metallic surface that reflects the audio spectrum in real-time.
--   **Particles Mode**: A data-driven visualization where thousands of grey speckles react to frequency bands.
--   **Projector Mode**: Open `?mode=viz` in a separate window to project the visuals to a secondary screen/projector for live performance.
+### 4. DSP / Mixer / FX
+- Audio path is handled by AudioWorklet processor
+- Mixer controls include crossfader and deck EQ/kill/trim/drive mappings
+- FX rack exposes multiple modules including filter, tape echo, bloom reverb, spectral gate, cloud grain, decimator, dynamics
+- SLAM macro applies energy-riser style macro control (filter/res/drive/noise)
 
----
+Relevant code:
+- `src/audio/worklet/processor.ts`
+- `src/audio/worklet/dsp/*`
+- `src/ui/modules/dj-mixer.ts`
+- `src/ui/modules/fx-rack.ts`
+- `src/main.ts`
 
-## 🎚️ Effects & DSP
+### 5. Visual System
+- Main controller view includes background `three-viz`
+- Visual controls support:
+  - mode switching (`organic`, `wireframe`, `monochrome`, `rings`, `waves`, `suibokuga`, `grid`, `ai_grid`)
+  - deck texture upload (image/video), webcam toggle
+  - blur FX and rendering on/off
+  - projector window via `/?mode=viz`
+  - zen mode overlay controller
+- AI grid parameter generation is available via Gemini
+- Visual score sync now uses audio frame timing (`startFrame/endFrame`) produced by `MusicClient` to reduce drift
 
-Bio:gram features a custom audio engine built on AudioWorklet for sample-accurate processing:
+Relevant code:
+- `src/ui/visuals/ThreeViz.ts`
+- `src/ui/visuals/VisualControls.ts`
+- `src/ai/grid-generator.ts`
 
--   **Slicer**: A rhythmic gate that chops audio in sync with the BPM, creating percussive patterns from sustained pads.
--   **Tape Echo**: A dub-style delay with high feedback capabilities for "Wash Out" transitions.
--   **SLAM**: A master bus energy riser that combines a compressor, limiter, and pink noise generator for dramatic buildups.
--   **Cloud Grain**: A granular texture generator that dissolves audio into a cloud of microscopic particles.
--   **Isolator EQ**: DJ-style 3-band EQ with full kill switches.
+### 6. Loop Library
+- Save current deck audio as loop (8/16/32/64/128 bars)
+- Audio validity check before saving
+- IndexedDB storage with tags, vector metadata, BPM, prompt
+- Import audio files, export WAV, delete loops
+- Recommend loops from current deck vector similarity
+- Sidebar open/close uses explicit visibility control (`setLibraryPanelVisible`) for stable toggle behavior
 
----
+Relevant code:
+- `src/ui/modules/loop-library-panel.ts`
+- `src/audio/db/library-store.ts`
+- `src/audio/utils/audio-analysis.ts`
+- `src/ui/bootstrap/library-sidebar.ts`
 
-## 🛠️ Tech Stack
+### 7. Mobile UX (Current)
+- Bottom fixed mobile tab bar for quick view switching (`DECK / FX / VISUAL / AI MIX`)
+- Mobile deck mini controls optimized for touch targets (larger PLAY/GEN/BPM controls)
+- GEN button includes short pulse feedback animation
 
--   **Framework**: Vite + TypeScript
--   **Generative AI**: 
-    -   **Logic**: Google Gemini Flash (via `@google/genai`)
-    -   **Audio**: Google Lyria (`lyria-realtime-exp`)
--   **Audio Engine**: Web Audio API + AudioWorklet (DSP)
--   **Database**: IndexedDB + Vector Search (Local-First)
--   **Visuals**: Three.js + Custom Raymarching Shaders (GLSL)
--   **UI**: Lit (Web Components) + TailwindCSS
+## Runtime Architecture
+- UI/Main Thread:
+  - Lit components + orchestration in `main.ts`
+  - AI API calls (mix generation, visual analysis/grid generation)
+  - Bootstrap modules for event wiring and lifecycle cleanup:
+    - `src/ui/bootstrap/deck-transport-events.ts`
+    - `src/ui/bootstrap/visual-sync-events.ts`
+    - `src/ui/bootstrap/library-sidebar.ts`
+    - `src/ui/bootstrap/zen-overlay.ts`
+- Audio Thread:
+  - AudioWorklet processor reads/writes from SharedArrayBuffer
+  - DSP modules process deck/master signal
+- Data:
+  - IndexedDB for loop/chunk archive (`promptdj-ghost-memory`)
 
----
+## Setup
 
-## 🚀 Setup
+### Prerequisites
+- Node.js 18+
+- Google API key with access to Gemini and Lyria endpoints used in the code
 
-### 1. Prerequisites
--   Node.js (v18+)
--   Google AI Studio API Key (Gemini)
-
-### 2. Installation
+### Install
 ```bash
-git clone https://github.com/youshinh/biogram.git
-cd biogram
 npm install
 ```
 
-### 3. Environment Variables
-Create a `.env` file in the root directory:
+### Environment Variables
+Create `.env` in project root:
 ```env
-GEMINI_API_KEY=your_api_key_here
+VITE_GEMINI_API_KEY=your_api_key_here
 ```
 
-### 4. Start
+Notes:
+- Current code path uses `VITE_GEMINI_API_KEY` on the client side.
+
+### Start
 ```bash
 npm run dev
 ```
-Open `http://localhost:3000` to enter the garden.
+Open: `http://localhost:3000`
 
-## 🎮 Usage
+## Basic Usage Flow
+1. Click `INITIALIZE SYSTEM`.
+2. Use deck controls to play decks and adjust BPM/prompt.
+3. Press `GEN` on a deck to apply/update AI prompt.
+4. Open `SUPER` view and request `A->B` or `B->A` mix.
+5. When score is ready, press `START MIX`.
+6. Optionally switch visual modes or open projector mode.
+7. Save loops to library and reload/import/export as needed.
 
-1.  **Load & Play**: Press "PLAY" on Deck A/B.
-2.  **Direct**: Open the central "SUPER CONTROLS" panel.
-3.  **Prompt**: Select a mode (e.g., "Deep Blend") and Duration (e.g., "64 Bars").
-4.  **Influence**: Use the "Mood" sliders (Ambient, Acid, etc.) to bias the AI's parameter generation.
-5.  **Inject**: Press the **[ Deep Mix -> ]** button and watch the Ghost Faders take over.
+## Evaluation / Verification Assets
+There is no `npm test` script yet.
+Current verification helpers:
+- `scripts/eval-beat-detector.ts`
+- `scripts/eval-beat-detector.js`
+- `py_bridge/analyze.py`
+- `py_bridge/test_analyze.py`
 
----
+## Important Constraints
+- This app relies on `SharedArrayBuffer`; COOP/COEP headers are configured for Vite dev server in `vite.config.ts`.
+- Docker/Nginx config currently serves SPA assets but does not add COOP/COEP headers by default.
+- Product behavior depends on external model availability, quota, and API latency.
 
-## 🤝 Contributing
-Issues and Pull Requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting.
+## Project Structure (High Level)
+```text
+src/
+  ai/           Gemini/Lyria clients, automation score generation
+  audio/        AudioEngine, analysis, worklet DSP, IndexedDB store
+  ui/           Lit components, deck/mixer/super/visual controls
+  midi/         MIDI manager
+  types/        shared and domain types
+```
 
-## 📄 License
-[MIT License](LICENSE)
+## License
+MIT

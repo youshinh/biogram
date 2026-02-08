@@ -1,28 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { VisualEngine } from './VisualEngine';
-
-// --- MOCK AUDIO GENERATOR (Fallback) ---
-class MockAudioGenerator {
-    private time = 0;
-    
-    public generate() {
-        this.time += 0.016;
-        const spectrum = new Uint8Array(1024);
-        
-        // Simulating a basic beat and some noise
-        const beat = (Math.sin(this.time * 10) > 0.9) ? 255 : 0;
-        const bass = 128 + 127 * Math.sin(this.time * 2);
-        
-        for (let i = 0; i < 1024; i++) {
-            if (i < 10) spectrum[i] = Math.max(beat, bass); // Bass
-            else if (i < 50) spectrum[i] = 100 + 50 * Math.sin(this.time * 5 + i); // Mids
-            else spectrum[i] = Math.random() * 50; // Highs
-        }
-        
-        return spectrum;
-    }
-}
+import type { VisualMode } from './modes';
 
 @customElement('three-viz')
 export class ThreeViz extends LitElement {
@@ -45,7 +24,6 @@ export class ThreeViz extends LitElement {
     private engine: VisualEngine | null = null;
     private broadcast: BroadcastChannel = new BroadcastChannel('bio_viz_link');
     private loopId = 0;
-    private mockAudio = new MockAudioGenerator(); // Fallback
 
     firstUpdated() {
         const container = this.shadowRoot?.getElementById('viz-container');
@@ -60,7 +38,7 @@ export class ThreeViz extends LitElement {
 
         if (this.mode === 'MASTER') {
             // 1. Pull Data from AudioEngine
-            let engine = (window as any).engine;
+            const engine = window.engine;
             let specA, specB, cf;
             
             const isEngineAvailable = !!engine && typeof engine.getSpectrum === 'function';
@@ -146,7 +124,7 @@ export class ThreeViz extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
-        console.log(`[ThreeViz] Connected. Mode: ${this.mode}`);
+        if (import.meta.env.DEV) console.log(`[ThreeViz] Connected. Mode: ${this.mode}`);
         this.broadcast.onmessage = (ev) => {
             const data = ev.data;
             if (!data) return;
@@ -154,7 +132,7 @@ export class ThreeViz extends LitElement {
             // MASTER Logic: Respond to Sync Requests
             if (this.mode === 'MASTER') {
                 if (data.type === 'SYNC_REQ') {
-                    console.log('[ThreeViz] Received SYNC_REQ from Slave. Sending state...');
+                    if (import.meta.env.DEV) console.log('[ThreeViz] Received SYNC_REQ from Slave. Sending state...');
                     // Send current textures if they exist
                     if (this.cachedTextures.A.url) {
                         this.broadcast.postMessage({
@@ -214,7 +192,7 @@ export class ThreeViz extends LitElement {
 
         // If SLAVE, Request Sync immediately
         if (this.mode === 'SLAVE') {
-            console.log('[ThreeViz] Slave sending SYNC_REQ...');
+            if (import.meta.env.DEV) console.log('[ThreeViz] Slave sending SYNC_REQ...');
             this.broadcast.postMessage({ type: 'SYNC_REQ' });
         }
     }
@@ -276,7 +254,7 @@ export class ThreeViz extends LitElement {
         }
     }
 
-    public setMode(mode: 'organic' | 'wireframe' | 'monochrome' | 'rings' | 'waves' | 'suibokuga' | 'grid' | 'ai_grid') {
+    public setMode(mode: VisualMode) {
         this.engine?.setMode(mode);
         if (this.mode === 'MASTER') {
              this.broadcast.postMessage({

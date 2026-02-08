@@ -1,6 +1,7 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import './hydra-visualizer';
+import type { HydraVisualizer } from './hydra-visualizer';
 
 @customElement('deck-controller')
 export class DeckController extends LitElement {
@@ -14,13 +15,12 @@ export class DeckController extends LitElement {
   @state() prompt = "";
   @state() generatedPrompt = ""; // Full prompt sent to AI (displayed on waveform)
   @state() bpm = 120.0;
-  @state() isManaul = false;
+  @state() isManual = false;
+  @state() genPulse = false;
 
   public clearVisualizer() {
-      const viz = this.shadowRoot?.querySelector('hydra-visualizer') as any;
-      if (viz && viz.clear) {
-          viz.clear();
-      }
+      const viz = this.querySelector('hydra-visualizer') as HydraVisualizer | null;
+      viz?.clear();
   }
   
   // Custom Color per deck for accents
@@ -85,10 +85,10 @@ export class DeckController extends LitElement {
               </div>
 
               <!-- MOBILE: Floating mini controls overlay (visible only on mobile) -->
-              <div class="md:hidden absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 via-black/40 to-transparent">
-                  <div class="flex items-center justify-between gap-2">
+              <div class="md:hidden absolute bottom-0 left-0 right-0 px-4 pb-4 pt-3 bg-gradient-to-t from-black/80 via-black/45 to-transparent">
+                  <div class="flex items-end justify-between gap-3">
                       <!-- Play button - Large touch target -->
-                      <button class="w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-95
+                      <button class="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-95
                                    ${this.isPlaying 
                                      ? 'bg-tech-cyan/20 border-2 border-tech-cyan shadow-[0_0_15px_rgba(6,182,212,0.3)]' 
                                      : 'bg-zinc-800/80 border border-zinc-600'}"
@@ -100,26 +100,28 @@ export class DeckController extends LitElement {
                       </button>
 
                       <!-- BPM Display - Tappable -->
-                      <button class="flex-1 h-14 bg-black/60 backdrop-blur rounded-xl border border-zinc-700 flex items-center justify-center gap-2"
+                      <button class="flex-1 h-16 bg-black/65 backdrop-blur rounded-2xl border border-zinc-700 flex items-center justify-center gap-3 px-3"
                               @click="${this.tapBpm}">
-                          <span class="text-2xl font-bold text-zinc-300 font-mono">${this.bpm.toFixed(1)}</span>
-                          <span class="text-xs text-zinc-500">BPM</span>
+                          <span class="text-[1.9rem] leading-none font-bold text-zinc-200 font-mono">${this.bpm.toFixed(1)}</span>
+                          <span class="text-[11px] tracking-wide text-zinc-400 font-semibold">BPM</span>
                       </button>
 
-                      <!-- Sync button -->
-                      <button class="w-14 h-14 rounded-xl flex items-center justify-center text-[10px] font-bold font-mono transition-all active:scale-95
-                                   ${this.isSync 
-                                     ? 'bg-tech-cyan/20 text-tech-cyan border-2 border-tech-cyan shadow-[0_0_10px_rgba(6,182,212,0.3)]' 
-                                     : 'bg-zinc-800/80 text-zinc-400 border border-zinc-600'}"
-                              @click="${this.toggleSync}">
-                          SYNC
-                      </button>
-                      
-                      <!-- GEN button -->
-                      <button class="w-14 h-14 rounded-full bg-zinc-800/80 border border-zinc-600 flex items-center justify-center text-[10px] font-bold text-zinc-400 active:scale-95 transition-all"
-                              @click="${this.loadRandom}">
-                          GEN
-                      </button>
+                      <div class="flex flex-col items-end gap-2">
+                          <!-- Sync button -->
+                          <button class="w-14 h-10 rounded-xl flex items-center justify-center text-[10px] font-bold font-mono tracking-wide transition-all active:scale-95
+                                       ${this.isSync 
+                                         ? 'bg-tech-cyan/20 text-tech-cyan border-2 border-tech-cyan shadow-[0_0_10px_rgba(6,182,212,0.3)]' 
+                                         : 'bg-zinc-800/80 text-zinc-300 border border-zinc-600'}"
+                                  @click="${this.toggleSync}">
+                              SYNC
+                          </button>
+                          
+                          <!-- GEN button -->
+                          <button class="w-16 h-16 rounded-full bg-zinc-800/85 border border-zinc-500 flex items-center justify-center text-[11px] font-bold tracking-wide text-zinc-100 shadow-[0_8px_22px_rgba(0,0,0,0.45)] active:scale-95 transition-all ${this.genPulse ? 'ring-2 ring-white/70 shadow-[0_0_20px_rgba(255,255,255,0.35)]' : ''}"
+                                  @click="${this.triggerGen}">
+                              GEN
+                          </button>
+                      </div>
                   </div>
               </div>
               
@@ -228,8 +230,8 @@ export class DeckController extends LitElement {
              </button>
              
              <!-- GEN (round button) -->
-             <button class="w-[52px] h-[52px] rounded-full bg-zinc-800 border border-zinc-600 flex items-center justify-center text-[10px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 hover:border-zinc-500 shadow-sm active:scale-95 transition-all"
-                     @click="${this.loadRandom}">
+             <button class="w-[52px] h-[52px] rounded-full bg-zinc-800 border border-zinc-600 flex items-center justify-center text-[10px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 hover:border-zinc-500 shadow-sm active:scale-95 transition-all ${this.genPulse ? 'ring-2 ring-white/60 shadow-[0_0_16px_rgba(255,255,255,0.3)] text-white' : ''}"
+                     @click="${this.triggerGen}">
                  GEN
              </button>
         </div>
@@ -251,7 +253,7 @@ export class DeckController extends LitElement {
   }
 
   private adjustGrid(beats: number) {
-      const engine = (window as any).engine;
+      const engine = window.engine;
       if (engine && engine.shiftGrid) {
           engine.shiftGrid(this.deckId, beats);
       }
@@ -259,7 +261,7 @@ export class DeckController extends LitElement {
 
   private adjustBpm(delta: number) {
       this.bpm = Math.max(60, Math.min(200, this.bpm + delta));
-      this.isManaul = true;
+      this.isManual = true;
       this.dispatchBpm();
   }
   
@@ -270,7 +272,7 @@ export class DeckController extends LitElement {
           const interval = now - this.lastTap;
           const newBpm = 60000 / interval;
           this.bpm = Math.round(newBpm * 10) / 10;
-          this.isManaul = true;
+          this.isManual = true;
           this.dispatchBpm();
       }
       this.lastTap = now;
@@ -285,7 +287,7 @@ export class DeckController extends LitElement {
   }
 
   private togglePlay() {
-      console.log(`[DeckController] togglePlay clicked for Deck ${this.deckId}. Current: ${this.isPlaying}`);
+      if (import.meta.env.DEV) console.log(`[DeckController] togglePlay clicked for Deck ${this.deckId}. Current: ${this.isPlaying}`);
       this.isPlaying = !this.isPlaying;
       this.dispatchEvent(new CustomEvent('deck-play-toggle', { 
           detail: { deck: this.deckId, playing: this.isPlaying },
@@ -295,7 +297,7 @@ export class DeckController extends LitElement {
   }
 
   private toggleSync() {
-      console.log(`[DeckController] toggleSync clicked for Deck ${this.deckId}`);
+      if (import.meta.env.DEV) console.log(`[DeckController] toggleSync clicked for Deck ${this.deckId}`);
       this.isSync = !this.isSync;
       this.dispatchEvent(new CustomEvent('deck-sync-toggle', {
           detail: { deck: this.deckId, sync: this.isSync },
@@ -320,6 +322,14 @@ export class DeckController extends LitElement {
           composed: true
       }));
   }
+
+  private triggerGen = () => {
+      this.genPulse = true;
+      this.loadRandom();
+      window.setTimeout(() => {
+          this.genPulse = false;
+      }, 180);
+  };
 
   private saveLoop() {
        this.dispatchEvent(new CustomEvent('deck-save-loop', {
