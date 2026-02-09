@@ -21,6 +21,8 @@ FROM nginx:alpine
 
 # Copy built assets
 COPY --from=builder /app/dist /usr/share/nginx/html
+# Copy static image assets used by VisualEngine initial texture pool
+COPY --from=builder /app/img /usr/share/nginx/html/img
 
 # Copy custom Nginx config for SPA routing
 COPY nginx.conf /etc/nginx/conf.d/default.conf

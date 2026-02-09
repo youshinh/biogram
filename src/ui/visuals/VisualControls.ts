@@ -82,11 +82,11 @@ export class VisualControls extends LitElement {
             
             .viz-grid button {
                 min-height: 64px;
-                font-size: 16px;
+                font-size: 13px;
             }
             
             .gnosis-wrapper {
-                font-size: 16px;
+                font-size: 13px;
                 min-height: 64px;
             }
             
@@ -118,6 +118,28 @@ export class VisualControls extends LitElement {
             min-height: 0;
             overflow-y: auto;
             box-sizing: border-box;
+        }
+
+        .panel {
+            scrollbar-width: thin;
+            scrollbar-color: #333 transparent;
+        }
+
+        .panel::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .panel::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .panel::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+
+        .panel::-webkit-scrollbar-thumb:hover {
+            background: #555;
         }
 
         .stack-col {
@@ -220,6 +242,41 @@ export class VisualControls extends LitElement {
             text-overflow: ellipsis;
         }
 
+        .auto-texture-preview {
+            border: 1px solid #2d2d30;
+            border-radius: 8px;
+            background: #0c0c0d;
+            min-height: 130px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .auto-texture-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .auto-texture-placeholder {
+            font-size: 9px;
+            color: #4b5563;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .auto-texture-meta {
+            font-size: 9px;
+            color: #6b7280;
+            line-height: 1.4;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         /* Visual Mode Grid */
         .viz-grid {
             display: grid;
@@ -231,20 +288,47 @@ export class VisualControls extends LitElement {
         
         .viz-grid button {
             height: 100%;
-            font-size: clamp(14px, 2.2vh, 20px); /* Match Effector Buttons text-xl */
-            font-weight: bold;
-            letter-spacing: 0.1em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(82, 82, 91, 0.85);
+            background: linear-gradient(180deg, rgba(31, 31, 38, 0.92) 0%, rgba(17, 17, 21, 0.95) 100%);
+            color: #a1a1aa;
+            font-size: clamp(11px, 1.05vw, 18px);
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 16px rgba(0, 0, 0, 0.25);
+        }
+
+        .viz-grid button:hover {
+            border-color: rgba(113, 113, 122, 0.95);
+            color: #f4f4f5;
+            background: linear-gradient(180deg, rgba(45, 45, 54, 0.95) 0%, rgba(23, 23, 29, 0.98) 100%);
+            transform: translateY(-1px);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 12px 20px rgba(0, 0, 0, 0.34);
+        }
+
+        .viz-grid button.active {
+            background: linear-gradient(180deg, #e11d48 0%, #be123c 100%);
+            border-color: #fb7185;
+            color: #ffffff;
+            box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.32), 0 12px 24px rgba(159, 18, 57, 0.45);
         }
 
         .gnosis-wrapper {
-            background: #18181b;
-            border: 1px solid #333;
+            background: linear-gradient(180deg, rgba(31, 31, 38, 0.92) 0%, rgba(17, 17, 21, 0.95) 100%);
+            border: 1px solid rgba(82, 82, 91, 0.85);
             color: #a1a1aa;
-            border-radius: 6px;
+            border-radius: 10px;
             cursor: pointer;
-            font-size: clamp(14px, 2.2vh, 20px); /* Match Effector Buttons text-xl */
-            font-weight: bold;
-            letter-spacing: 0.1em;
+            font-size: clamp(11px, 1.05vw, 18px);
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -254,50 +338,52 @@ export class VisualControls extends LitElement {
             height: 100%;
             width: 100%;
             box-sizing: border-box;
+            text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 16px rgba(0, 0, 0, 0.25);
         }
 
         .gnosis-wrapper:hover {
-            background: #27272a;
-            border-color: #555;
-            color: #fff;
+            border-color: rgba(113, 113, 122, 0.95);
+            color: #f4f4f5;
+            background: linear-gradient(180deg, rgba(45, 45, 54, 0.95) 0%, rgba(23, 23, 29, 0.98) 100%);
+            transform: translateY(-1px);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 12px 20px rgba(0, 0, 0, 0.34);
         }
 
         .gnosis-wrapper.active {
-            background: #be123c;
-            border-color: #f43f5e;
+            background: linear-gradient(180deg, #e11d48 0%, #be123c 100%);
+            border-color: #fb7185;
             color: white;
-            box-shadow: 0 0 10px rgba(225, 29, 72, 0.4);
+            box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.32), 0 12px 24px rgba(159, 18, 57, 0.45);
         }
 
         .gen-mini-btn {
             position: absolute;
-            bottom: 4px;
-            right: 4px;
-            width: 52px;
-            height: 52px;
+            bottom: 6px;
+            right: 6px;
+            width: 46px;
+            height: 46px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            
-            /* Match deck-controller GEN button: bg-zinc-800 border-zinc-600 */
-            background: #27272a; 
-            border: 1px solid #52525b;
-            
-            /* Text style: text-[10px] font-bold text-zinc-400 */
+
+            background: linear-gradient(180deg, rgba(42, 42, 49, 0.95) 0%, rgba(21, 21, 25, 0.98) 100%);
+            border: 1px solid rgba(113, 113, 122, 0.8);
             font-size: 10px;
-            font-weight: bold;
+            letter-spacing: 0.08em;
+            font-weight: 700;
             color: #a1a1aa;
             
             z-index: 10;
             transition: all 0.2s;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 10px rgba(0, 0, 0, 0.32);
         }
 
         .gen-mini-btn:hover {
-            color: white;
-            background: #3f3f46; /* zinc-700 */
-            border-color: #71717a; /* zinc-500 */
+            color: #fff;
+            border-color: #a1a1aa;
+            background: linear-gradient(180deg, rgba(61, 61, 71, 0.98) 0%, rgba(33, 33, 40, 1) 100%);
         }
 
         .gen-mini-btn:active {
@@ -368,6 +454,12 @@ export class VisualControls extends LitElement {
     @state() renderingEnabled = true;
     @state() currentMode: VisualMode = 'organic';
     @state() zenModeActive = false;
+    @state() autoTextureGenerating = false;
+    @state() autoTexturePreviewUrl: string | null = null;
+    @state() autoTexturePrompt = '';
+    @state() autoTextureStatus = 'READY';
+    @state() autoTextureError = '';
+    @state() autoTextureModel = '';
 
     render() {
         return html`
@@ -375,6 +467,23 @@ export class VisualControls extends LitElement {
                 
                 <!-- PANEL 1: INPUTS & SYSTEM -->
                 <div class="panel">
+                    <!-- System -->
+                    <div class="sub-section">
+                        <div class="panel-header">SYSTEM</div>
+                        <div class="row-group">
+                            <!-- Projector -->
+                            <button class="${this._projectorWin && !this._projectorWin.closed ? 'active' : ''}" 
+                                    @click="${this.toggleProjector}">
+                                ${this._projectorWin && !this._projectorWin.closed ? 'CLOSE PROJ' : 'PROJECTOR'}
+                            </button>
+                            
+                            <!-- Master Engine -->
+                            <button class="${this.renderingEnabled ? 'active' : ''}" @click="${this.toggleRendering}">
+                                ${this.renderingEnabled ? 'ENGINE: ON' : 'ENGINE: OFF'}
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Inputs -->
                     <div class="sub-section">
                         <div class="panel-header">INPUTS</div>
@@ -407,21 +516,41 @@ export class VisualControls extends LitElement {
                         </div>
                     </div>
 
-                    <!-- System -->
-                     <div class="sub-section" style="margin-top: auto;">
-                        <div class="panel-header">SYSTEM</div>
+                    <!-- Auto Texture -->
+                    <div class="sub-section">
+                        <button
+                            class="${this.autoTextureGenerating ? 'active' : ''}"
+                            ?disabled=${this.autoTextureGenerating}
+                            @click="${this.handleAutoTextureGenerate}"
+                        >
+                            ${this.autoTextureGenerating ? 'AUTO TEXTURE RUNNING...' : 'AUTO TEXTURE'}
+                        </button>
+                        <div class="auto-texture-preview">
+                            ${this.autoTexturePreviewUrl
+                                ? html`<img src="${this.autoTexturePreviewUrl}" alt="Auto texture preview" />`
+                                : html`<div class="auto-texture-placeholder">NO PREVIEW</div>`}
+                        </div>
                         <div class="row-group">
-                             <!-- Projector -->
-                            <button class="${this._projectorWin && !this._projectorWin.closed ? 'active' : ''}" 
-                                    @click="${this.toggleProjector}">
-                                ${this._projectorWin && !this._projectorWin.closed ? 'CLOSE PROJ' : 'PROJECTOR'}
+                            <button
+                                ?disabled=${!this.autoTexturePreviewUrl || this.autoTextureGenerating}
+                                @click="${() => this.applyAutoTexture('A')}"
+                            >
+                                APPLY A
                             </button>
-                            
-                            <!-- Master Engine -->
-                            <button class="${this.renderingEnabled ? 'active' : ''}" @click="${this.toggleRendering}">
-                                ${this.renderingEnabled ? 'ENGINE: ON' : 'ENGINE: OFF'}
+                            <button
+                                ?disabled=${!this.autoTexturePreviewUrl || this.autoTextureGenerating}
+                                @click="${() => this.applyAutoTexture('B')}"
+                            >
+                                APPLY B
                             </button>
                         </div>
+                        <div class="status-text">${this.autoTextureError || this.autoTextureStatus}</div>
+                        ${this.autoTextureModel
+                            ? html`<div class="auto-texture-meta">MODEL: ${this.autoTextureModel}</div>`
+                            : null}
+                        ${this.autoTexturePrompt
+                            ? html`<div class="auto-texture-meta" title="${this.autoTexturePrompt}">PROMPT: ${this.autoTexturePrompt}</div>`
+                            : null}
                     </div>
                 </div>
 
@@ -524,6 +653,44 @@ export class VisualControls extends LitElement {
     private toggleRendering() {
         this.renderingEnabled = !this.renderingEnabled;
         this.setMainRendering(this.renderingEnabled);
+    }
+
+    private handleAutoTextureGenerate() {
+        this.autoTextureGenerating = true;
+        this.autoTextureError = '';
+        this.autoTextureStatus = 'GENERATING...';
+        this.dispatchEvent(new CustomEvent('auto-texture-generate', {
+            bubbles: true,
+            composed: true
+        }));
+    }
+
+    private applyAutoTexture(deck: 'A' | 'B') {
+        if (!this.autoTexturePreviewUrl) return;
+        this.dispatchEvent(new CustomEvent('visual-texture-change', {
+            detail: { deck, url: this.autoTexturePreviewUrl, type: 'image' },
+            bubbles: true,
+            composed: true
+        }));
+        const statusEl = this.shadowRoot?.getElementById(`status-${deck.toLowerCase()}`);
+        if (statusEl) statusEl.innerText = 'AUTO TEXTURE';
+        this.autoTextureStatus = `APPLIED TO DECK ${deck}`;
+    }
+
+    public setAutoTextureState(patch: {
+        generating?: boolean;
+        previewUrl?: string | null;
+        prompt?: string;
+        status?: string;
+        error?: string;
+        model?: string;
+    }) {
+        if (typeof patch.generating === 'boolean') this.autoTextureGenerating = patch.generating;
+        if (patch.previewUrl !== undefined) this.autoTexturePreviewUrl = patch.previewUrl;
+        if (patch.prompt !== undefined) this.autoTexturePrompt = patch.prompt;
+        if (patch.status !== undefined) this.autoTextureStatus = patch.status;
+        if (patch.error !== undefined) this.autoTextureError = patch.error;
+        if (patch.model !== undefined) this.autoTextureModel = patch.model;
     }
 
     private handleAiGridGen() {

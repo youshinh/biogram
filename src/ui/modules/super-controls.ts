@@ -384,6 +384,8 @@ export class SuperControls extends LitElement {
   @state() sessionMode: 'single' | 'free' = 'single';
   @state() maxRuntimeMin = 60;
   @state() aiVisualsEnabled = false;
+  @state() promptAutoEnabled = true;
+  @state() promptAutoCurve: 'BALANCED' | 'AGGRESSIVE' | 'CINEMATIC' = 'BALANCED';
   @state() logs: string[] = [];
 
 	  render() {
@@ -429,8 +431,8 @@ export class SuperControls extends LitElement {
                            <option value="60">60</option>
                        </select>
                    </div>
-                   <div class="policy-line">Mood / Visualは現在のDeck Prompt文脈に自動追従</div>
-                   <div class="policy-line">DirectionはPINGPONG (A↔B) で自動運転</div>
+                   <div class="policy-line">Mood / Visual automatically follow current deck prompt context</div>
+                   <div class="policy-line">Direction runs in PINGPONG mode (A↔B)</div>
                </div>
            ` : ''}
 
@@ -465,6 +467,27 @@ export class SuperControls extends LitElement {
                <div class="policy-line">Allowed: fade_in / fade_out / crossfade / soft_overlay / sweep_line_smear</div>
                <div class="policy-line">Intensity: 0.0 - 1.0 (default 0.35)</div>
                <div class="policy-line">No hard flash / no aggressive glitch / no strobe</div>
+           </div>
+
+           <div class="policy-box">
+               <div class="policy-title">PROMPT AUTO CONTROL</div>
+               <div class="control-group">
+                   <label>AUTO PROMPT</label>
+                   <select .value="${this.promptAutoEnabled ? 'ON' : 'OFF'}"
+                           @change="${(e: any) => this.promptAutoEnabled = e.target.value === 'ON'}">
+                       <option value="ON">ON</option>
+                       <option value="OFF">OFF</option>
+                   </select>
+               </div>
+               <div class="control-group">
+                   <label>CURVE</label>
+                   <select .value="${this.promptAutoCurve}"
+                           @change="${(e: any) => this.promptAutoCurve = e.target.value as 'BALANCED' | 'AGGRESSIVE' | 'CINEMATIC'}">
+                       <option value="BALANCED">BALANCED</option>
+                       <option value="AGGRESSIVE">AGGRESSIVE</option>
+                       <option value="CINEMATIC">CINEMATIC</option>
+                   </select>
+               </div>
            </div>
            
            <div style="flex-grow:1"></div>
@@ -601,7 +624,9 @@ export class SuperControls extends LitElement {
               mood: this.mood,
               preferredVisual: this.preferredVisual,
               sessionMode: 'single',
-              maxRuntimeMin: this.maxRuntimeMin
+              maxRuntimeMin: this.maxRuntimeMin,
+              promptAutoEnabled: this.promptAutoEnabled,
+              promptAutoCurve: this.promptAutoCurve
           },
           bubbles: true,
           composed: true
@@ -618,7 +643,9 @@ export class SuperControls extends LitElement {
               mood: 'Prompt Adaptive',
               preferredVisual: 'organic',
               sessionMode: 'free',
-              maxRuntimeMin: this.maxRuntimeMin
+              maxRuntimeMin: this.maxRuntimeMin,
+              promptAutoEnabled: this.promptAutoEnabled,
+              promptAutoCurve: this.promptAutoCurve
           },
           bubbles: true,
           composed: true

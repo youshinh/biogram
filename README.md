@@ -10,7 +10,8 @@ This README is derived from the code in `src/` and reflects how the app behaves 
 ## Current Product Summary
 Bio:gram is a browser-based AI DJ system with:
 - Dual-deck realtime music generation via Google Lyria (`lyria-realtime-exp`)
-- AI-generated automation score (JSON) via Gemini Flash Lite (`gemini-flash-lite-latest`)
+- AI-generated integrated mix plan (JSON) via Gemini 3 Pro (`gemini-3-pro-preview`) for mix planning only
+- Lightweight AI tasks (grid/analysis/prompt helpers) via Gemini Flash Lite (`gemini-flash-lite-latest`)
 - AudioWorklet-based DSP and deck mixing
 - Live visuals (Three.js-based) that react to mixer/FX/analysis events
 - Local loop library (IndexedDB) with save/load/import/export/recommend features
@@ -40,7 +41,7 @@ Relevant code:
 ### 3. AI Mix (Director Panel)
 - Super Controls can request mix generation for `A->B` or `B->A`
 - Mix request includes direction, duration (16/32/64/128), mood, preferred visual mode
-- Gemini returns an `AutomationScore` JSON
+- Gemini 3 Pro returns an integrated mix plan, then `audio_plan` is executed as `AutomationScore`
 - `AutomationEngine` executes score curves over bars with interpolation and safety guards
 - UI states: `IDLE -> GENERATING -> READY -> MIXING`
 

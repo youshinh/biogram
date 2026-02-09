@@ -45,6 +45,8 @@ import {
 import { generatePrompt, getDisplayPromptParts } from './ai/prompt-generator';
 import { LibraryStore } from './audio/db/library-store';
 import { analyzeAudioValidity } from './audio/utils/audio-analysis';
+import { TexturePromptGenerator } from './ai/texture-prompt-generator';
+import { TextureImageGenerator } from './ai/texture-image-generator';
 
 // 1. ROOT (基音) のリスト
 const ROOT_OPTIONS = [
@@ -93,6 +95,8 @@ window.midiManager = midiManager;
 const autoEngine = new AutomationEngine(engine);
 const mixGen = new MixGenerator(apiKey);
 const gridGen = new GridGenerator(apiKey);
+const texturePromptGen = new TexturePromptGenerator(apiKey);
+const textureImageGen = new TextureImageGenerator(apiKey);
 const visualTransitionEngine = new VisualTransitionEngine((targetId, value) => {
     const viz = (window as any).__threeViz as ThreeViz | undefined;
     if (!viz) return;
@@ -106,6 +110,7 @@ const visualTransitionEngine = new VisualTransitionEngine((targetId, value) => {
 // ROUTING LOGIC
 const urlParams = new URLSearchParams(window.location.search);
 const isVizMode = urlParams.get('mode') === 'viz';
+const allowTemplateMixPlan = urlParams.get('allowTemplatePlan') === '1';
 
 if (isVizMode) {
     // --- VJ Projector Mode ---
@@ -298,6 +303,14 @@ if (isVizMode) {
     };
 
     let isSlamming = false;
+    type PromptAutoCurve = 'BALANCED' | 'AGGRESSIVE' | 'CINEMATIC';
+    let promptAutoControlActive = false;
+    let promptAutoEnabledSetting = true;
+    let promptAutoCurveMode: PromptAutoCurve = 'BALANCED';
+    let promptAutoLastUiPushMs = 0;
+    let promptAutoLastPromptPushMs = 0;
+    let promptAutoLastPhase = '';
+    let applyAutoPromptFromMix: ((bar: number, phase: string, totalBars: number, mood: string) => void) | null = null;
 
     // Listen for Deck Prompt Updates
     window.addEventListener('deck-prompt-change', (e: any) => {
@@ -488,6 +501,77 @@ if (isVizMode) {
         threeViz.updateTexture(deck, url, type);
     });
 
+    let autoTextureReqId = 0;
+    const compactPrompt = (value: string) => value.replace(/\s+/g, ' ').trim();
+    const resolveTextureSubjectFromContext = () => {
+        const crossfader = Number(engine.getDspParam('CROSSFADER') ?? 0.5);
+        const primaryDeck: 'A' | 'B' = crossfader <= 0.5 ? 'A' : 'B';
+        const secondaryDeck: 'A' | 'B' = primaryDeck === 'A' ? 'B' : 'A';
+        const primaryPrompt = compactPrompt(primaryDeck === 'A' ? uiState.deckAPrompt : uiState.deckBPrompt);
+        const secondaryPrompt = compactPrompt(secondaryDeck === 'A' ? uiState.deckAPrompt : uiState.deckBPrompt);
+        const theme = compactPrompt(uiState.theme || '');
+        const textureType = compactPrompt(uiState.typeTexture || '');
+        const pulseType = compactPrompt(uiState.typePulse || '');
+
+        const subject = [
+            primaryPrompt || secondaryPrompt || theme || 'organic ambient techno visual surface',
+            textureType,
+            pulseType
+        ].filter(Boolean).join(', ');
+
+        return {
+            subject,
+            primaryDeck,
+            primaryPrompt,
+            secondaryPrompt
+        };
+    };
+
+    vizControls.addEventListener('auto-texture-generate', async () => {
+        const reqId = ++autoTextureReqId;
+        const hasKey = apiKeyManager.hasApiKey();
+        vizControls.setAutoTextureState({
+            generating: true,
+            error: '',
+            status: hasKey ? 'GENERATING...' : 'GENERATING (FALLBACK)...',
+            model: '',
+        });
+
+        const ctx = resolveTextureSubjectFromContext();
+        const promptSubject = ctx.subject;
+
+        try {
+            const texturePrompt = await texturePromptGen.generatePrompt(promptSubject, {
+                detailLevel: 'high'
+            });
+
+            const image = await textureImageGen.generateTextureImage(texturePrompt, {
+                aspectRatio: '1:1',
+                imageSize: '1K'
+            });
+
+            if (reqId !== autoTextureReqId) return;
+
+            vizControls.setAutoTextureState({
+                generating: false,
+                previewUrl: image.dataUrl,
+                prompt: texturePrompt,
+                status: `READY (${ctx.primaryDeck} CONTEXT)`,
+                error: '',
+                model: image.modelUsed
+            });
+        } catch (error) {
+            console.error('[Main] Auto texture generation failed:', error);
+            if (reqId !== autoTextureReqId) return;
+            vizControls.setAutoTextureState({
+                generating: false,
+                status: 'FAILED',
+                error: 'AUTO TEXTURE FAILED',
+                model: ''
+            });
+        }
+    });
+
     vizControls.addEventListener('visual-webcam-toggle', (e: any) => {
         threeViz.toggleWebcam(e.detail.active);
     });
@@ -659,11 +743,21 @@ if (isVizMode) {
             engine.updateDspParam('BLOOM_WET', 0.0);
             engine.updateDspParam('TAPE_ACTIVE', 0.0);
             engine.updateDspParam('REVERB_ACTIVE', 0.0);
+            engine.updateDspParam('FILTER_ACTIVE', 0.0);
             window.dispatchEvent(new CustomEvent('mixer-update', {
                 detail: { parameter: 'DUB', value: 0.0 }
             }));
             window.dispatchEvent(new CustomEvent('mixer-update', {
                 detail: { parameter: 'BLOOM_WET', value: 0.0 }
+            }));
+            window.dispatchEvent(new CustomEvent('mixer-update', {
+                detail: { parameter: 'TAPE_ACTIVE', value: 0.0 }
+            }));
+            window.dispatchEvent(new CustomEvent('mixer-update', {
+                detail: { parameter: 'REVERB_ACTIVE', value: 0.0 }
+            }));
+            window.dispatchEvent(new CustomEvent('mixer-update', {
+                detail: { parameter: 'FILTER_ACTIVE', value: 0.0 }
             }));
         }
     };
@@ -677,9 +771,16 @@ if (isVizMode) {
             preferredVisual,
             sessionMode = 'single',
             pattern = 'PINGPONG',
-            maxRuntimeMin = 60
+            maxRuntimeMin = 60,
+            promptAutoEnabled = true,
+            promptAutoCurve = 'BALANCED'
         } = e.detail;
         const preferredMode = normalizePreferredVisualMode(preferredVisual);
+        promptAutoEnabledSetting = !!promptAutoEnabled;
+        promptAutoCurveMode = (String(promptAutoCurve).toUpperCase() as PromptAutoCurve);
+        if (!['BALANCED', 'AGGRESSIVE', 'CINEMATIC'].includes(promptAutoCurveMode)) {
+            promptAutoCurveMode = 'BALANCED';
+        }
         
         // Optimistic update in UI sets state to GENERATING, so we must allow it.
         // if (superCtrl.mixState !== 'IDLE') return; <--- REMOVED BLOCKER
@@ -743,6 +844,25 @@ if (isVizMode) {
             
             if (score) {
                 superCtrl.addLog(`SCORE RECEIVED. Tracks: ${score.tracks.length}`);
+                const planner = integratedPlan.meta.plan_model || 'unknown';
+                superCtrl.addLog(`PLANNER: ${planner}`);
+                if (planner === 'template') {
+                    superCtrl.addLog('FALLBACK PLAN ACTIVE: deterministic EQ/FX automation');
+                    if (integratedPlan.meta.plan_fallback_reason) {
+                        superCtrl.addLog(`FALLBACK REASON: ${integratedPlan.meta.plan_fallback_reason}`);
+                    }
+                    if (!allowTemplateMixPlan) {
+                        superCtrl.mixState = 'IDLE';
+                        superCtrl.addLog('MIX BLOCKED: Gemini planner unavailable.');
+                        superCtrl.addLog('Add ?allowTemplatePlan=1 to URL only if you want forced template mix.');
+                        pendingIntegratedPlan = null;
+                        return;
+                    }
+                }
+                if (integratedPlan.meta.description) {
+                    const desc = integratedPlan.meta.description.slice(0, 96);
+                    superCtrl.addLog(`PLAN NOTE: ${desc}${integratedPlan.meta.description.length > 96 ? '...' : ''}`);
+                }
                 if (import.meta.env.DEV) {
                     console.log('[AI Mix] Plan prompt context hash:', integratedPlan.prompt_context_ref.context_hash);
                 }
@@ -752,6 +872,9 @@ if (isVizMode) {
                 autoEngine.setOnProgress((bar, phase) => {
                      superCtrl.updateStatus(bar, phase, duration);
                      visualTransitionEngine.update(bar);
+                     if (applyAutoPromptFromMix) {
+                        applyAutoPromptFromMix(bar, phase, duration, String(mood));
+                     }
                      if (lastMixStartPerfMs > 0) {
                         const elapsedSec = (performance.now() - lastMixStartPerfMs) / 1000.0;
                         const secondsPerBar = (60 / Math.max(1, score.meta.target_bpm)) * 4;
@@ -771,6 +894,7 @@ if (isVizMode) {
 
                      if (!mixCompletionHandled && (phase === 'COMPLETE' || bar >= duration)) {
                          mixCompletionHandled = true;
+                         promptAutoControlActive = false;
                          visualTransitionEngine.stop();
                          applySafetyReset(integratedPlan);
                          superCtrl.mixState = 'IDLE';
@@ -825,7 +949,9 @@ if (isVizMode) {
                                          preferredVisual: freeModeSession?.preferredVisual ?? preferredMode,
                                          sessionMode: 'free',
                                          pattern: freeModeSession?.pattern ?? pattern,
-                                         maxRuntimeMin: Math.floor((freeModeSession?.maxRuntimeMs ?? 3600000) / 60000)
+                                         maxRuntimeMin: Math.floor((freeModeSession?.maxRuntimeMs ?? 3600000) / 60000),
+                                         promptAutoEnabled: promptAutoEnabledSetting,
+                                         promptAutoCurve: promptAutoCurveMode
                                      },
                                      bubbles: true,
                                      composed: true
@@ -881,6 +1007,11 @@ if (isVizMode) {
         if (import.meta.env.DEV) console.log(`[AI Mix] Starting Mix...`);
         superCtrl.mixState = 'MIXING';
         superCtrl.addLog(`MIX STARTED.`);
+        promptAutoControlActive = promptAutoEnabledSetting;
+        promptAutoLastUiPushMs = 0;
+        promptAutoLastPromptPushMs = 0;
+        promptAutoLastPhase = '';
+        superCtrl.addLog(`AUTO PROMPT CONTROL: ${promptAutoControlActive ? `ON (${promptAutoCurveMode})` : 'OFF'}`);
 
         // --- SAFETY NET: Force Play if Stopped ---
         if (pendingMixContext) {
@@ -911,6 +1042,7 @@ if (isVizMode) {
     superCtrl.addEventListener('ai-mix-abort', () => {
         autoEngine.stop();
         visualTransitionEngine.stop();
+        promptAutoControlActive = false;
         clearFreeModeTimer();
         freeModeSession = null;
         pendingIntegratedPlan = null;
@@ -922,6 +1054,7 @@ if (isVizMode) {
     superCtrl.addEventListener('ai-mix-cancel', () => {
         // Cancel the generated mix without starting - just reset state
         visualTransitionEngine.stop();
+        promptAutoControlActive = false;
         clearFreeModeTimer();
         freeModeSession = null;
         pendingIntegratedPlan = null;
@@ -1214,12 +1347,117 @@ if (isVizMode) {
     const sliderRefs: { name: string, wrapper: HTMLElement, slider: BioSliderElement }[] = [];
     const comboRefs: { name: string, wrapper: HTMLElement, select: HTMLSelectElement, slider: BioSliderElement }[] = [];
     const setBioSliderValue = (slider: BioSliderElement, value: number) => {
+        const current = Number(slider.value ?? 0);
+        if (Math.abs(current - value) < 0.5) return;
         slider.value = value;
         slider.dispatchEvent(new CustomEvent('change', {
             detail: value,
             bubbles: true,
             composed: true
         }));
+    };
+
+    const setComboSelection = (name: 'TEXTURE' | 'PULSE', selectedValue: string) => {
+        const ref = comboRefs.find((c) => c.name === name);
+        if (!ref) return;
+        if (ref.select.value === selectedValue) return;
+        const exists = Array.from(ref.select.options).some((o) => o.value === selectedValue);
+        if (!exists) return;
+        ref.select.value = selectedValue;
+        ref.select.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const clamp100 = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
+    const computeAutoPromptTargets = (progress: number, mood: string, curve: PromptAutoCurve) => {
+        let ambient = 78 - (38 * progress);
+        let minimal = 28 + (50 * progress);
+        let dub = 24 + (52 * Math.sin(Math.PI * progress));
+        let impact = 32 + (58 * progress);
+        let color = 35 + (48 * progress);
+        const m = mood.toLowerCase();
+        if (m.includes('cinema')) {
+            ambient += 10;
+            minimal -= 8;
+            impact -= 10;
+            color -= 6;
+        } else if (m.includes('chaos')) {
+            ambient -= 12;
+            minimal += 18;
+            dub += 12;
+            impact += 14;
+            color += 8;
+        } else if (m.includes('organic')) {
+            ambient += 8;
+            minimal -= 10;
+            dub += 6;
+        } else if (m.includes('rhythmic')) {
+            ambient -= 6;
+            minimal += 10;
+            impact += 12;
+        }
+        if (curve === 'AGGRESSIVE') {
+            ambient -= 8;
+            minimal += 10;
+            dub += 10;
+            impact += 14;
+            color += 8;
+        } else if (curve === 'CINEMATIC') {
+            ambient += 12;
+            minimal -= 10;
+            dub += 4;
+            impact -= 10;
+            color -= 8;
+        }
+        return {
+            ambient: clamp100(ambient),
+            minimal: clamp100(minimal),
+            dub: clamp100(dub),
+            impact: clamp100(impact),
+            color: clamp100(color)
+        };
+    };
+
+    applyAutoPromptFromMix = (bar, phase, totalBars, mood) => {
+        if (!promptAutoControlActive) return;
+        const now = performance.now();
+        if (now - promptAutoLastUiPushMs < 240) return;
+        promptAutoLastUiPushMs = now;
+
+        const progress = clamp01(totalBars > 0 ? bar / totalBars : 0);
+        const targets = computeAutoPromptTargets(progress, mood, promptAutoCurveMode);
+        const sliderByName = (name: string) => sliderRefs.find((s) => s.name === name)?.slider;
+
+        const ambientSlider = sliderByName('AMBIENT');
+        const minimalSlider = sliderByName('MINIMAL');
+        const dubSlider = sliderByName('DUB');
+        const impactSlider = sliderByName('IMPACT');
+        const colorSlider = sliderByName('COLOR');
+        if (ambientSlider) setBioSliderValue(ambientSlider, targets.ambient);
+        if (minimalSlider) setBioSliderValue(minimalSlider, targets.minimal);
+        if (dubSlider) setBioSliderValue(dubSlider, targets.dub);
+        if (impactSlider) setBioSliderValue(impactSlider, targets.impact);
+        if (colorSlider) setBioSliderValue(colorSlider, targets.color);
+
+        const normalizedPhase = phase.toUpperCase();
+        if (normalizedPhase !== promptAutoLastPhase) {
+            promptAutoLastPhase = normalizedPhase;
+            if (normalizedPhase.includes('PRESENCE')) {
+                setComboSelection('TEXTURE', 'Field Recordings Nature');
+                setComboSelection('PULSE', 'Sub-bass Pulse');
+            } else if (normalizedPhase.includes('HANDOFF')) {
+                setComboSelection('TEXTURE', 'Industrial Factory Drone');
+                setComboSelection('PULSE', 'Deep Dub Tech Rhythm');
+            } else if (normalizedPhase.includes('WASH')) {
+                setComboSelection('TEXTURE', 'Tape Hiss Lo-Fi');
+                setComboSelection('PULSE', 'Granular Clicks');
+            }
+        }
+
+        if (now - promptAutoLastPromptPushMs >= 1800) {
+            updatePrompts();
+            promptAutoLastPromptPushMs = now;
+        }
     };
 
     // Helper to create slider with reference

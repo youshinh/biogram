@@ -56,16 +56,35 @@ export class FxRack extends LitElement {
   private handleUpdate = (e: any) => {
       const { parameter, value } = e.detail;
       
+      // Filter / XY
+      if (parameter === 'FILTER_ACTIVE') {
+          this.activeFilter = value > 0.5;
+      } else if (parameter === 'HPF') {
+          this.filterX = Math.max(0, Math.min(1, value));
+      } else if (parameter === 'LPF') {
+          this.filterY = 1.0 - Math.max(0, Math.min(1, value));
+      } else if (parameter === 'FILTER_Q') {
+          this.filterQ = Math.max(0, Math.min(1, value));
+      } else if (parameter === 'FILTER_DRIVE') {
+          this.filterDrive = Math.max(0, Math.min(1, value));
+      }
+
       // Tape Echo
-      if (parameter === 'DUB') {
+      else if (parameter === 'DUB') {
           this.dubSend = value;
       } else if (parameter === 'TAPE_ACTIVE') {
           this.activeTape = value > 0.5;
       }
       
       // Bloom Verb
-      else if (parameter === 'BLOOM_WET') {
+      else if (parameter === 'BLOOM_SIZE') {
+          this.bloomSize = value;
+      } else if (parameter === 'BLOOM_SHIMMER') {
+          this.bloomShimmer = value;
+      } else if (parameter === 'BLOOM_WET') {
           this.bloomWet = value;
+      } else if (parameter === 'BLOOM_DRY') {
+          this.bloomDry = value;
       } else if (parameter === 'REVERB_ACTIVE') {
           this.activeReverb = value > 0.5;
       }
@@ -73,6 +92,12 @@ export class FxRack extends LitElement {
       // Dynamics
       else if (parameter === 'COMP_ACTIVE') {
           this.activeLimiter = value > 0.5;
+      } else if (parameter === 'COMP_THRESH') {
+          this.compThresh = Math.max(0, Math.min(1, value));
+      } else if (parameter === 'COMP_RATIO') {
+          this.compRatio = Math.max(2, Math.min(20, value));
+      } else if (parameter === 'COMP_MAKEUP') {
+          this.compGain = Math.max(0.1, Math.min(3.0, value));
       }
       
       // Spectral Gate
@@ -83,6 +108,32 @@ export class FxRack extends LitElement {
           // Reverse mapping if needed, or just update internal state?
           // For UI consistency, we might need a separate internal 'thresh' if logic differs.
           // For now assume direct update 
+      } else if (parameter === 'GATE_RELEASE') {
+          this.gateRelease = Math.max(0, Math.min(1, (value - 0.9) / 0.0999));
+      }
+
+      // Cloud
+      else if (parameter === 'CLOUD_ACTIVE') {
+          this.activeCloud = value > 0.5;
+      } else if (parameter === 'CLOUD_DENSITY') {
+          this.cloudDensity = Math.max(0, Math.min(1, value));
+      } else if (parameter === 'CLOUD_SIZE') {
+          this.cloudSize = Math.max(0, Math.min(1, value));
+      } else if (parameter === 'CLOUD_SPRAY') {
+          this.cloudSpray = Math.max(0, Math.min(1, value));
+      } else if (parameter === 'CLOUD_PITCH') {
+          this.cloudPitch = Math.max(0, Math.min(1, (value - 0.5) / 1.5));
+      } else if (parameter === 'CLOUD_MIX') {
+          this.cloudMix = Math.max(0, Math.min(1, value));
+      }
+
+      // Decimator
+      else if (parameter === 'DECIMATOR_ACTIVE') {
+          this.activeDecimator = value > 0.5;
+      } else if (parameter === 'SR') {
+          this.sr = Math.max(0, Math.min(1, value / 44100));
+      } else if (parameter === 'BITS') {
+          this.bits = Math.max(1, Math.min(16, Math.round(value)));
       }
       
       this.requestUpdate();

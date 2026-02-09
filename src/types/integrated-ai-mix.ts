@@ -3,6 +3,11 @@ import type { AutomationScore } from './ai-mix';
 export type SessionMode = 'single' | 'free';
 export type MixDirection = 'A->B' | 'B->A';
 export type MixPattern = 'PINGPONG' | 'ABBA';
+export type PlanModel =
+  | 'gemini-flash-lite-latest'
+  | 'gemini-3-flash-preview'
+  | 'gemini-3-pro-preview'
+  | 'template';
 export type VisualTransitionType =
   | 'fade_in'
   | 'fade_out'
@@ -50,6 +55,8 @@ export type IntegratedMixPlan = {
     pattern?: MixPattern;
     max_runtime_min?: number;
     description?: string;
+    plan_model?: PlanModel;
+    plan_fallback_reason?: string;
   };
   audio_plan: AutomationScore;
   visual_plan: VisualPlan;

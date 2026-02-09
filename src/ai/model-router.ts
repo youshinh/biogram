@@ -1,8 +1,15 @@
 import { GoogleGenAI } from '@google/genai';
 
+export type PlannerModel =
+  | 'gemini-flash-lite-latest'
+  | 'gemini-3-flash-preview'
+  | 'gemini-3-pro-preview'
+  | 'template';
+
 export type RoutedGenerationResult = {
   text: string;
-  modelUsed: 'gemini-flash-lite-latest' | 'gemini-3-flash-preview' | 'template';
+  modelUsed: PlannerModel;
+  fallbackReason?: string;
 };
 
 type GenerationRequest = {
@@ -41,8 +48,28 @@ export class ModelRouter {
     return { text: buildTemplate(), modelUsed: 'template' };
   }
 
+  async generateMixPlanOnlyWithPro(
+    req: GenerationRequest,
+    buildTemplate: () => string
+  ): Promise<RoutedGenerationResult> {
+    const timeoutMs = req.timeoutMs ?? 25000;
+
+    try {
+      const proText = await this.generateWithModel('gemini-3-pro-preview', req, timeoutMs);
+      return { text: proText, modelUsed: 'gemini-3-pro-preview' };
+    } catch (proError) {
+      console.warn('[ModelRouter] Gemini 3 Pro failed, using template fallback', proError);
+      const msg = proError instanceof Error ? proError.message : String(proError);
+      return {
+        text: buildTemplate(),
+        modelUsed: 'template',
+        fallbackReason: `gemini-3-pro-preview failed: ${msg}`
+      };
+    }
+  }
+
   private async generateWithModel(
-    model: 'gemini-flash-lite-latest' | 'gemini-3-flash-preview',
+    model: Exclude<PlannerModel, 'template'>,
     req: GenerationRequest,
     timeoutMs: number
   ): Promise<string> {

@@ -300,6 +300,19 @@ export class AutomationEngine {
       }
   }
 
+  private applyGlobalFilterFromBipolarCutoff(v: number) {
+      const clamped = Math.max(0, Math.min(1, v));
+      const hpf = clamped > 0.5 ? (clamped - 0.5) * 2.0 : 0.0;
+      const lpf = clamped < 0.5 ? 1.0 - ((0.5 - clamped) * 2.0) : 1.0;
+      const active = Math.abs(clamped - 0.5) > 0.02 ? 1.0 : 0.0;
+      this.engine.updateDspParam('FILTER_ACTIVE', active);
+      this.engine.updateDspParam('HPF', hpf);
+      this.engine.updateDspParam('LPF', lpf);
+      this.dispatchUpdate('FILTER_ACTIVE', active);
+      this.dispatchUpdate('HPF', hpf);
+      this.dispatchUpdate('LPF', lpf);
+  }
+
   private applyParam(id: ParameterID, val: number | boolean) {
       // Block FORBIDDEN parameters (TRIM, DRIVE)
       if (AutomationEngine.FORBIDDEN_PARAMS.includes(id as string)) {
@@ -378,6 +391,7 @@ export class AutomationEngine {
 
           // Mapping FILTER to EQ for V1 Compatibility
           case 'DECK_A_FILTER_CUTOFF':
+             this.applyGlobalFilterFromBipolarCutoff(v);
              if (v > 0.5) {
                  // High Pass (Cut Lows)
                  const amount = (v - 0.5) * 2.0;
@@ -396,6 +410,7 @@ export class AutomationEngine {
              break;
 
           case 'DECK_B_FILTER_CUTOFF':
+             this.applyGlobalFilterFromBipolarCutoff(v);
              if (v > 0.5) {
                  const amount = (v - 0.5) * 2.0;
                  const eqVal = 1.0 - amount;
@@ -408,6 +423,14 @@ export class AutomationEngine {
                  this.dispatchUpdate('highB', eqVal);
              }
              break;
+
+          case 'DECK_A_FILTER_RES':
+          case 'DECK_B_FILTER_RES':
+             this.engine.updateDspParam('FILTER_ACTIVE', 1.0);
+             this.engine.updateDspParam('FILTER_Q', v);
+             this.dispatchUpdate('FILTER_ACTIVE', 1.0);
+             this.dispatchUpdate('FILTER_Q', v);
+             break;
              
           // FX
           case 'DECK_A_ECHO_SEND': 
@@ -417,6 +440,9 @@ export class AutomationEngine {
              if (v > 0.05) {
                  this.engine.updateDspParam('TAPE_ACTIVE', 1.0);
                  this.dispatchUpdate('TAPE_ACTIVE', 1.0);
+             } else {
+                 this.engine.updateDspParam('TAPE_ACTIVE', 0.0);
+                 this.dispatchUpdate('TAPE_ACTIVE', 0.0);
              }
              break;
           case 'DECK_B_ECHO_SEND': 
@@ -425,6 +451,9 @@ export class AutomationEngine {
              if (v > 0.05) {
                  this.engine.updateDspParam('TAPE_ACTIVE', 1.0);
                  this.dispatchUpdate('TAPE_ACTIVE', 1.0);
+             } else {
+                 this.engine.updateDspParam('TAPE_ACTIVE', 0.0);
+                 this.dispatchUpdate('TAPE_ACTIVE', 0.0);
              }
              break;
 
@@ -435,6 +464,9 @@ export class AutomationEngine {
              if (v > 0.05) {
                  this.engine.updateDspParam('REVERB_ACTIVE', 1.0);
                  this.dispatchUpdate('REVERB_ACTIVE', 1.0);
+             } else {
+                 this.engine.updateDspParam('REVERB_ACTIVE', 0.0);
+                 this.dispatchUpdate('REVERB_ACTIVE', 0.0);
              }
              break;
 
@@ -451,6 +483,13 @@ export class AutomationEngine {
              this.updateSlam(v);
              // Dispatch handled in updateSlam? No.
              this.dispatchUpdate('SLAM_AMOUNT', v);
+             break;
+
+          case 'MASTER_COMP_THRESH':
+             this.engine.updateDspParam('COMP_ACTIVE', 1.0);
+             this.engine.updateDspParam('COMP_THRESH', v);
+             this.dispatchUpdate('COMP_ACTIVE', 1.0);
+             this.dispatchUpdate('COMP_THRESH', v);
              break;
       }
   }

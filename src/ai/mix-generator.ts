@@ -8,7 +8,7 @@ import type {
     VisualPlanTrack
 } from '../types/integrated-ai-mix';
 import { validateIntegratedMixPlan } from './integrated-plan-validator';
-import { ModelRouter } from './model-router';
+import { ModelRouter, type PlannerModel } from './model-router';
 
 const SYSTEM_PROMPT = `
 You are a world-class Ambient Techno DJ and Audio Engineer.
@@ -79,6 +79,9 @@ export class MixGenerator {
         const templatePlan = JSON.parse(
             this.buildTemplatePlanJson(direction, currentBpm, totalBars, promptCtx, contextHash, preferredVisual)
         ) as IntegratedMixPlan;
+        this.enforceAudioMotionPlan(templatePlan);
+        this.enforceVisualTransitionPlan(templatePlan);
+        this.attachPlannerMetadata(templatePlan, 'template');
 
         const promptText = `
 User Input: "${userRequest}"
@@ -103,11 +106,11 @@ Context Hash: ${contextHash}
 `;
 
         try {
-            const routed = await this.router.generateWithFallback(
+            const routed = await this.router.generateMixPlanOnlyWithPro(
                 {
                     systemPrompt: SYSTEM_PROMPT,
                     userPrompt: promptText,
-                    timeoutMs: 20000
+                    timeoutMs: 25000
                 },
                 () => this.buildTemplatePlanJson(direction, currentBpm, totalBars, promptCtx, contextHash, preferredVisual)
             );
@@ -125,18 +128,35 @@ Context Hash: ${contextHash}
                 );
             } catch (parseError) {
                 console.warn('[MixGenerator] Parse failed. Using safe template.', parseError);
+                this.markFallbackReason(
+                    templatePlan,
+                    `response parse failed: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+                );
                 return templatePlan;
             }
+            this.enforceAudioMotionPlan(plan);
+            this.enforceVisualTransitionPlan(plan);
             const errors = validateIntegratedMixPlan(plan);
             if (errors.length > 0) {
                 console.warn('[MixGenerator] Integrated plan validation failed, applying safe template', errors);
+                this.markFallbackReason(templatePlan, `plan validation failed: ${errors.join('; ')}`);
                 return templatePlan;
             }
-            this.enforceVisualTransitionPlan(plan);
+            this.attachPlannerMetadata(plan, routed.modelUsed);
+            if (routed.modelUsed === 'template') {
+                this.markFallbackReason(
+                    plan,
+                    routed.fallbackReason || 'planner returned template fallback'
+                );
+            }
             return plan;
 
         } catch (e: any) {
             console.error(`[MixGenerator] Generation failed. Using safe template.`, e);
+            this.markFallbackReason(
+                templatePlan,
+                `mix generation exception: ${e instanceof Error ? e.message : String(e)}`
+            );
             return templatePlan;
         }
     }
@@ -287,7 +307,8 @@ Context Hash: ${contextHash}
                 direction,
                 target_bpm: bpm,
                 total_bars: totalBars,
-                description: `Safe Template ${direction}`
+                description: `Safe Template ${direction}`,
+                plan_model: 'template'
             },
             audio_plan: {
                 meta: {
@@ -350,6 +371,149 @@ Context Hash: ${contextHash}
         }
 
         return JSON.stringify(template);
+    }
+
+    private attachPlannerMetadata(plan: IntegratedMixPlan, modelUsed: PlannerModel) {
+        plan.meta.plan_model = modelUsed;
+        const base = (plan.meta.description || '').trim();
+        const marker = `[Planner:${modelUsed}]`;
+        if (!base) {
+            plan.meta.description = marker;
+            return;
+        }
+        if (!base.includes(marker)) {
+            plan.meta.description = `${base} ${marker}`.trim();
+        }
+    }
+
+    private markFallbackReason(plan: IntegratedMixPlan, reason: string) {
+        this.attachPlannerMetadata(plan, 'template');
+        plan.meta.plan_fallback_reason = reason.slice(0, 240);
+    }
+
+    private enforceAudioMotionPlan(plan: IntegratedMixPlan) {
+        if (!plan.audio_plan) return;
+        if (!Array.isArray(plan.audio_plan.tracks)) {
+            plan.audio_plan.tracks = [];
+        }
+
+        const totalBars = Math.max(8, Number(plan.meta.total_bars || 64));
+        const direction = plan.meta.direction === 'B->A' ? 'B->A' : 'A->B';
+        const source = direction === 'A->B' ? 'A' : 'B';
+        const target = source === 'A' ? 'B' : 'A';
+        const crossStart = direction === 'A->B' ? 0 : 1;
+        const crossEnd = direction === 'A->B' ? 1 : 0;
+
+        const normalizePoints = (points: Array<{ time: number; value: number | boolean | string; curve: any }>) =>
+            points
+                .map((p) => ({
+                    time: Math.max(0, Math.min(totalBars, Number(p.time))),
+                    value: p.value,
+                    curve: p.curve
+                }))
+                .sort((a, b) => a.time - b.time);
+
+        const numericMotion = (points: Array<{ value: number | boolean | string }>) => {
+            const nums = points.filter((p) => typeof p.value === 'number').map((p) => Number(p.value));
+            if (nums.length < 2) return 0;
+            return Math.max(...nums) - Math.min(...nums);
+        };
+
+        const upsertTrack = (
+            targetId: string,
+            points: Array<{ time: number; value: number | boolean | string; curve: any }>,
+            minMotion = 0.05
+        ) => {
+            const normalized = normalizePoints(points as any);
+            const index = plan.audio_plan.tracks.findIndex((t) => String(t.target_id) === targetId);
+            if (index < 0) {
+                plan.audio_plan.tracks.push({ target_id: targetId as any, points: normalized as any });
+                return;
+            }
+            const existing = plan.audio_plan.tracks[index];
+            const hasEnoughMotion = numericMotion(existing.points as any) >= minMotion;
+            if (!hasEnoughMotion) {
+                existing.points = normalized as any;
+            } else {
+                existing.points = normalizePoints(existing.points as any) as any;
+            }
+        };
+
+        upsertTrack('CROSSFADER', [
+            { time: 0, value: crossStart, curve: 'HOLD' },
+            { time: totalBars * 0.72, value: direction === 'A->B' ? 0.82 : 0.18, curve: 'SIGMOID' },
+            { time: totalBars, value: crossEnd, curve: 'SIGMOID' }
+        ], 0.18);
+
+        upsertTrack(`DECK_${source}_EQ_LOW`, [
+            { time: 0, value: 1.0, curve: 'HOLD' },
+            { time: totalBars * 0.4, value: 0.82, curve: 'LINEAR' },
+            { time: totalBars * 0.68, value: 0.48, curve: 'SIGMOID' },
+            { time: totalBars, value: 0.67, curve: 'LINEAR' }
+        ]);
+        upsertTrack(`DECK_${source}_EQ_MID`, [
+            { time: 0, value: 1.0, curve: 'HOLD' },
+            { time: totalBars * 0.5, value: 0.72, curve: 'LINEAR' },
+            { time: totalBars, value: 0.67, curve: 'LINEAR' }
+        ]);
+        upsertTrack(`DECK_${source}_EQ_HI`, [
+            { time: 0, value: 1.0, curve: 'HOLD' },
+            { time: totalBars * 0.45, value: 0.72, curve: 'LINEAR' },
+            { time: totalBars * 0.8, value: 0.5, curve: 'SIGMOID' },
+            { time: totalBars, value: 0.67, curve: 'LINEAR' }
+        ]);
+
+        upsertTrack(`DECK_${target}_EQ_LOW`, [
+            { time: 0, value: 0.58, curve: 'HOLD' },
+            { time: totalBars * 0.5, value: 0.76, curve: 'LINEAR' },
+            { time: totalBars, value: 1.0, curve: 'SIGMOID' }
+        ]);
+        upsertTrack(`DECK_${target}_EQ_MID`, [
+            { time: 0, value: 0.62, curve: 'HOLD' },
+            { time: totalBars * 0.5, value: 0.82, curve: 'LINEAR' },
+            { time: totalBars, value: 1.0, curve: 'SIGMOID' }
+        ]);
+        upsertTrack(`DECK_${target}_EQ_HI`, [
+            { time: 0, value: 0.7, curve: 'HOLD' },
+            { time: totalBars * 0.5, value: 0.9, curve: 'LINEAR' },
+            { time: totalBars, value: 1.0, curve: 'SIGMOID' }
+        ]);
+
+        upsertTrack(`DECK_${source}_FILTER_CUTOFF`, [
+            { time: 0, value: 0.5, curve: 'HOLD' },
+            { time: totalBars * 0.35, value: 0.38, curve: 'LINEAR' },
+            { time: totalBars * 0.72, value: 0.62, curve: 'LINEAR' },
+            { time: totalBars * 0.92, value: 0.5, curve: 'SIGMOID' }
+        ]);
+        upsertTrack(`DECK_${source}_FILTER_RES`, [
+            { time: 0, value: 0.25, curve: 'HOLD' },
+            { time: totalBars * 0.55, value: 0.62, curve: 'LINEAR' },
+            { time: totalBars, value: 0.28, curve: 'LINEAR' }
+        ]);
+
+        upsertTrack(`DECK_${target}_ECHO_SEND`, [
+            { time: 0, value: 0.0, curve: 'HOLD' },
+            { time: totalBars * 0.5, value: 0.22, curve: 'LINEAR' },
+            { time: totalBars * 0.75, value: 0.12, curve: 'LINEAR' },
+            { time: totalBars, value: 0.03, curve: 'LINEAR' }
+        ]);
+        upsertTrack(`DECK_${target}_REVERB_MIX`, [
+            { time: 0, value: 0.06, curve: 'HOLD' },
+            { time: totalBars * 0.5, value: 0.28, curve: 'LINEAR' },
+            { time: totalBars * 0.8, value: 0.14, curve: 'LINEAR' },
+            { time: totalBars, value: 0.05, curve: 'LINEAR' }
+        ]);
+        upsertTrack('MASTER_SLAM_AMOUNT', [
+            { time: 0, value: 0.02, curve: 'HOLD' },
+            { time: totalBars * 0.55, value: 0.22, curve: 'LINEAR' },
+            { time: totalBars * 0.78, value: 0.1, curve: 'LINEAR' },
+            { time: totalBars, value: 0.04, curve: 'LINEAR' }
+        ]);
+
+        const stopTarget = source === 'A' ? 'DECK_A_STOP' : 'DECK_B_STOP';
+        upsertTrack(stopTarget, [
+            { time: Math.max(1, totalBars - 1), value: true, curve: 'STEP' }
+        ], 0);
     }
 
     private enforceVisualTransitionPlan(plan: IntegratedMixPlan) {

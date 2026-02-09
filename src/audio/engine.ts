@@ -1,6 +1,5 @@
 import { SAB_SIZE_BYTES, HEADER_SIZE_BYTES, OFFSETS, WorkletMessage, MainThreadMessage } from '../types/shared';
-// Import the processor as a raw URL for Vite to handle
-import processorUrl from './worklet/processor.ts?url'; 
+import processorUrl from './worklet/processor.ts?worker&url';
 import { StreamAdapter } from './stream-adapter';
 import { MusicClient } from '../ai/music-client';
 
