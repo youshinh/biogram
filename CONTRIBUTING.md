@@ -1,6 +1,6 @@
-# Contributing to PromptDJ
+# Contributing to Bio:gram
 
-PromptDJ プロジェクトへの貢献に興味を持っていただきありがとうございます！
+Bio:gram プロジェクトへの貢献に興味を持っていただきありがとうございます！
 
 ## 開発プロセス
 
