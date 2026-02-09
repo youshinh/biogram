@@ -39,3 +39,6 @@ AGENTS.md
 __pycache__/
 *.py[cod]
 py_bridge/*
+/py_bridge/
+/supercontroll/
+/updateDEV/
