@@ -17,8 +17,10 @@ import './ui/visuals/ThreeViz';
 import './ui/visuals/VisualControls';
 import type { ThreeViz } from './ui/visuals/ThreeViz';
 import type { VisualControls } from './ui/visuals/VisualControls';
+import type { VisualMode } from './ui/visuals/modes';
 import { AutomationEngine } from './ai/automation-engine';
 import { MixGenerator } from './ai/mix-generator';
+import { VisualTransitionEngine, mapVisualTargetToEngine } from './ai/visual-transition-engine';
 import { GridGenerator } from './ai/grid-generator';
 import { setupLibrarySidebar } from './ui/bootstrap/library-sidebar';
 import { setupZenOverlay } from './ui/bootstrap/zen-overlay';
@@ -30,6 +32,7 @@ import type { FxRack } from './ui/modules/fx-rack';
 import type { DeckController } from './ui/modules/deck-controller';
 import type { DjMixer } from './ui/modules/dj-mixer';
 import type { SuperControls } from './ui/modules/super-controls';
+import type { IntegratedMixPlan, PromptContextInput } from './types/integrated-ai-mix';
 import { 
     createAiSlider, 
     createComboSlot, 
@@ -90,6 +93,15 @@ window.midiManager = midiManager;
 const autoEngine = new AutomationEngine(engine);
 const mixGen = new MixGenerator(apiKey);
 const gridGen = new GridGenerator(apiKey);
+const visualTransitionEngine = new VisualTransitionEngine((targetId, value) => {
+    const viz = (window as any).__threeViz as ThreeViz | undefined;
+    if (!viz) return;
+    mapVisualTargetToEngine(targetId, value, {
+        setMode: (mode) => viz.setMode(mode),
+        setTransitionType: (type) => viz.setTransitionType(type),
+        sendParam: (id, val) => viz.sendMessage(id, val)
+    });
+});
 
 // ROUTING LOGIC
 const urlParams = new URLSearchParams(window.location.search);
@@ -450,6 +462,7 @@ if (isVizMode) {
     // Let's do a quick hack: Insert ThreeViz Absolute Positioned *behind* everything in ViewContainer.
     
     const threeViz = document.createElement('three-viz') as ThreeViz;
+    (window as any).__threeViz = threeViz;
     threeViz.style.position = 'absolute';
     threeViz.style.top = '0';
     threeViz.style.left = '0';
@@ -524,10 +537,149 @@ if (isVizMode) {
 
 
     let pendingMixContext: { sourceId: string, targetId: string } | null = null;
+    const supportedMixVisualModes: readonly VisualMode[] = [
+        'organic',
+        'wireframe',
+        'monochrome',
+        'rings',
+        'waves',
+        'suibokuga',
+        'grid',
+        'ai_grid'
+    ] as const;
+
+    const normalizePreferredVisualMode = (mode: string): VisualMode => {
+        if ((supportedMixVisualModes as readonly string[]).includes(mode)) {
+            return mode as VisualMode;
+        }
+        return 'organic';
+    };
+
+    // Align visual control timeline with AutomationEngine phase outputs.
+    // Current engine phases are PRESENCE -> HANDOFF -> WASH OUT.
+    const resolveMixVisualMode = (phase: string, preferred: VisualMode): VisualMode => {
+        const p = phase.toUpperCase();
+        if (p.includes('PRESENCE')) return 'wireframe';
+        if (p.includes('HANDOFF')) return preferred;
+        if (p.includes('WASH')) return 'organic';
+        return preferred;
+    };
+
+    let pendingIntegratedPlan: IntegratedMixPlan | null = null;
+    let mixCompletionHandled = false;
+    let freeModeTimer: number | null = null;
+    let lastMixStartPerfMs = 0;
+    let freeModeSession: null | {
+        active: boolean;
+        pattern: 'PINGPONG' | 'ABBA';
+        cycleIndex: number;
+        startMs: number;
+        maxRuntimeMs: number;
+        duration: number;
+        mood: string;
+        preferredVisual: VisualMode;
+        nextDirection: 'A->B' | 'B->A';
+        metrics: {
+            mixCount: number;
+            regenAttempts: number;
+            regenSuccess: number;
+            syncSkewMsMax: number;
+            syncSkewMsAvg: number;
+            syncSamples: number;
+            lastError?: string;
+        };
+    } = null;
+
+    const resolvePatternDirection = (pattern: 'PINGPONG' | 'ABBA', index: number): 'A->B' | 'B->A' => {
+        if (pattern === 'PINGPONG') return index % 2 === 0 ? 'A->B' : 'B->A';
+        const seq: Array<'A->B' | 'B->A'> = ['A->B', 'B->A', 'B->A', 'A->B'];
+        return seq[index % seq.length];
+    };
+
+    const triggerDeckRegeneration = (deck: 'A' | 'B') => {
+        const target = deck === 'A' ? deckA : deckB;
+        target.dispatchEvent(new CustomEvent('deck-load-random', {
+            detail: { deck },
+            bubbles: true,
+            composed: true
+        }));
+    };
+
+    const clearFreeModeTimer = () => {
+        if (freeModeTimer !== null) {
+            clearTimeout(freeModeTimer);
+            freeModeTimer = null;
+        }
+    };
+
+    const applySafetyReset = (plan: IntegratedMixPlan) => {
+        const safety = plan.post_actions?.safety_reset;
+        if (!safety) return;
+
+        const direction = plan.meta.direction;
+        const sourceDeck = direction === 'A->B' ? 'A' : 'B';
+        const targetDeck = sourceDeck === 'A' ? 'B' : 'A';
+
+        if (safety.crossfader_to_target) {
+            const cf = targetDeck === 'B' ? 1.0 : 0.0;
+            engine.setCrossfader(cf);
+            window.dispatchEvent(new CustomEvent('mixer-update', {
+                detail: { parameter: 'crossfader', value: cf }
+            }));
+        }
+
+        if (safety.reset_eq_to_default) {
+            const eqDefault = 0.67;
+            const deck = sourceDeck as 'A' | 'B';
+            engine.setEq(deck, 'LOW', eqDefault);
+            engine.setEq(deck, 'MID', eqDefault);
+            engine.setEq(deck, 'HI', eqDefault);
+            window.dispatchEvent(new CustomEvent('mixer-update', {
+                detail: {
+                    parameter: `low${deck}`,
+                    value: eqDefault
+                }
+            }));
+            window.dispatchEvent(new CustomEvent('mixer-update', {
+                detail: {
+                    parameter: `mid${deck}`,
+                    value: eqDefault
+                }
+            }));
+            window.dispatchEvent(new CustomEvent('mixer-update', {
+                detail: {
+                    parameter: `high${deck}`,
+                    value: eqDefault
+                }
+            }));
+        }
+
+        if (safety.disable_fx_tail) {
+            engine.updateDspParam('DUB', 0.0);
+            engine.updateDspParam('BLOOM_WET', 0.0);
+            engine.updateDspParam('TAPE_ACTIVE', 0.0);
+            engine.updateDspParam('REVERB_ACTIVE', 0.0);
+            window.dispatchEvent(new CustomEvent('mixer-update', {
+                detail: { parameter: 'DUB', value: 0.0 }
+            }));
+            window.dispatchEvent(new CustomEvent('mixer-update', {
+                detail: { parameter: 'BLOOM_WET', value: 0.0 }
+            }));
+        }
+    };
 
     // AI Mix Event Handling
     superCtrl.addEventListener('ai-mix-trigger', async (e: any) => {
-        const { direction, duration, mood, preferredVisual } = e.detail;
+        const {
+            direction,
+            duration,
+            mood,
+            preferredVisual,
+            sessionMode = 'single',
+            pattern = 'PINGPONG',
+            maxRuntimeMin = 60
+        } = e.detail;
+        const preferredMode = normalizePreferredVisualMode(preferredVisual);
         
         // Optimistic update in UI sets state to GENERATING, so we must allow it.
         // if (superCtrl.mixState !== 'IDLE') return; <--- REMOVED BLOCKER
@@ -538,6 +690,7 @@ if (isVizMode) {
         const targetId = sourceId === "A" ? "B" : "A";
         
         pendingMixContext = { sourceId, targetId };
+        mixCompletionHandled = false;
 
         // 2. Playback Check (Context for AI)
         const isAStopped = engine.isDeckStopped('A');
@@ -555,38 +708,163 @@ if (isVizMode) {
         const req = `Mix from ${direction}. Duration: ${duration} Bars. Mood: ${mood}.`;
         
         try {
-            // Pass Context to MixGenerator
-            const score = await mixGen.generateScore(req, engine.masterBpm, { isAStopped, isBStopped });
+            const sourceDeckCtrl = sourceId === 'A' ? deckA : deckB;
+            const targetDeckCtrl = targetId === 'A' ? deckA : deckB;
+            const sourcePromptSnapshot = (
+                sourceDeckCtrl.generatedPrompt ||
+                (sourceId === 'A' ? uiState.deckAPrompt : uiState.deckBPrompt) ||
+                uiState.theme ||
+                'Unknown'
+            ).trim();
+            const targetPromptSnapshot = (
+                targetDeckCtrl.generatedPrompt ||
+                (targetId === 'A' ? uiState.deckAPrompt : uiState.deckBPrompt) ||
+                uiState.theme ||
+                'Unknown'
+            ).trim();
+            const promptContext: PromptContextInput = {
+                sourceDeck: sourceId as 'A' | 'B',
+                targetDeck: targetId as 'A' | 'B',
+                sourcePrompt: sourcePromptSnapshot,
+                targetPrompt: targetPromptSnapshot,
+                sourcePlaying: !engine.isDeckStopped(sourceId as 'A' | 'B'),
+                targetPlaying: !engine.isDeckStopped(targetId as 'A' | 'B')
+            };
+
+            const integratedPlan = await mixGen.generateIntegratedPlan(
+                req,
+                engine.masterBpm,
+                { isAStopped, isBStopped },
+                promptContext,
+                preferredMode
+            );
+            pendingIntegratedPlan = integratedPlan;
+            const score = integratedPlan.audio_plan;
             
             if (score) {
                 superCtrl.addLog(`SCORE RECEIVED. Tracks: ${score.tracks.length}`);
+                if (import.meta.env.DEV) {
+                    console.log('[AI Mix] Plan prompt context hash:', integratedPlan.prompt_context_ref.context_hash);
+                }
                 autoEngine.loadScore(score);
+                visualTransitionEngine.loadPlan(integratedPlan.visual_plan);
                 
                 autoEngine.setOnProgress((bar, phase) => {
                      superCtrl.updateStatus(bar, phase, duration);
-                     
-                     if (threeViz.visualMode !== 'debug_ai') { 
-                         // Automate Visual Mode based on musical phase
-                         // BREAK / BUILDUP -> PARTICLES (Tension) [mapped to wireframe in this engine]
-                         // DROP / BODY / INTRO / OUTRO -> Preferred Visual (Release/Flow)
-                         const p = phase.toUpperCase();
-                         if (p.includes('BREAK') || p.includes('BUILD')) {
-                             threeViz.setMode('wireframe'); // Maps to Particles/Tension
-                         } else {
-                             // Use user-selected preferred visual, fallback to organic
-                             threeViz.setMode(preferredVisual || 'organic');
-                         }
+                     visualTransitionEngine.update(bar);
+                     if (lastMixStartPerfMs > 0) {
+                        const elapsedSec = (performance.now() - lastMixStartPerfMs) / 1000.0;
+                        const secondsPerBar = (60 / Math.max(1, score.meta.target_bpm)) * 4;
+                        const expectedSec = bar * secondsPerBar;
+                        const skewMs = Math.abs(elapsedSec - expectedSec) * 1000.0;
+                        if (freeModeSession?.active) {
+                            const m = freeModeSession.metrics;
+                            m.syncSkewMsMax = Math.max(m.syncSkewMsMax, skewMs);
+                            m.syncSkewMsAvg = ((m.syncSkewMsAvg * m.syncSamples) + skewMs) / (m.syncSamples + 1);
+                            m.syncSamples += 1;
+                        }
+                     }
+                     if (threeViz.visualMode !== 'debug_ai' && !integratedPlan.visual_plan?.tracks?.length) {
+                        const targetMode = resolveMixVisualMode(phase, preferredMode);
+                        threeViz.setMode(targetMode);
                      }
 
-                     // If mix is done
-                     if (bar >= duration) {
+                     if (!mixCompletionHandled && (phase === 'COMPLETE' || bar >= duration)) {
+                         mixCompletionHandled = true;
+                         visualTransitionEngine.stop();
+                         applySafetyReset(integratedPlan);
                          superCtrl.mixState = 'IDLE';
                          superCtrl.addLog(`MIX COMPLETE.`);
+                         if (freeModeSession?.active) {
+                            freeModeSession.metrics.mixCount += 1;
+                         }
+
+                         const dir = integratedPlan.meta.direction;
+                         const stoppedDeck = dir === 'A->B' ? 'A' : 'B';
+                         if (integratedPlan.post_actions?.regen_stopped_deck) {
+                             superCtrl.mixState = 'POST_REGEN';
+                             superCtrl.addLog(`POST REGEN: DECK ${stoppedDeck}`);
+                             if (freeModeSession?.active) freeModeSession.metrics.regenAttempts += 1;
+                             triggerDeckRegeneration(stoppedDeck);
+                             if (freeModeSession?.active) freeModeSession.metrics.regenSuccess += 1;
+                         }
+
+                         if (freeModeSession?.active) {
+                             const elapsedMs = Date.now() - freeModeSession.startMs;
+                             if (elapsedMs >= freeModeSession.maxRuntimeMs) {
+                                 superCtrl.mixState = 'COMPLETE';
+                                 superCtrl.addLog(
+                                    `FREE MODE COMPLETE. mixes=${freeModeSession.metrics.mixCount} ` +
+                                    `regen=${freeModeSession.metrics.regenSuccess}/${freeModeSession.metrics.regenAttempts} ` +
+                                    `sync_max=${freeModeSession.metrics.syncSkewMsMax.toFixed(0)}ms ` +
+                                    `sync_avg=${freeModeSession.metrics.syncSkewMsAvg.toFixed(0)}ms`
+                                 );
+                                 freeModeSession = null;
+                                 clearFreeModeTimer();
+                                 return;
+                             }
+
+                             const nextSec = Math.max(
+                                 240,
+                                 Math.min(300, integratedPlan.post_actions?.next_trigger_sec ?? 240)
+                             );
+                             freeModeSession.cycleIndex += 1;
+                             freeModeSession.nextDirection = resolvePatternDirection(
+                                 freeModeSession.pattern,
+                                 freeModeSession.cycleIndex
+                             );
+                             superCtrl.mixState = 'WAIT_NEXT';
+                             superCtrl.addLog(`WAIT NEXT: ${nextSec}s (${freeModeSession.nextDirection})`);
+                             clearFreeModeTimer();
+                             freeModeTimer = window.setTimeout(() => {
+                                 superCtrl.dispatchEvent(new CustomEvent('ai-mix-trigger', {
+                                     detail: {
+                                         direction: freeModeSession?.nextDirection ?? 'A->B',
+                                         duration: freeModeSession?.duration ?? duration,
+                                         mood: freeModeSession?.mood ?? mood,
+                                         preferredVisual: freeModeSession?.preferredVisual ?? preferredMode,
+                                         sessionMode: 'free',
+                                         pattern: freeModeSession?.pattern ?? pattern,
+                                         maxRuntimeMin: Math.floor((freeModeSession?.maxRuntimeMs ?? 3600000) / 60000)
+                                     },
+                                     bubbles: true,
+                                     composed: true
+                                 }));
+                             }, nextSec * 1000);
+                         }
                      }
                 });
                 
                 superCtrl.mixState = 'READY';
                 superCtrl.addLog(`READY TO START.`);
+                if (sessionMode === 'free') {
+                    if (!freeModeSession) {
+                        freeModeSession = {
+                            active: true,
+                            pattern: pattern === 'ABBA' ? 'ABBA' : 'PINGPONG',
+                            cycleIndex: 0,
+                            startMs: Date.now(),
+                            maxRuntimeMs: Math.max(1, Math.min(60, Number(maxRuntimeMin))) * 60 * 1000,
+                            duration: Number(duration),
+                            mood: String(mood),
+                            preferredVisual: preferredMode,
+                            nextDirection: direction === 'B->A' ? 'B->A' : 'A->B',
+                            metrics: {
+                                mixCount: 0,
+                                regenAttempts: 0,
+                                regenSuccess: 0,
+                                syncSkewMsMax: 0,
+                                syncSkewMsAvg: 0,
+                                syncSamples: 0
+                            }
+                        };
+                    } else {
+                        freeModeSession.duration = Number(duration);
+                        freeModeSession.mood = String(mood);
+                        freeModeSession.preferredVisual = preferredMode;
+                    }
+                    superCtrl.dispatchEvent(new CustomEvent('ai-mix-start', { bubbles: true, composed: true }));
+                }
             } else {
                 throw new Error("Empty Score Returned");
             }
@@ -624,18 +902,30 @@ if (isVizMode) {
         // Delay AutomationEngine start to ensure SafetyNet transport commands are fully processed
         // This prevents AI score's Bar 0 transport commands from immediately overriding SafetyNet
         setTimeout(() => {
+            lastMixStartPerfMs = performance.now();
+            visualTransitionEngine.start();
             autoEngine.start();
         }, 200);
     });
 
     superCtrl.addEventListener('ai-mix-abort', () => {
         autoEngine.stop();
+        visualTransitionEngine.stop();
+        clearFreeModeTimer();
+        freeModeSession = null;
+        pendingIntegratedPlan = null;
+        lastMixStartPerfMs = 0;
         superCtrl.mixState = 'IDLE';
         superCtrl.addLog(`MIX ABORTED.`);
     });
 
     superCtrl.addEventListener('ai-mix-cancel', () => {
         // Cancel the generated mix without starting - just reset state
+        visualTransitionEngine.stop();
+        clearFreeModeTimer();
+        freeModeSession = null;
+        pendingIntegratedPlan = null;
+        lastMixStartPerfMs = 0;
         superCtrl.mixState = 'IDLE';
         pendingMixContext = null;
     });

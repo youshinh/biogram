@@ -31,7 +31,11 @@ updateDEV/
 legacy/*
 bio_gram/*
 visual/*
+updateDEV/*
+supercontroll
+AGENTS.md
 
 # Python
 __pycache__/
 *.py[cod]
+py_bridge/*

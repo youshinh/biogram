@@ -1,7 +1,10 @@
 import { VisualChunk } from '../../ai/visual-analyzer';
+import type { VisualMode } from './modes';
+
+type ScoreVisualMode = VisualMode | 'test_mic' | 'test_score' | 'debug_ai';
 
 export interface VisualState {
-    mode: 'organic' | 'wireframe' | 'monochrome' | 'rings' | 'waves' | 'test_mic' | 'test_score';
+    mode: ScoreVisualMode;
     theme: string;
     energy: number;
     chaos: number;
@@ -127,7 +130,7 @@ export class ScoreManager {
         const next = timeline[prevIdx + 1];
 
         // 3. Interpolation
-        const duration = next.time - prev.time;
+        const duration = Math.max(1e-6, next.time - prev.time);
         const progress = (currentTime - prev.time) / duration;
         const t = Math.max(0, Math.min(1, progress)); // Clamp
 

@@ -352,13 +352,12 @@ export const MetaballFragmentShader = `
 
   // === MAIN SHAPE DEFINITION ===
   float map(vec3 p) {
-      // Rotation logic
-      float sway = sin(uTime * 0.3) * 0.2;
+      float modeBlend = smoothstep(0.3, 0.7, uMode);
       
       // ROTATION: Constant slow rotation for gallery view
       float rotSpeed = 0.2;
-      // Audio-Reactive Tumbling (Math Mode Only)
-      if (uMode > 0.5) {
+      // Audio-Reactive tumbling, weighted by math blend amount.
+      if (modeBlend > 0.01) {
           // Drive tumbling by Mids (Vocals/Snare)
           float mids = (uLowA + uLowB + uHighA + uHighB) * 0.25;
           float highs = max(uHighA, uHighB);
@@ -368,7 +367,7 @@ export const MetaballFragmentShader = `
           // Use a very slow constant base speed to avoid jerks
           // Modulate AMPLITUDE of sway, not Phase speed directly
           float tumbleBase = uTime * 0.1; // Very slow roll (approx 6s per rad)
-          float tumbleSway = sin(uTime * 0.5) * activity * 0.2; // Gentle nod on beat
+          float tumbleSway = sin(uTime * 0.5) * activity * 0.2 * modeBlend; // Gentle nod on beat
           float angle = tumbleBase + tumbleSway;
           
           // Add complex 3-axis rotation (Quaternion-like effect)
@@ -381,130 +380,67 @@ export const MetaballFragmentShader = `
       
       // Center with slight drift
       vec3 pCenter = pRot - vec3(0.0, sin(uTime * 0.5)*0.1, 0.0);
+      // --- ORGANIC MODE (Enhanced Audio Reactivity) ---
+      float lowEnergy = uLowA + uLowB;
+      float highEnergy = uHighA + uHighB;
+      float totalEnergy = lowEnergy + highEnergy;
+      float kickPulse = uKickImpulse * 0.1;
+      float breath = lowEnergy * 0.095 + kickPulse;
+      float rotAccel = 0.2 + totalEnergy * 0.15;
+      float dynamicRotY = uTime * 0.15 * rotAccel;
+      float dynamicRotX = sin(uTime * 0.2 * rotAccel) * 0.1;
 
-      // --- DEFORMATIONS FOR ORGANIC MODE ---
-      if (uMode < 0.5) {
-          // --- ORGANIC MODE (Enhanced Audio Reactivity) ---
-          
-          // Audio Analysis
-          float lowEnergy = uLowA + uLowB;
-          float highEnergy = uHighA + uHighB;
-          float totalEnergy = lowEnergy + highEnergy;
-          
-          // 1. KICK IMPACT: Gentle radial expansion on kick
-          float kickPulse = uKickImpulse * 0.1; // Very subtle
-          
-          // 2. BASS BREATHING: Slow organic breathing
-          float breath = lowEnergy * 0.095 + kickPulse; // Slightly stronger
-          
-          // 3. AUDIO-REACTIVE ROTATION ACCELERATION
-          // Very gentle acceleration - mostly constant slow rotation
-          float rotAccel = 0.2 + totalEnergy * 0.15; // Minimal audio influence
-          float dynamicRotY = uTime * 0.15 * rotAccel; // Slower base rotation
-          float dynamicRotX = sin(uTime * 0.2 * rotAccel) * 0.1; // Very gentle tilt
-          
-          // Apply dynamic rotation
-          pCenter = rotateY(dynamicRotY) * (p - vec3(0.0, sin(uTime * 0.5)*0.1, 0.0));
-          pCenter = rotateX(dynamicRotX) * pCenter;
-          
-          // 4. SURFACE DEFORMATIONS (Gentle - close to original)
-          float deformA = sin(pCenter.y * 2.0 + uTime * 1.2) * uLowA * 0.14;
-          float deformB = cos(pCenter.x * 2.4 - uTime * 1.0) * uLowB * 0.14;
-          
-          // 5. HIGH-FREQ SPIKES (Subtle)
-          float spikeA = sin(dot(pCenter, vec3(1.2, 0.9, 0.7)) * 2.0 - uTime * 1.6) * uHighA * 0.05;
-          float spikeB = -cos(dot(pCenter, vec3(0.8, 1.1, 1.0)) * 1.8 + uTime * 1.3) * uHighB * 0.05;
-          
-          // Crossfade blend
-          float deformBlend = mix(deformA + spikeA, deformB + spikeB, uCrossfade);
-          
-          // 6. ORGANIC UNDULATION (Base motion)
-          float organic1 = sin(pCenter.x * 1.4 + pCenter.y * 1.1 + uTime * 0.45) * 0.07;
-          float organic2 = cos(pCenter.y * 2.2 + pCenter.z * 1.8 + uTime * 0.65) * 0.048;
-          float organic3 = sin(pCenter.z * 2.6 + uTime * 1.4) * 0.012;
-          float organicTotal = organic1 + organic2 + organic3;
-          
-          // 7. KICK WOBBLE: Very subtle asymmetric distortion
-          if (uKickImpulse > 0.3) { // Higher threshold
-              float wobble = sin(pCenter.y * 6.0) * uKickImpulse * 0.06;
-              pCenter.x += wobble;
-          }
-          
-          float d = sdSphere(pCenter, 1.2 + breath) + deformBlend + organicTotal;
-          return d;
-      } else {
-          // --- MATH MODE: DYNAMIC CHAOS GALLERY ---
-          // Chaotic, Unpredictable, Infinite.
-          // Wide Dynamic Range: Drift <-> Surge.
-          
-          // 1. Audio Analysis (Full Spectrum Surge)
-          float bass = max(uLowA, uLowB); 
-          float mid = (uLowA + uLowB + uHighA + uHighB) * 0.25;
-          float high = max(uHighA, uHighB);
-          float totalVol = bass + mid + high;
-          
-          // 2. Silence Gate (Rest State)
-          float activeTrigger = smoothstep(0.1, 0.4, totalVol); 
-
-          // 3. Dynamic Time & Speed (Variable Flow)
-          // TUNED FOR "YUTTARI" (Relaxed/Slow)
-          // Low Vol = 0.02 speed (Very Slow Drift)
-          // High Vol = 0.5 speed (Gentle Surge)
-          float speed = 0.02 + totalVol * 0.5; 
-          
-          // Accumulate beatTime (approximate integration via uTime scaling)
-          // Much slower progression for relaxed morphing
-          float beatTime = uTime * 0.05 + totalVol * 0.25; // Gentle push, not jumpy
-          
-          // 4. Random Form Selection
-          // Use hash of floor(beatTime) to pick random ID - consistent from start
-          float seed = floor(beatTime);
-          // Use same random selection for all shapes (no forced starting shape)
-          float currentId = floor(random(vec2(seed, 0.0)) * 20.0);
-          float nextId = floor(random(vec2(seed + 1.0, 0.0)) * 20.0);
-          
-          // 5. Instability Glitch (Complex Domain Distortion)
-          // Triggered by Highs/Chaos
-          float instability = smoothstep(0.4, 0.8, high);
-          if (instability > 0.1) {
-              // "Imaginary" Glitch: Recursive swirl
-              float glitch = sin(pCenter.y * 10.0 + uTime * 20.0) * instability * 0.2;
-              pCenter += vec3(glitch, glitch * 0.5, -glitch);
-              
-              // Space Folding (Mirroring)
-              if (instability > 0.6) {
-                   pCenter = abs(pCenter) - 0.5 * instability;
-              }
-          }
-
-          // Percussive transition - Extended morph time for smooth blending
-          float fractTime = fract(beatTime);
-          // Full transition over the entire beat cycle (0-1) for smooth morphing
-          float transition = smoothstep(0.0, 0.8, fractTime); // 80% of beat for morphing
-          
-          // Get Shapes (With relaxed bounds)
-          float d1 = getGalleryShape(currentId, pCenter);
-          float d2 = getGalleryShape(nextId, pCenter);
-          
-          // Morph
-          float dActive = mix(d1, d2, transition);
-          
-          // 6. Rest State Morph
-          float dRest = length(pCenter) - 1.0; 
-          float dFinal = mix(dRest, dActive, activeTrigger);
-          
-          // 7. Audio Modulations
-          // Bass Scale Surge
-          dFinal -= bass * 0.2; // Massive throb
-          
-          // High Freq Ripple
-          if (high > 0.2) {
-              float ripple = sin(pCenter.y * 50.0 + uTime * 30.0) * 0.005 * high;
-              dFinal += ripple;
-          }
-
-          return dFinal * 0.7; // Scale distance to avoid artifacts with aggressive distortion
+      vec3 pOrganic = rotateY(dynamicRotY) * (p - vec3(0.0, sin(uTime * 0.5)*0.1, 0.0));
+      pOrganic = rotateX(dynamicRotX) * pOrganic;
+      float deformA = sin(pOrganic.y * 2.0 + uTime * 1.2) * uLowA * 0.14;
+      float deformB = cos(pOrganic.x * 2.4 - uTime * 1.0) * uLowB * 0.14;
+      float spikeA = sin(dot(pOrganic, vec3(1.2, 0.9, 0.7)) * 2.0 - uTime * 1.6) * uHighA * 0.05;
+      float spikeB = -cos(dot(pOrganic, vec3(0.8, 1.1, 1.0)) * 1.8 + uTime * 1.3) * uHighB * 0.05;
+      float deformBlend = mix(deformA + spikeA, deformB + spikeB, uCrossfade);
+      float organic1 = sin(pOrganic.x * 1.4 + pOrganic.y * 1.1 + uTime * 0.45) * 0.07;
+      float organic2 = cos(pOrganic.y * 2.2 + pOrganic.z * 1.8 + uTime * 0.65) * 0.048;
+      float organic3 = sin(pOrganic.z * 2.6 + uTime * 1.4) * 0.012;
+      float organicTotal = organic1 + organic2 + organic3;
+      if (uKickImpulse > 0.3) {
+          float wobble = sin(pOrganic.y * 6.0) * uKickImpulse * 0.06;
+          pOrganic.x += wobble;
       }
+      float dOrganic = sdSphere(pOrganic, 1.2 + breath) + deformBlend + organicTotal;
+
+      // --- MATH MODE: DYNAMIC CHAOS GALLERY ---
+      float bass = max(uLowA, uLowB); 
+      float mid = (uLowA + uLowB + uHighA + uHighB) * 0.25;
+      float high = max(uHighA, uHighB);
+      float totalVol = bass + mid + high;
+      float activeTrigger = smoothstep(0.1, 0.4, totalVol);
+      float beatTime = uTime * 0.05 + totalVol * 0.25;
+      float seed = floor(beatTime);
+      float currentId = floor(random(vec2(seed, 0.0)) * 20.0);
+      float nextId = floor(random(vec2(seed + 1.0, 0.0)) * 20.0);
+      vec3 pMath = pCenter;
+      float instability = smoothstep(0.4, 0.8, high);
+      if (instability > 0.1) {
+          float glitch = sin(pMath.y * 10.0 + uTime * 20.0) * instability * 0.2;
+          pMath += vec3(glitch, glitch * 0.5, -glitch);
+          if (instability > 0.6) {
+               pMath = abs(pMath) - 0.5 * instability;
+          }
+      }
+      float fractTime = fract(beatTime);
+      float transition = smoothstep(0.0, 0.8, fractTime);
+      float d1 = getGalleryShape(currentId, pMath);
+      float d2 = getGalleryShape(nextId, pMath);
+      float dActive = mix(d1, d2, transition);
+      float dRest = length(pMath) - 1.0;
+      float dFinal = mix(dRest, dActive, activeTrigger);
+      dFinal -= bass * 0.2;
+      if (high > 0.2) {
+          float ripple = sin(pMath.y * 50.0 + uTime * 30.0) * 0.005 * high;
+          dFinal += ripple;
+      }
+      float dMath = dFinal * 0.7;
+
+      return mix(dOrganic, dMath, modeBlend);
   }
   
   // Calculate Normal
@@ -534,9 +470,11 @@ export const MetaballFragmentShader = `
     vec3 rd = normalize(p - ro); 
     
     // FX: DECIMATOR
-    if (uDecimator > 0.1 && uMode > 0.5) {
+    float modeBlend = smoothstep(0.3, 0.7, uMode);
+    if (uDecimator > 0.1 && modeBlend > 0.01) {
         float steps = 50.0 * (1.1 - uDecimator); 
-        rd = floor(rd * steps) / steps;
+        vec3 quantized = floor(rd * steps) / steps;
+        rd = mix(rd, quantized, modeBlend);
     }
 
 
@@ -549,84 +487,53 @@ export const MetaballFragmentShader = `
     for(int i = 0; i < 96; i++) { // Slightly higher for smoother organic convergence
         float d = map(p);
 
-        float hitEps = (uMode < 0.5) ? 0.002 : 0.01;
+        float hitEps = mix(0.002, 0.01, modeBlend);
         if(d < hitEps) { // Hit
             // Small backstep refinement to reduce contour-like raymarch banding
             p -= rd * d * 0.5;
             vec3 normal = calcNormal(p);
             vec3 col = vec3(0.0);
             
-            // Texture for Organic Mode (Original)
-            if (uMode < 0.5) {
-                // Recover Object Space Coordinates to keep texture locked to the body
-                float rotSpeed = 0.2;
-                vec3 pRot = rotateY(uTime * rotSpeed) * p;
-                pRot = rotateX(sin(uTime * 0.25) * 0.2) * pRot;
-                vec3 pCenter = pRot - vec3(0.0, sin(uTime * 0.5)*0.1, 0.0);
+            // Organic shading
+            float rotSpeed = 0.2;
+            vec3 pRot = rotateY(uTime * rotSpeed) * p;
+            pRot = rotateX(sin(uTime * 0.25) * 0.2) * pRot;
+            vec3 pCenter = pRot - vec3(0.0, sin(uTime * 0.5)*0.1, 0.0);
+            vec3 nRot = rotateY(uTime * rotSpeed) * normal;
+            nRot = rotateX(sin(uTime * 0.25) * 0.2) * nRot;
+            vec3 lightPosOrg = vec3(2.0, 4.0, 5.0);
+            float diffOrg = max(dot(normal, normalize(lightPosOrg - p)), 0.0);
+            vec3 texA = triplanar(uTextureA, pCenter, nRot, 0.45);
+            vec3 texB = triplanar(uTextureB, pCenter, nRot, 0.45);
+            vec3 texColor = mix(texA, texB, uCrossfade);
+            float ambient = 0.28;
+            vec3 colOrganic = texColor * (ambient + diffOrg * 0.82);
 
-                vec3 nRot = rotateY(uTime * rotSpeed) * normal;
-                nRot = rotateX(sin(uTime * 0.25) * 0.2) * nRot;
+            // Math shading
+            float high = max(uHighA, uHighB);
+            float bass = max(uLowA, uLowB);
+            float grainScale = 120.0 + high * 50.0;
+            float grainStr = 0.03 + high * 0.05;
+            vec3 detailNormal = perturbNormal(normal, p, grainScale, grainStr);
+            float orbitSpeed = 0.005 + high * 0.02;
+            float lightAngle = uTime * orbitSpeed;
+            vec3 lightPosMath = vec3(cos(lightAngle)*8.0, 6.0 + bass*1.0, sin(lightAngle)*8.0);
+            vec3 lightDir = normalize(lightPosMath - p);
+            float diffMath = max(dot(detailNormal, lightDir), 0.0);
+            vec3 fillLightDir = normalize(vec3(-5.0, 2.0, -5.0));
+            float fill = max(dot(detailNormal, fillLightDir), 0.0) * 0.3;
+            vec3 baseColor = vec3(0.6, 0.6, 0.62);
+            vec3 flashColor = vec3(0.9, 0.9, 0.9);
+            vec3 materialColor = mix(baseColor, flashColor, high * 0.8);
+            float shadow = smoothstep(0.0, 0.5, diffMath);
+            vec3 colMath = materialColor * (0.1 + 0.8 * shadow + fill);
+            vec3 halfDir = normalize(lightDir - rd);
+            float spec = pow(max(dot(detailNormal, halfDir), 0.0), 16.0);
+            colMath += vec3(spec) * 0.1;
+            float rim = 1.0 - max(dot(normal, -rd), 0.0);
+            colMath += vec3(rim) * 0.15;
 
-                vec3 lightPos = vec3(2.0, 4.0, 5.0);
-                float diff = max(dot(normal, normalize(lightPos - p)), 0.0);
-
-                vec3 texA = triplanar(uTextureA, pCenter, nRot, 0.45);
-                vec3 texB = triplanar(uTextureB, pCenter, nRot, 0.45);
-                vec3 texColor = mix(texA, texB, uCrossfade);
-
-                // Texture-first matte shading (no color overlay, no glossy glow)
-                float ambient = 0.28;
-                col = texColor * (ambient + diff * 0.82);
-            } 
-
-            else {
-                // --- MATH MODE: BRIGHT MUSEUM PLASTER ---
-                // Reverted to clean plaster as requested.
-                // Blur is handled by the "Lens" effect above.
-                
-                // Audio Refs
-                float high = max(uHighA, uHighB);
-                float bass = max(uLowA, uLowB);
-                float totalVol = bass + (uLowA + uLowB + uHighA + uHighB)*0.25 + high;
-
-                // 1. Surface Grain (Plaster texture)
-                float grainScale = 120.0 + high * 50.0;
-                float grainStr = 0.03 + high * 0.05;
-                vec3 detailNormal = perturbNormal(normal, p, grainScale, grainStr); 
-                
-                // 2. ORBITING LIGHT SOURCE (Very Slow & Gentle)
-                float orbitSpeed = 0.005 + high * 0.02; // Much slower base and reactive speed
-                float lightAngle = uTime * orbitSpeed; 
-                vec3 lightPos = vec3(cos(lightAngle)*8.0, 6.0 + bass*1.0, sin(lightAngle)*8.0); // Reduced vertical bounce
-                vec3 lightDir = normalize(lightPos - p);
-                
-                // 3. Lighting Model
-                float diff = max(dot(detailNormal, lightDir), 0.0);
-                
-                // Secondary fill
-                vec3 fillLightDir = normalize(vec3(-5.0, 2.0, -5.0));
-                float fill = max(dot(detailNormal, fillLightDir), 0.0) * 0.3;
-                
-                // Material Color: Bright Clean Plaster
-                vec3 baseColor = vec3(0.6, 0.6, 0.62); // Slightly lighter base
-                vec3 flashColor = vec3(0.9, 0.9, 0.9); // Less intense flash white
-                vec3 materialColor = mix(baseColor, flashColor, high * 0.8); // Reduced flash intensity (was 1.5)
-                
-                // Shadows
-                float shadow = smoothstep(0.0, 0.5, diff);
-                
-                // Composite
-                col = materialColor * (0.1 + 0.8 * shadow + fill);
-                
-                // Specular
-                vec3 halfDir = normalize(lightDir - rd);
-                float spec = pow(max(dot(detailNormal, halfDir), 0.0), 16.0);
-                col += vec3(spec) * 0.1;
-                
-                // Rim Light
-                float rim = 1.0 - max(dot(normal, -rd), 0.0);
-                col += vec3(rim) * 0.15;
-            }
+            col = mix(colOrganic, colMath, modeBlend);
             
             // FX: SLICER
             if (uGate > 0.1) {

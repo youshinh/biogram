@@ -156,6 +156,10 @@ export class ThreeViz extends LitElement {
                             type: 'MODE',
                             mode: this.engine.mode
                         });
+                        this.broadcast.postMessage({
+                            type: 'TRANSITION_TYPE',
+                            transitionType: this.engine.transitionType
+                        });
                     }
                 }
                 return;
@@ -173,6 +177,9 @@ export class ThreeViz extends LitElement {
                 if (data.type === 'TEXTURE') {
                     this.engine.updateTexture(data.deck, data.url, data.mimeType);
                 } 
+                else if (data.type === 'TRANSITION_TYPE' && typeof data.transitionType === 'string') {
+                    this.engine.setTransitionType(data.transitionType);
+                }
                 // 2. Webcam Update
                 else if (data.type === 'WEBCAM') {
                     this.engine.toggleWebcam(data.active);
@@ -260,6 +267,16 @@ export class ThreeViz extends LitElement {
              this.broadcast.postMessage({
                 type: 'MODE',
                 mode
+            });
+        }
+    }
+
+    public setTransitionType(type: string) {
+        this.engine?.setTransitionType(type);
+        if (this.mode === 'MASTER') {
+             this.broadcast.postMessage({
+                type: 'TRANSITION_TYPE',
+                transitionType: type
             });
         }
     }

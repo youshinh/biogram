@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MetaballVertexShader, MetaballFragmentShader } from './shaders/MetaballShader';
 import { BlurVertexShader, BlurFragmentShaderH, BlurFragmentShaderV } from './shaders/BlurShader';
+import { SweepLineTransitionVertexShader, SweepLineTransitionFragmentShader } from './shaders/SweepLineTransitionShader';
 import { TextureManager } from './TextureManager';
 import { MonochromeFlow } from './MonochromeFlow';
 import { RingDimensions } from './RingDimensions';
@@ -97,6 +98,23 @@ export class VisualEngine {
     // Kick Impulse for Organic Mode
     private kickImpulse: number = 0;
     private lastKickState: boolean = false;
+
+    // Sweep transition post-process
+    private transitionRenderTarget!: THREE.WebGLRenderTarget;
+    private transitionScene!: THREE.Scene;
+    private transitionCamera!: THREE.OrthographicCamera;
+    private transitionMaterial!: THREE.ShaderMaterial;
+    private transitionQuad!: THREE.Mesh;
+    private transitionDirection: 0 | 1 = 0;
+    private currentTransitionType: string = 'crossfade';
+    private activeTransitionType: string = 'crossfade';
+    private pendingShaderMode: 'organic' | 'wireframe' | null = null;
+    private pendingShaderApplied = false;
+    private shaderBlendFrom: number | null = null;
+    private shaderBlendTo: number | null = null;
+    private shaderBlendStrategy: 'none' | 'midpoint' | 'lerp' | 'fade_swap' = 'none';
+    private static readonly DEFAULT_TRANSITION_SPEED = 1.4;
+    private static readonly SWEEP_TRANSITION_SPEED = 0.12;
 
     constructor(container: HTMLElement) {
         this.container = container;
@@ -361,6 +379,21 @@ export class VisualEngine {
         this.blurQuad = new THREE.Mesh(blurGeo, this.blurMaterialH);
         this.blurScene.add(this.blurQuad);
 
+        this.transitionRenderTarget = new THREE.WebGLRenderTarget(w, h, rtOptions);
+        this.transitionScene = new THREE.Scene();
+        this.transitionCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.transitionMaterial = new THREE.ShaderMaterial({
+            vertexShader: SweepLineTransitionVertexShader,
+            fragmentShader: SweepLineTransitionFragmentShader,
+            uniforms: {
+                tDiffuse: { value: null },
+                uProgress: { value: 0.0 },
+                uDirection: { value: 0.0 }
+            }
+        });
+        this.transitionQuad = new THREE.Mesh(blurGeo, this.transitionMaterial);
+        this.transitionScene.add(this.transitionQuad);
+
         // PRE-COMPILE SHADERS to prevent freeze on first use
         if (import.meta.env.DEV) console.log('[VisualEngine] Pre-compiling shaders...');
         this.renderer.compile(this.scene, this.camera);
@@ -437,6 +470,7 @@ export class VisualEngine {
         if (this.blurRenderTarget1) {
             this.blurRenderTarget1.setSize(w, h);
             this.blurRenderTarget2.setSize(w, h);
+            this.transitionRenderTarget.setSize(w, h);
             this.blurMaterialH.uniforms.resolution.value.set(w, h);
             this.blurMaterialV.uniforms.resolution.value.set(w, h);
         }
@@ -475,6 +509,31 @@ export class VisualEngine {
         if (this.transition.active) {
             this.transition.progress += delta * this.transition.speed;
             const t = Math.min(this.transition.progress, 1.0);
+
+            if (this.shaderBlendStrategy === 'lerp' && this.shaderBlendFrom !== null && this.shaderBlendTo !== null) {
+                this.uniforms.uMode.value = this.shaderBlendFrom + (this.shaderBlendTo - this.shaderBlendFrom) * t;
+            }
+
+            // Two-step fallback for shader-family transitions:
+            // fade out current mode -> swap mode at midpoint -> fade in target mode.
+            if (this.shaderBlendStrategy === 'fade_swap' && this.pendingShaderMode) {
+                if (t < 0.5) {
+                    this.material.opacity = 1.0 - (t * 2.0);
+                } else {
+                    if (!this.pendingShaderApplied) {
+                        this.uniforms.uMode.value = (this.pendingShaderMode === 'wireframe') ? 1.0 : 0.0;
+                        this.pendingShaderApplied = true;
+                    }
+                    this.material.opacity = (t - 0.5) * 2.0;
+                }
+            }
+
+            // For shader-mode-to-shader-mode transitions, switch mode at midpoint
+            // while sweep transition is visually active.
+            if (this.shaderBlendStrategy === 'midpoint' && this.pendingShaderMode && !this.pendingShaderApplied && t >= 0.5) {
+                this.uniforms.uMode.value = (this.pendingShaderMode === 'wireframe') ? 1.0 : 0.0;
+                this.pendingShaderApplied = true;
+            }
             
             // Fade Out From
             if (this.transition.fromMode && this.transition.fromMode.setOpacity) {
@@ -489,11 +548,20 @@ export class VisualEngine {
             if (t >= 1.0) {
                 // Done
                 this.transition.active = false;
-                if (this.transition.fromMode) {
+                if (this.transition.fromMode && this.transition.fromMode !== this.transition.toMode) {
                     this.transition.fromMode.mesh.visible = false;
                 }
                 this.transition.fromMode = null;
                 this.transition.toMode = null;
+                this.pendingShaderMode = null;
+                this.pendingShaderApplied = false;
+                this.shaderBlendFrom = null;
+                this.shaderBlendTo = null;
+                this.shaderBlendStrategy = 'none';
+                this.material.opacity = 1.0;
+                // Mode switch default should be crossfade unless explicitly re-set.
+                this.currentTransitionType = 'crossfade';
+                this.activeTransitionType = 'crossfade';
             }
         }
 
@@ -528,7 +596,10 @@ export class VisualEngine {
         if (this.isRendering) {
             
             // --- BLUR POST-PROCESSING FOR MATH MODE (WIREFRAME) ---
-            const isMathMode = this.currentModeName === 'wireframe';
+            const isShaderFamilyMode = this.currentModeName === 'wireframe' || this.currentModeName === 'organic';
+            const modeValue = Number(this.uniforms.uMode.value ?? 0);
+            // During wireframe -> organic transitions, keep math post-process until blend crosses midpoint.
+            const isMathMode = isShaderFamilyMode && modeValue > 0.55;
             
             if (isMathMode && this.blurRenderTarget1) {
                 // Hi-hat trigger: When highs exceed threshold, reduce blur and HOLD it
@@ -578,32 +649,54 @@ export class VisualEngine {
                 }
                 
                 // Final output to screen
-                this.blurMaterialV.uniforms.tDiffuse.value = this.blurRenderTarget1.texture;
-                this.renderer.setRenderTarget(null); // Back to screen
-                
-                if (this.isTrailsActive && this.fadePlaneMesh) {
-                    this.renderer.render(this.fadeScene, this.fadeCamera);
+                if (this.transition.active && this.activeTransitionType === 'sweep_line_smear') {
+                    this.renderSweepTransition(this.blurRenderTarget1.texture, this.transition.progress);
                 } else {
-                    this.renderer.clearColor();
+                    this.blurMaterialV.uniforms.tDiffuse.value = this.blurRenderTarget1.texture;
+                    this.renderer.setRenderTarget(null); // Back to screen
+                    
+                    if (this.isTrailsActive && this.fadePlaneMesh) {
+                        this.renderer.render(this.fadeScene, this.fadeCamera);
+                    } else {
+                        this.renderer.clearColor();
+                    }
+                    this.renderer.clearDepth();
+                    this.renderer.render(this.blurScene, this.blurCamera);
                 }
-                this.renderer.clearDepth();
-                this.renderer.render(this.blurScene, this.blurCamera);
                 
             } else {
                 // Normal rendering (no blur)
-                if (this.isTrailsActive && this.fadePlaneMesh) {
-                    // TRAILS ENABLED: Render Fade Plane instead of Clearing
-                    this.renderer.render(this.fadeScene, this.fadeCamera);
-                } else {
-                    // TRAILS DISABLED: Clear screen normally
+                if (this.transition.active && this.activeTransitionType === 'sweep_line_smear') {
+                    this.renderer.setRenderTarget(this.transitionRenderTarget);
                     this.renderer.clearColor();
-                }
+                    this.renderer.clearDepth();
+                    this.renderer.render(this.scene, this.camera);
+                    this.renderSweepTransition(this.transitionRenderTarget.texture, this.transition.progress);
+                } else {
+                    if (this.isTrailsActive && this.fadePlaneMesh) {
+                        // TRAILS ENABLED: Render Fade Plane instead of Clearing
+                        this.renderer.render(this.fadeScene, this.fadeCamera);
+                    } else {
+                        // TRAILS DISABLED: Clear screen normally
+                        this.renderer.clearColor();
+                    }
 
-                this.renderer.clearDepth();
-                this.renderer.render(this.scene, this.camera);
+                    this.renderer.clearDepth();
+                    this.renderer.render(this.scene, this.camera);
+                }
             }
         }
     };
+
+    private renderSweepTransition(texture: THREE.Texture, progress: number) {
+        this.transitionMaterial.uniforms.tDiffuse.value = texture;
+        this.transitionMaterial.uniforms.uProgress.value = Math.min(1.0, Math.max(0.0, progress));
+        this.transitionMaterial.uniforms.uDirection.value = this.transitionDirection;
+        this.renderer.setRenderTarget(null);
+        this.renderer.clearColor();
+        this.renderer.clearDepth();
+        this.renderer.render(this.transitionScene, this.transitionCamera);
+    }
 
     // --- BLUR CONTROLS ---
     public setBlur(active: boolean, feedback: number, tintHex: string) {
@@ -641,7 +734,7 @@ export class VisualEngine {
         // FIX: If transition is already active, force clean up previous state
         if (this.transition.active) {
             // Force hide the 'from' mode of the interrupted transition
-            if (this.transition.fromMode) {
+            if (this.transition.fromMode && this.transition.fromMode !== this.transition.toMode) {
                 this.transition.fromMode.mesh.visible = false;
                 if (this.transition.fromMode.setOpacity) this.transition.fromMode.setOpacity(0.0);
             }
@@ -664,7 +757,9 @@ export class VisualEngine {
         // However, if transition active, 'oldViz' (currentModeName) is actually the one FADING IN. 
         // The one fading OUT (transition.fromMode) needs to be killed immediately.
         if (this.transition.active && this.transition.fromMode) {
-             this.transition.fromMode.mesh.visible = false;
+             if (this.transition.fromMode !== this.transition.toMode) {
+                this.transition.fromMode.mesh.visible = false;
+             }
         }
 
         const newViz = this.modeMap[mode] ?? null;
@@ -672,11 +767,42 @@ export class VisualEngine {
         
         // Handle Shader Modes separately?
         if ((mode === 'organic' || mode === 'wireframe') && (this.currentModeName === 'organic' || this.currentModeName === 'wireframe')) {
-             this.uniforms.uMode.value = (mode === 'wireframe') ? 1.0 : 0.0;
+             const targetModeValue = (mode === 'wireframe') ? 1.0 : 0.0;
+             this.activeTransitionType = this.currentTransitionType || 'crossfade';
+
+             // sweep_line_smear on shader-family transitions causes black-frame artifacts.
+             // Fallback to two-step fade (fade out/in) for stable visual handoff.
+             if (this.activeTransitionType === 'sweep_line_smear') {
+                 this.transition.fromMode = oldViz;
+                 this.transition.toMode = newViz;
+                 this.transition.active = true;
+                 this.transition.progress = 0.0;
+                 this.transition.speed = Math.max(0.9, VisualEngine.DEFAULT_TRANSITION_SPEED * 0.9);
+                 this.transitionDirection = Math.random() < 0.5 ? 0 : 1;
+                 this.pendingShaderMode = mode;
+                 this.pendingShaderApplied = false;
+                 this.shaderBlendFrom = this.uniforms.uMode.value as number;
+                 this.shaderBlendTo = targetModeValue;
+                 this.shaderBlendStrategy = 'fade_swap';
+                 // Disable sweep post-process for this special case.
+                 this.activeTransitionType = 'crossfade';
+                 this.currentModeName = mode;
+                 newViz.mesh.visible = true;
+                 return;
+             }
+             // Default mode switching is crossfade (lerp uMode).
+             this.transition.fromMode = oldViz;
+             this.transition.toMode = newViz;
+             this.transition.active = true;
+             this.transition.progress = 0.0;
+             this.transition.speed = this.getTransitionSpeed(this.activeTransitionType);
              this.currentModeName = mode;
              newViz.mesh.visible = true;
-             // Ensure transition is killed if we were doing one?
-             this.transition.active = false;
+             this.pendingShaderMode = mode;
+             this.pendingShaderApplied = true;
+             this.shaderBlendFrom = this.uniforms.uMode.value as number;
+             this.shaderBlendTo = targetModeValue;
+             this.shaderBlendStrategy = 'lerp';
              return;
         }
         
@@ -685,6 +811,9 @@ export class VisualEngine {
         this.transition.toMode = newViz;
         this.transition.active = true;
         this.transition.progress = 0.0;
+        this.activeTransitionType = this.currentTransitionType || 'crossfade';
+        this.transition.speed = this.getTransitionSpeed(this.activeTransitionType);
+        this.transitionDirection = Math.random() < 0.5 ? 0 : 1;
         
         // Ensure new viz is visible for fade in
         if (newViz) {
@@ -710,6 +839,15 @@ export class VisualEngine {
         }
 
         this.currentModeName = mode;
+    }
+
+    public setTransitionType(type: string) {
+        this.currentTransitionType = type;
+    }
+
+    private getTransitionSpeed(type: string): number {
+        if (type === 'sweep_line_smear') return VisualEngine.SWEEP_TRANSITION_SPEED;
+        return VisualEngine.DEFAULT_TRANSITION_SPEED;
     }
 
     // Helper to extract current state for Sync
@@ -790,7 +928,7 @@ export class VisualEngine {
                 energy: avgEnergy,
                 chaos: avgChaos,
                 cloud: avgCloud,
-                mood: (cf < 0.5) ? stateA.mood : stateB.mood,
+                mood: (cf < 0.5) ? stateA.theme : stateB.theme,
                 stateA,
                 stateB
             };
@@ -831,6 +969,9 @@ export class VisualEngine {
         if (data.blurActive !== undefined) {
             this.setBlur(data.blurActive, data.blurFeedback, data.blurTint);
         }
+        if (data.VISUAL_TRANSITION_TYPE !== undefined && typeof data.VISUAL_TRANSITION_TYPE === 'string') {
+            this.currentTransitionType = data.VISUAL_TRANSITION_TYPE;
+        }
     }
 
     private isRendering: boolean = true;
@@ -841,6 +982,10 @@ export class VisualEngine {
 
     public get mode(): InternalVisualMode {
         return this.currentModeName;
+    }
+
+    public get transitionType(): string {
+        return this.currentTransitionType;
     }
 
     public addVisualScore(deck: 'A' | 'B', chunk: VisualChunk, startTimeSec: number) {
@@ -909,8 +1054,10 @@ export class VisualEngine {
         this.renderer.dispose();
         this.blurRenderTarget1?.dispose();
         this.blurRenderTarget2?.dispose();
+        this.transitionRenderTarget?.dispose();
         this.blurMaterialH?.dispose();
         this.blurMaterialV?.dispose();
+        this.transitionMaterial?.dispose();
         // Dispose textures/materials if needed
         this.textureManager.dispose();
         

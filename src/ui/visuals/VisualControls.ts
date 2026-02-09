@@ -8,12 +8,14 @@ export class VisualControls extends LitElement {
         :host {
             display: block;
             height: 100%;
+            min-height: 0;
             background: rgba(0, 0, 0, 0.4);
             border-radius: 8px;
             padding: 8px;
             box-sizing: border-box;
             font-family: 'JetBrains Mono', monospace;
             color: #ccc;
+            overflow: hidden;
         }
 
         .main-layout {
@@ -21,6 +23,7 @@ export class VisualControls extends LitElement {
             grid-template-columns: 300px 280px 1fr;
             gap: 12px;
             height: 100%;
+            min-height: 0;
         }
 
         /* TABLET Layout */
@@ -112,7 +115,23 @@ export class VisualControls extends LitElement {
             flex-direction: column;
             gap: 12px;
             height: 100%;
+            min-height: 0;
+            overflow-y: auto;
             box-sizing: border-box;
+        }
+
+        .stack-col {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            height: 100%;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .stack-col .panel {
+            height: auto;
+            overflow: hidden;
         }
 
         .panel-header {
@@ -212,7 +231,7 @@ export class VisualControls extends LitElement {
         
         .viz-grid button {
             height: 100%;
-            font-size: 20px; /* Match Effector Buttons text-xl */
+            font-size: clamp(14px, 2.2vh, 20px); /* Match Effector Buttons text-xl */
             font-weight: bold;
             letter-spacing: 0.1em;
         }
@@ -223,7 +242,7 @@ export class VisualControls extends LitElement {
             color: #a1a1aa;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 20px; /* Match Effector Buttons text-xl */
+            font-size: clamp(14px, 2.2vh, 20px); /* Match Effector Buttons text-xl */
             font-weight: bold;
             letter-spacing: 0.1em;
             display: flex;
@@ -283,6 +302,65 @@ export class VisualControls extends LitElement {
 
         .gen-mini-btn:active {
             transform: scale(0.95);
+        }
+
+        @media (max-height: 920px) {
+            :host {
+                padding: 6px;
+            }
+            .main-layout {
+                gap: 8px;
+            }
+            .panel {
+                padding: 10px;
+                gap: 8px;
+            }
+            .panel-header {
+                font-size: 10px;
+            }
+            button, .file-btn {
+                padding: 8px;
+                font-size: 9px;
+            }
+            .gen-mini-btn {
+                width: 44px;
+                height: 44px;
+            }
+        }
+
+        @media (max-height: 820px) {
+            :host {
+                padding: 4px;
+            }
+            .main-layout {
+                gap: 6px;
+            }
+            .panel {
+                padding: 8px;
+                gap: 6px;
+            }
+            .sub-section {
+                gap: 4px;
+            }
+            .row-group {
+                gap: 6px;
+            }
+            .panel-header {
+                font-size: 9px;
+                margin-bottom: 2px;
+            }
+            button, .file-btn {
+                padding: 7px;
+                font-size: 8.5px;
+            }
+            .status-text {
+                font-size: 8px;
+            }
+            .gen-mini-btn {
+                width: 40px;
+                height: 40px;
+                font-size: 9px;
+            }
         }
     `;
 
@@ -349,13 +427,13 @@ export class VisualControls extends LitElement {
 
                 <!-- PANEL 2: BLUR FX -->
                 <!-- PANEL 2: BLUR FX & ZEN MODE -->
-                <div style="display: flex; flex-direction: column; gap: 12px; height: 100%;">
+                <div class="stack-col">
                     
                     <!-- BLUR FX -->
-                    <div class="panel" style="flex: 1; height: auto;">
+                    <div class="panel" style="flex: 1;">
                         <div class="panel-header">BLUR FX</div>
                         
-                        <button class="${this.blurActive ? 'active' : ''}" @click="${this.toggleBlur}" style="margin-bottom: 12px;">
+                        <button class="${this.blurActive ? 'active' : ''}" @click="${this.toggleBlur}" style="margin-bottom: 8px;">
                             ${this.blurActive ? 'ENABLED' : 'DISABLED'}
                         </button>
 
@@ -374,7 +452,7 @@ export class VisualControls extends LitElement {
                     </div>
 
                     <!-- ZEN MODE -->
-                    <div class="panel" style="flex: 0; height: auto;">
+                    <div class="panel">
                         <div class="panel-header">ZEN MODE</div>
                         <button class="${this.zenModeActive ? 'active' : ''}" @click="${this.toggleZenMode}">
                             ${this.zenModeActive ? 'ON' : 'OFF'}
