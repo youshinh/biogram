@@ -18,6 +18,15 @@ export class AudioEngine {
   public musicClientA: MusicClient;
   public musicClientB: MusicClient;
   private isPlaying = false;
+  private deckTrackStartFrame: { A: number | null; B: number | null } = { A: null, B: null };
+  private loopAutoStopByDeck: {
+      A: { armed: boolean; armedWritePtr: number; loopLengthFrames: number; overlapFrames: number; autoStopped: boolean };
+      B: { armed: boolean; armedWritePtr: number; loopLengthFrames: number; overlapFrames: number; autoStopped: boolean };
+  } = {
+      A: { armed: false, armedWritePtr: 0, loopLengthFrames: 0, overlapFrames: 0, autoStopped: false },
+      B: { armed: false, armedWritePtr: 0, loopLengthFrames: 0, overlapFrames: 0, autoStopped: false }
+  };
+  private loopAutoStopInterval: number = 0;
   private deckSourceMode: { A: 'ai' | 'sample'; B: 'ai' | 'sample' } = {
       A: 'ai',
       B: 'ai'
@@ -50,6 +59,14 @@ export class AudioEngine {
             detail: { deck: 'A', bpm: bpm, offset: offset } 
         }));
     }, (startPosition: number) => {
+        this.deckTrackStartFrame.A = Math.floor(startPosition);
+        this.loopAutoStopByDeck.A = {
+            armed: true,
+            armedWritePtr: Math.floor(startPosition),
+            loopLengthFrames: this.getDeckRingFrames(),
+            overlapFrames: 0,
+            autoStopped: false
+        };
         this.skipToPosition('A', startPosition);
         setTimeout(() => this.unmute('A'), 150); // Delay unmute to ensure silence
     });
@@ -60,6 +77,14 @@ export class AudioEngine {
             detail: { deck: 'B', bpm: bpm, offset: offset } 
         }));
     }, (startPosition: number) => {
+        this.deckTrackStartFrame.B = Math.floor(startPosition);
+        this.loopAutoStopByDeck.B = {
+            armed: true,
+            armedWritePtr: Math.floor(startPosition),
+            loopLengthFrames: this.getDeckRingFrames(),
+            overlapFrames: 0,
+            autoStopped: false
+        };
         this.skipToPosition('B', startPosition);
         setTimeout(() => this.unmute('B'), 150); // Delay unmute to ensure silence
     });
@@ -138,6 +163,7 @@ export class AudioEngine {
       // Note: Concurrent connections might be rate-limited, but let's try.
       await this.musicClientA.connect();
       await this.musicClientB.connect();
+      this.startLoopAutoStopMonitor();
 
     } catch (e) {
       console.error('Failed to initialize AudioEngine:', e);
@@ -152,16 +178,167 @@ export class AudioEngine {
       this.musicClientB?.start(autoPlay, initPrompt);
   }
 
+  private positiveMod(value: number, mod: number): number {
+      const r = value % mod;
+      return r < 0 ? r + mod : r;
+  }
+
+  private getDeckBpmValue(deck: 'A' | 'B'): number {
+      const detected = deck === 'A' ? this.bpmA : this.bpmB;
+      return detected > 0 ? detected : this.masterBpm || 120;
+  }
+
+  private getDeckOffsetSeconds(deck: 'A' | 'B'): number {
+      return deck === 'A' ? this.offsetA : this.offsetB;
+  }
+
+  private snapToBeatGrid(frame: number, bpm: number, offsetSeconds: number): number {
+      const sampleRate = this.getSampleRate();
+      const beatFrames = (sampleRate * 60) / Math.max(1, bpm);
+      const beatAnchor = offsetSeconds * sampleRate;
+      const n = Math.round((frame - beatAnchor) / beatFrames);
+      return Math.floor(beatAnchor + n * beatFrames);
+  }
+
+  getSampleRate(): number {
+      return this.context.sampleRate || 48000;
+  }
+
+  private getDeckRingFrames(): number {
+      return Math.max(1, Math.floor(this.audioData.length / 4));
+  }
+
+  private resetLoopAutoStop(deck: 'A' | 'B') {
+      this.loopAutoStopByDeck[deck] = {
+          armed: false,
+          armedWritePtr: 0,
+          loopLengthFrames: 0,
+          overlapFrames: 0,
+          autoStopped: false
+      };
+  }
+
+  private armLoopAutoStop(deck: 'A' | 'B', loopLengthFrames: number, overlapFrames: number = 0) {
+      this.loopAutoStopByDeck[deck] = {
+          armed: true,
+          armedWritePtr: this.adapter.getReadPointer(deck),
+          loopLengthFrames: Math.max(1, Math.floor(loopLengthFrames)),
+          overlapFrames: Math.max(0, Math.floor(overlapFrames)),
+          autoStopped: false
+      };
+  }
+
+  private maybeResumeAfterLoopDisable(deck: 'A' | 'B') {
+      const state = this.loopAutoStopByDeck[deck];
+      if (!state.autoStopped) return;
+      if (this.deckSourceMode[deck] === 'ai' && !this.deckStopped[deck]) {
+          this.getMusicClient(deck)?.resume();
+      }
+      this.resetLoopAutoStop(deck);
+  }
+
+  private startLoopAutoStopMonitor() {
+      if (this.loopAutoStopInterval) {
+          window.clearInterval(this.loopAutoStopInterval);
+      }
+      this.loopAutoStopInterval = window.setInterval(() => {
+          (['A', 'B'] as const).forEach((deck) => {
+              const state = this.loopAutoStopByDeck[deck];
+              if (!state.armed || state.autoStopped) return;
+              if (this.deckSourceMode[deck] !== 'ai' || this.deckStopped[deck]) return;
+
+              const readPtr = this.adapter.getReadPointer(deck);
+              const playedFrames = readPtr - state.armedWritePtr;
+              const thresholdFrames = state.loopLengthFrames + state.overlapFrames;
+              if (playedFrames < thresholdFrames) return;
+
+              this.getMusicClient(deck)?.pause();
+              state.autoStopped = true;
+              state.armed = false;
+              if (import.meta.env.DEV) {
+                  console.log(`[Engine] Auto-stopped generation on deck ${deck} after loop + fade tail.`);
+              }
+          });
+      }, 120);
+  }
+
   setLoop(deck: 'A' | 'B', start: number, end: number, crossfade: number, count: number, active: boolean) {
+     const bpm = this.getDeckBpmValue(deck);
+     const offsetSeconds = this.getDeckOffsetSeconds(deck);
+     const sampleRate = this.getSampleRate();
+     const beatFrames = Math.max(1, (sampleRate * 60) / Math.max(1, bpm));
+
+     const safeCount = count === -1 ? -1 : Math.max(0, Math.floor(count || 0));
+     let safeStart = Math.floor(start || 0);
+     let safeEnd = Math.floor(end || 0);
+     let safeCrossfade = Math.max(0, Math.floor(crossfade || 0));
+     let safeActive = active;
+
+     if (safeActive) {
+         safeStart = this.snapToBeatGrid(safeStart, bpm, offsetSeconds);
+         safeEnd = this.snapToBeatGrid(safeEnd, bpm, offsetSeconds);
+
+         if (safeEnd <= safeStart) {
+             safeEnd = safeStart + Math.floor(beatFrames);
+         }
+
+         // Guardrail: loop points must stay within currently generated contiguous window.
+         // This prevents selecting future/unwritten frames that can produce silent segments.
+         if (this.deckSourceMode[deck] === 'ai') {
+             const writePtr = this.adapter.getWritePointer(deck);
+             const ringFrames = this.getDeckRingFrames();
+             const maxLoopEnd = Math.max(1, writePtr - Math.floor(sampleRate * 0.02));
+             const minLoopStart = Math.max(0, writePtr - ringFrames);
+             safeStart = Math.max(minLoopStart, Math.min(safeStart, maxLoopEnd - 1));
+             safeEnd = Math.max(safeStart + 1, Math.min(safeEnd, maxLoopEnd));
+         }
+
+         const loopLengthFrames = safeEnd - safeStart;
+         if (loopLengthFrames <= 1) {
+             safeActive = false;
+             safeCrossfade = 0;
+         } else if (safeCrossfade > 0) {
+             const maxCrossfade = Math.max(0, Math.floor(loopLengthFrames * 0.25));
+             const minCrossfade = Math.floor(sampleRate * 0.02);
+             const fadeQuantum = Math.max(1, Math.floor(beatFrames / 32));
+             safeCrossfade = Math.max(minCrossfade, safeCrossfade);
+             safeCrossfade = Math.min(maxCrossfade, safeCrossfade);
+             if (safeCrossfade > 0) {
+                 safeCrossfade = Math.max(fadeQuantum, Math.floor(safeCrossfade / fadeQuantum) * fadeQuantum);
+                 safeCrossfade = Math.min(maxCrossfade, safeCrossfade);
+             }
+         }
+     } else {
+         safeCrossfade = 0;
+     }
+
+     if (safeActive) this.armLoopAutoStop(deck, safeEnd - safeStart, safeCrossfade);
+     else this.maybeResumeAfterLoopDisable(deck);
+
+     this.adapter.configureLoopBlend(
+        deck,
+        safeActive
+            ? {
+                  active: true,
+                  startFrame: safeStart,
+                  endFrame: safeEnd,
+                  overlapFrames: safeCrossfade,
+                  bpm,
+                  offsetSeconds,
+                  sampleRate
+              }
+            : null
+     );
+
      if (this.workletNode) {
          this.workletNode.port.postMessage({
              type: 'CONFIG_LOOP',
              deck,
-             start,
-             end,
-             crossfade,
-             count,
-             active
+             start: safeStart,
+             end: safeEnd,
+             crossfade: safeCrossfade,
+             count: safeCount,
+             active: safeActive
          });
          // console.log(`[Engine] Set Loop ${deck}: ${active ? 'ON' : 'OFF'} [${start}-${end}]`);
      }
@@ -438,16 +615,18 @@ export class AudioEngine {
       if (bpmSelf < 1 || bpmOther < 1) return;
       
       // BAR Phase Logic
+      const sampleRate = this.getSampleRate();
       const beatsPerBar = 4;
-      const spbOther = (44100 * 60) / bpmOther;
+      const spbOther = (sampleRate * 60) / bpmOther;
       const samplesPerBarOther = spbOther * beatsPerBar;
       
-      const barProgressOther = ((ptrOther - (offsetOther * 44100)) % samplesPerBarOther) / samplesPerBarOther;
+      const barProgressOther =
+          this.positiveMod(ptrOther - (offsetOther * sampleRate), samplesPerBarOther) / samplesPerBarOther;
       
-      const spbSelf = (44100 * 60) / bpmSelf;
+      const spbSelf = (sampleRate * 60) / bpmSelf;
       const samplesPerBarSelf = spbSelf * beatsPerBar;
       
-      const currentBarStartSelf = ptrSelf - ((ptrSelf - (offsetSelf * 44100)) % samplesPerBarSelf);
+      const currentBarStartSelf = ptrSelf - this.positiveMod(ptrSelf - (offsetSelf * sampleRate), samplesPerBarSelf);
       
       let targetPtr = currentBarStartSelf + (samplesPerBarSelf * barProgressOther);
       
@@ -546,6 +725,10 @@ export class AudioEngine {
       return Atomics.load(this.headerView, OFFSETS.WRITE_POINTER_A / 4);
   }
 
+  getDeckTrackStartFrame(deck: 'A' | 'B'): number | null {
+      return this.deckTrackStartFrame[deck];
+  }
+
   // AI Status
   getBufferHealth(): number {
       const healthA = this.musicClientA ? this.musicClientA.getBufferHealth() : 0;
@@ -564,6 +747,7 @@ export class AudioEngine {
   }
 
   isGenerating(deck: 'A'|'B'): boolean {
+      if (this.deckSourceMode[deck] !== 'ai') return false;
       if (deck === 'A') return this.musicClientA?.isGenerating() || false;
       return this.musicClientB?.isGenerating() || false;
   }
@@ -593,6 +777,9 @@ export class AudioEngine {
       if (import.meta.env.DEV) console.log(`[Engine] Clearing Buffer for Deck ${deck}`);
       if (deck === 'A') this.musicClientA?.clearBuffer();
       else this.musicClientB?.clearBuffer();
+      this.deckTrackStartFrame[deck] = null;
+      this.resetLoopAutoStop(deck);
+      this.setLoop(deck, 0, 0, 0, -1, false);
       
       // Silence the audio buffer to prevent "Old Tail" pops
       if (this.workletNode) {
@@ -718,6 +905,7 @@ export class AudioEngine {
       // Reset read pointer to start of buffer
       const readPtrOffset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;
       Atomics.store(this.headerView, readPtrOffset / 4, 0);
+      this.deckTrackStartFrame[deck] = 0;
       
       // Store sample length for potential beat-sync calculations
       // (The buffer wraps at bufferSize, so pointer % bufferSize gives actual position)
@@ -786,7 +974,11 @@ export class AudioEngine {
   private applyDeckGenerationState(deck: 'A' | 'B') {
       const client = this.getMusicClient(deck);
       if (!client) return;
-      const shouldGenerate = this.deckSourceMode[deck] === 'ai' && !this.deckStopped[deck];
+      const loopAutoStopped = this.loopAutoStopByDeck[deck].autoStopped;
+      const shouldGenerate =
+          this.deckSourceMode[deck] === 'ai' &&
+          !this.deckStopped[deck] &&
+          !loopAutoStopped;
       if (shouldGenerate) client.resume();
       else client.pause();
   }

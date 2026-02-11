@@ -23,6 +23,12 @@ export type PromptContextRef = {
   source_is_playing: boolean;
   target_is_playing: boolean;
   context_hash: string;
+  key_root?: string;
+  scale_label?: string;
+  scale_prompt?: string;
+  source_generated_prompt?: string;
+  target_generated_prompt?: string;
+  arrangement_hint?: string;
 };
 
 export type VisualPlanPoint = {
@@ -79,4 +85,10 @@ export type PromptContextInput = {
   targetDeck: 'A' | 'B';
   sourcePlaying: boolean;
   targetPlaying: boolean;
+  keyRoot?: string;
+  scaleLabel?: string;
+  scalePrompt?: string;
+  sourceGeneratedPrompt?: string;
+  targetGeneratedPrompt?: string;
+  arrangementHint?: string;
 };

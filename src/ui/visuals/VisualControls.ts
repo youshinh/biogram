@@ -2,6 +2,14 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { VisualMode } from './modes';
 
+type TransitionPreset =
+    | 'auto_matrix'
+    | 'crossfade'
+    | 'sweep_line_smear'
+    | 'soft_overlay';
+type FxMode = 'OFF' | 'AUTO' | 'MANUAL';
+type TransitionMode = 'AUTO' | 'MANUAL';
+
 @customElement('visual-controls')
 export class VisualControls extends LitElement {
     static styles = css`
@@ -153,7 +161,39 @@ export class VisualControls extends LitElement {
 
         .stack-col .panel {
             height: auto;
-            overflow: hidden;
+            overflow-y: auto;
+        }
+
+        .visual-pattern-panel,
+        .transition-panel {
+            overflow-y: auto !important;
+        }
+
+        .visual-pattern-panel {
+            min-height: 170px;
+        }
+
+        .transition-panel {
+            min-height: 170px;
+        }
+
+        .scene-fx-panel {
+            flex: 0 0 auto !important;
+        }
+
+        .fx-combined-panel {
+            flex: 1.2 !important;
+            min-height: 260px;
+        }
+
+        .zen-panel {
+            flex: 0 0 auto !important;
+            min-height: 86px;
+        }
+
+        .system-panel {
+            flex: 0 0 auto !important;
+            min-height: 156px;
         }
 
         .panel-header {
@@ -163,6 +203,15 @@ export class VisualControls extends LitElement {
             margin-bottom: 4px;
             letter-spacing: 0.1em;
             text-transform: uppercase;
+        }
+
+        .visual-row {
+            display: grid;
+            grid-template-columns: 1.25fr 1fr;
+            gap: 8px;
+            height: 100%;
+            min-height: 0;
+            overflow: hidden;
         }
 
         /* Sub-sections within panels */
@@ -226,10 +275,10 @@ export class VisualControls extends LitElement {
         }
         
         button.active {
-            background: #be123c;
-            border-color: #f43f5e;
-            color: white;
-            box-shadow: 0 0 10px rgba(225, 29, 72, 0.4);
+            background: linear-gradient(180deg, rgba(34, 24, 30, 0.9) 0%, rgba(24, 18, 24, 0.95) 100%);
+            border-color: rgba(251, 113, 133, 0.88);
+            color: #fff1f2;
+            box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.28), 0 8px 16px rgba(159, 18, 57, 0.28);
         }
 
         .status-text {
@@ -277,17 +326,168 @@ export class VisualControls extends LitElement {
             text-overflow: ellipsis;
         }
 
+        .auto-texture-input {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #0f1012;
+            color: #e4e4e7;
+            padding: 8px 10px;
+            font-size: 10px;
+            font-family: inherit;
+            outline: none;
+        }
+
+        .auto-texture-input:focus {
+            border-color: #be123c;
+            box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.35);
+        }
+
+        .auto-texture-input::placeholder {
+            color: #6b7280;
+        }
+
+        .mini-select {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #0f1012;
+            color: #e4e4e7;
+            padding: 8px 10px;
+            font-size: 10px;
+            font-family: inherit;
+            outline: none;
+        }
+
+        .mini-select:focus {
+            border-color: #be123c;
+            box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.35);
+        }
+
+        .panel-note {
+            font-size: 9px;
+            color: #6b7280;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .section-card {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 10px;
+            background: rgba(10, 10, 14, 0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .section-title {
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #9ca3af;
+            font-weight: 700;
+        }
+
+        .kv {
+            font-size: 11px;
+            color: #cbd5e1;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .segmented {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+        }
+
+        .segmented.three {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .primary-btn {
+            min-height: 44px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            background: linear-gradient(180deg, rgba(32, 35, 40, 0.94) 0%, rgba(20, 23, 28, 0.98) 100%);
+            border-color: rgba(203, 213, 225, 0.46);
+            color: #e5e7eb;
+            box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.2), 0 8px 16px rgba(10, 14, 20, 0.3);
+        }
+
+        .primary-btn:hover {
+            filter: brightness(1.08);
+            border-color: rgba(226, 232, 240, 0.75);
+        }
+
+        .zen-mode-btn {
+            width: 74px;
+            min-width: 74px;
+            height: 74px;
+            min-height: 74px;
+            padding: 0;
+            border-radius: 50%;
+            align-self: center;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            background: linear-gradient(180deg, rgba(251, 251, 251, 1) 0%, rgba(232, 232, 232, 1) 100%);
+            border-color: rgba(255, 255, 255, 0.9);
+            color: #0b0b0d;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55), 0 10px 18px rgba(0, 0, 0, 0.35);
+        }
+
+        .zen-mode-btn:hover {
+            border-color: rgba(255, 255, 255, 1);
+            color: #fff;
+            filter: brightness(1.03);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75), 0 12px 20px rgba(0, 0, 0, 0.38);
+        }
+
+        .zen-mode-btn.active {
+            border-color: rgba(244, 63, 94, 0.95);
+            box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.3), 0 12px 22px rgba(159, 18, 57, 0.32);
+        }
+
+        .range-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .range-wrap input[type="range"] {
+            width: 100%;
+            accent-color: #e5e7eb;
+        }
+
+        .range-value {
+            width: 52px;
+            text-align: right;
+            font-size: 11px;
+            color: #e5e7eb;
+            font-weight: 700;
+        }
+
         /* Visual Mode Grid */
         .viz-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            grid-template-rows: 1fr 1fr;
+            grid-template-rows: repeat(2, minmax(62px, 1fr));
             gap: 6px;
             flex-grow: 1;
+            min-height: 136px;
         }
         
         .viz-grid button {
             height: 100%;
+            min-height: 62px;
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -296,9 +496,9 @@ export class VisualControls extends LitElement {
             border: 1px solid rgba(82, 82, 91, 0.85);
             background: linear-gradient(180deg, rgba(31, 31, 38, 0.92) 0%, rgba(17, 17, 21, 0.95) 100%);
             color: #a1a1aa;
-            font-size: clamp(11px, 1.05vw, 18px);
+            font-size: clamp(10px, 0.78vw, 14px);
             font-weight: 700;
-            letter-spacing: 0.12em;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
             text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 16px rgba(0, 0, 0, 0.25);
@@ -313,10 +513,10 @@ export class VisualControls extends LitElement {
         }
 
         .viz-grid button.active {
-            background: linear-gradient(180deg, #e11d48 0%, #be123c 100%);
-            border-color: #fb7185;
-            color: #ffffff;
-            box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.32), 0 12px 24px rgba(159, 18, 57, 0.45);
+            background: linear-gradient(180deg, rgba(34, 24, 30, 0.9) 0%, rgba(24, 18, 24, 0.95) 100%);
+            border-color: rgba(251, 113, 133, 0.88);
+            color: #fff1f2;
+            box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.28), 0 8px 16px rgba(159, 18, 57, 0.28);
         }
 
         .gnosis-wrapper {
@@ -325,9 +525,9 @@ export class VisualControls extends LitElement {
             color: #a1a1aa;
             border-radius: 10px;
             cursor: pointer;
-            font-size: clamp(11px, 1.05vw, 18px);
+            font-size: clamp(10px, 0.78vw, 14px);
             font-weight: 700;
-            letter-spacing: 0.12em;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
             display: flex;
             flex-direction: column;
@@ -351,33 +551,112 @@ export class VisualControls extends LitElement {
         }
 
         .gnosis-wrapper.active {
-            background: linear-gradient(180deg, #e11d48 0%, #be123c 100%);
-            border-color: #fb7185;
-            color: white;
-            box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.32), 0 12px 24px rgba(159, 18, 57, 0.45);
+            background: linear-gradient(180deg, rgba(34, 24, 30, 0.9) 0%, rgba(24, 18, 24, 0.95) 100%);
+            border-color: rgba(251, 113, 133, 0.88);
+            color: #fff1f2;
+            box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.28), 0 8px 16px rgba(159, 18, 57, 0.28);
         }
 
         .gen-mini-btn {
             position: absolute;
             bottom: 6px;
             right: 6px;
-            width: 46px;
-            height: 46px;
-            border-radius: 50%;
+            width: 34px;
+            height: 22px;
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
 
             background: linear-gradient(180deg, rgba(42, 42, 49, 0.95) 0%, rgba(21, 21, 25, 0.98) 100%);
             border: 1px solid rgba(113, 113, 122, 0.8);
-            font-size: 10px;
-            letter-spacing: 0.08em;
+            font-size: 8px;
+            letter-spacing: 0.06em;
             font-weight: 700;
             color: #a1a1aa;
             
             z-index: 10;
             transition: all 0.2s;
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 10px rgba(0, 0, 0, 0.32);
+        }
+
+        .mode-mini-btn {
+            position: absolute;
+            bottom: 6px;
+            right: 6px;
+            width: 34px;
+            height: 22px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, rgba(42, 42, 49, 0.95) 0%, rgba(21, 21, 25, 0.98) 100%);
+            border: 1px solid rgba(113, 113, 122, 0.8);
+            color: #a1a1aa;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            z-index: 10;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 10px rgba(0, 0, 0, 0.32);
+        }
+
+        .mode-mini-btn:hover {
+            color: #fff;
+            border-color: #a1a1aa;
+            background: linear-gradient(180deg, rgba(61, 61, 71, 0.98) 0%, rgba(33, 33, 40, 1) 100%);
+        }
+
+        .organic-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            z-index: 2100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+
+        .organic-modal {
+            width: min(760px, 100%);
+            max-height: 86vh;
+            overflow-y: auto;
+            background: rgba(6, 8, 12, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            padding: 14px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .modal-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .modal-title {
+            font-size: 12px;
+            color: #e2e8f0;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .modal-close {
+            width: 36px;
+            min-width: 36px;
+            height: 36px;
+            min-height: 36px;
+            padding: 0;
+            border-radius: 999px;
         }
 
         .gen-mini-btn:hover {
@@ -409,8 +688,12 @@ export class VisualControls extends LitElement {
                 font-size: 9px;
             }
             .gen-mini-btn {
-                width: 44px;
-                height: 44px;
+                width: 32px;
+                height: 20px;
+            }
+            .mode-mini-btn {
+                width: 32px;
+                height: 20px;
             }
         }
 
@@ -443,9 +726,20 @@ export class VisualControls extends LitElement {
                 font-size: 8px;
             }
             .gen-mini-btn {
-                width: 40px;
-                height: 40px;
-                font-size: 9px;
+                width: 30px;
+                height: 18px;
+                font-size: 7px;
+            }
+            .mode-mini-btn {
+                width: 30px;
+                height: 18px;
+                font-size: 7px;
+            }
+        }
+
+        @media (max-width: 1400px) {
+            .visual-row {
+                grid-template-columns: 1fr;
             }
         }
     `;
@@ -460,14 +754,21 @@ export class VisualControls extends LitElement {
     @state() autoTextureStatus = 'READY';
     @state() autoTextureError = '';
     @state() autoTextureModel = '';
+    @state() autoTextureKeyword = '';
+    @state() organicPanelOpen = false;
+    @state() transitionMode: TransitionMode = 'AUTO';
+    @state() transitionPreset: TransitionPreset = 'auto_matrix';
+    @state() nextObjectMode: VisualMode = 'rings';
+    @state() fadeDurationSec = 1.0;
+    @state() fxMode: FxMode = 'OFF';
+    @state() fxIntensity = 0.55;
 
     render() {
         return html`
             <div class="main-layout">
                 
-                <!-- PANEL 1: INPUTS & SYSTEM -->
-                <div class="panel">
-                    <!-- System -->
+                <!-- PANEL 1: SYSTEM -->
+                <div class="panel system-panel">
                     <div class="sub-section">
                         <div class="panel-header">SYSTEM</div>
                         <div class="row-group">
@@ -483,83 +784,16 @@ export class VisualControls extends LitElement {
                             </button>
                         </div>
                     </div>
-
-                    <!-- Inputs -->
                     <div class="sub-section">
-                        <div class="panel-header">INPUTS</div>
-                        <div class="row-group">
-                            <!-- Deck A -->
-                            <div>
-                                <label class="file-btn">
-                                    DECK A
-                                    <input type="file" hidden accept="image/*,video/*" @change="${(e: any) => this.handleFile(e, 'A')}" />
-                                </label>
-                                <div class="status-text" id="status-a">DEFAULT</div>
-                            </div>
-
-                            <!-- Deck B -->
-                            <div>
-                                <label class="file-btn">
-                                    DECK B
-                                    <input type="file" hidden accept="image/*,video/*" @change="${(e: any) => this.handleFile(e, 'B')}" />
-                                </label>
-                                <div class="status-text" id="status-b">DEFAULT</div>
-                            </div>
-
-                            <!-- Camera -->
-                            <div>
-                                <button class="${this.webcamActive ? 'active' : ''}" @click="${this.toggleWebcam}">
-                                    CAM
-                                </button>
-                                <div class="status-text">${this.webcamActive ? 'ON' : 'OFF'}</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Auto Texture -->
-                    <div class="sub-section">
-                        <button
-                            class="${this.autoTextureGenerating ? 'active' : ''}"
-                            ?disabled=${this.autoTextureGenerating}
-                            @click="${this.handleAutoTextureGenerate}"
-                        >
-                            ${this.autoTextureGenerating ? 'AUTO TEXTURE RUNNING...' : 'AUTO TEXTURE'}
-                        </button>
-                        <div class="auto-texture-preview">
-                            ${this.autoTexturePreviewUrl
-                                ? html`<img src="${this.autoTexturePreviewUrl}" alt="Auto texture preview" />`
-                                : html`<div class="auto-texture-placeholder">NO PREVIEW</div>`}
-                        </div>
-                        <div class="row-group">
-                            <button
-                                ?disabled=${!this.autoTexturePreviewUrl || this.autoTextureGenerating}
-                                @click="${() => this.applyAutoTexture('A')}"
-                            >
-                                APPLY A
-                            </button>
-                            <button
-                                ?disabled=${!this.autoTexturePreviewUrl || this.autoTextureGenerating}
-                                @click="${() => this.applyAutoTexture('B')}"
-                            >
-                                APPLY B
-                            </button>
-                        </div>
-                        <div class="status-text">${this.autoTextureError || this.autoTextureStatus}</div>
-                        ${this.autoTextureModel
-                            ? html`<div class="auto-texture-meta">MODEL: ${this.autoTextureModel}</div>`
-                            : null}
-                        ${this.autoTexturePrompt
-                            ? html`<div class="auto-texture-meta" title="${this.autoTexturePrompt}">PROMPT: ${this.autoTexturePrompt}</div>`
-                            : null}
+                        <div class="panel-header">ZEN MODE</div>
+                        <button class="zen-mode-btn ${this.zenModeActive ? 'active' : ''}" @click="${this.toggleZenMode}">ZEN</button>
                     </div>
                 </div>
 
-                <!-- PANEL 2: BLUR FX -->
-                <!-- PANEL 2: BLUR FX & ZEN MODE -->
+                <!-- PANEL 2: FX + ZEN -->
                 <div class="stack-col">
-                    
-                    <!-- BLUR FX -->
-                    <div class="panel" style="flex: 1;">
+
+                    <div class="panel fx-combined-panel">
                         <div class="panel-header">BLUR FX</div>
                         
                         <button class="${this.blurActive ? 'active' : ''}" @click="${this.toggleBlur}" style="margin-bottom: 8px;">
@@ -578,40 +812,178 @@ export class VisualControls extends LitElement {
                                         @click="${() => this.setBlurFeedback(0.9)}">LONG</button>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- ZEN MODE -->
-                    <div class="panel">
-                        <div class="panel-header">ZEN MODE</div>
-                        <button class="${this.zenModeActive ? 'active' : ''}" @click="${this.toggleZenMode}">
-                            ${this.zenModeActive ? 'ON' : 'OFF'}
-                        </button>
+                        <div class="sub-section">
+                            <div class="panel-header">SCENE FX</div>
+                            <div class="segmented three">
+                                <button class="${this.fxMode === 'OFF' ? 'active' : ''}" @click="${() => this.setFxMode('OFF')}">OFF</button>
+                                <button class="${this.fxMode === 'AUTO' ? 'active' : ''}" @click="${() => this.setFxMode('AUTO')}">AUTO</button>
+                                <button class="${this.fxMode === 'MANUAL' ? 'active' : ''}" @click="${() => this.setFxMode('MANUAL')}">MANUAL</button>
+                            </div>
+                            <div class="row-group">
+                                <button class="${this.fxIntensity < 0.35 ? 'active' : ''}" @click="${() => this.setFxIntensity(0.25)}">LOW</button>
+                                <button class="${this.fxIntensity >= 0.35 && this.fxIntensity < 0.75 ? 'active' : ''}" @click="${() => this.setFxIntensity(0.55)}">MID</button>
+                                <button class="${this.fxIntensity >= 0.75 ? 'active' : ''}" @click="${() => this.setFxIntensity(0.85)}">HIGH</button>
+                            </div>
+                            <button ?disabled=${this.fxMode === 'OFF'} @click=${this.triggerSceneFx}>TRIGGER FX</button>
+                        </div>
                     </div>
 
                 </div>
 
-                <!-- PANEL 3: VISUAL MIX MODE -->
-                <div class="panel">
-                    <div class="panel-header">VISUAL PATTERN</div>
-                    
-                    <div class="viz-grid">
-                        <button class="${this.currentMode === 'organic' ? 'active' : ''}" @click="${() => this.setMode('organic')}">ORGANIC</button>
-                        <button class="${this.currentMode === 'wireframe' ? 'active' : ''}" @click="${() => this.setMode('wireframe')}">MATH</button>
-                        <button class="${this.currentMode === 'monochrome' ? 'active' : ''}" @click="${() => this.setMode('monochrome')}">PARTICLES</button>
-                        <button class="${this.currentMode === 'rings' ? 'active' : ''}" @click="${() => this.setMode('rings')}">RINGS</button>
-                        
-                        <button class="${this.currentMode === 'waves' ? 'active' : ''}" @click="${() => this.setMode('waves')}">WAVES</button>
-                        <button class="${this.currentMode === 'suibokuga' ? 'active' : ''}" @click="${() => this.setMode('suibokuga')}">HALID</button>
-                        <button class="${this.currentMode === 'grid' ? 'active' : ''}" @click="${() => this.setMode('grid')}">GLAZE</button>
-                        
-                        <div class="gnosis-wrapper ${this.currentMode === 'ai_grid' ? 'active' : ''}" @click="${() => this.setMode('ai_grid')}">
-                            GNOSIS
-                            <div class="gen-mini-btn" @click="${(e: Event) => { e.stopPropagation(); this.handleAiGridGen(); }}">GEN</div>
+                <!-- PANEL 3: VISUAL / TRANSITION -->
+                <div class="visual-row">
+                    <div class="panel visual-pattern-panel">
+                        <div class="panel-header">VISUAL PATTERN</div>
+                        <div class="viz-grid">
+                            <button class="${this.currentMode === 'organic' ? 'active' : ''}" @click="${() => this.setMode('organic')}">
+                                ORGANIC
+                                <span class="mode-mini-btn" @click="${(e: Event) => { e.stopPropagation(); this.toggleOrganicPanel(); }}">SET</span>
+                            </button>
+                            <button class="${this.currentMode === 'wireframe' ? 'active' : ''}" @click="${() => this.setMode('wireframe')}">MATH</button>
+                            <button class="${this.currentMode === 'monochrome' ? 'active' : ''}" @click="${() => this.setMode('monochrome')}">PARTICLES</button>
+                            <button class="${this.currentMode === 'rings' ? 'active' : ''}" @click="${() => this.setMode('rings')}">RINGS</button>
+                            
+                            <button class="${this.currentMode === 'waves' ? 'active' : ''}" @click="${() => this.setMode('waves')}">WAVES</button>
+                            <button class="${this.currentMode === 'halid' || this.currentMode === 'suibokuga' ? 'active' : ''}" @click="${() => this.setMode('halid')}">HALID</button>
+                            <button class="${this.currentMode === 'glaze' || this.currentMode === 'grid' ? 'active' : ''}" @click="${() => this.setMode('glaze')}">GLAZE</button>
+                            
+                            <div class="gnosis-wrapper ${this.currentMode === 'gnosis' || this.currentMode === 'ai_grid' ? 'active' : ''}" @click="${() => this.setMode('gnosis')}">
+                                GNOSIS
+                                <div class="gen-mini-btn" @click="${(e: Event) => { e.stopPropagation(); this.handleAiGridGen(); }}">GEN</div>
+                            </div>
                         </div>
                     </div>
+
+                    <div class="panel transition-panel">
+                        <div class="panel-header">TRANSITIONS</div>
+                        <div class="sub-section">
+                            <div class="section-card">
+                                <div class="section-title">Object</div>
+                                <div class="kv">Current: ${this.getModeLabel(this.currentMode)}</div>
+                                <select class="mini-select" .value="${this.nextObjectMode}" @change="${this.handleNextObjectModeChange}">
+                                    <option value="organic">ORGANIC</option>
+                                    <option value="wireframe">MATH</option>
+                                    <option value="monochrome">PARTICLES</option>
+                                    <option value="rings">RINGS</option>
+                                    <option value="waves">WAVES</option>
+                                    <option value="halid">HALID</option>
+                                    <option value="glaze">GLAZE</option>
+                                    <option value="gnosis">GNOSIS</option>
+                                </select>
+                            </div>
+                            <div class="section-card">
+                                <div class="section-title">Transition</div>
+                                <div class="segmented">
+                                    <button class="${this.transitionMode === 'AUTO' ? 'active' : ''}" @click="${() => this.setTransitionMode('AUTO')}">AUTO MATRIX</button>
+                                    <button class="${this.transitionMode === 'MANUAL' ? 'active' : ''}" @click="${() => this.setTransitionMode('MANUAL')}">MANUAL</button>
+                                </div>
+                                <select class="mini-select" .value="${this.transitionPreset}" ?disabled=${this.transitionMode === 'AUTO'} @change="${this.handleTransitionPresetChange}">
+                                    <option value="crossfade">FADE CROSS</option>
+                                    <option value="sweep_line_smear">SMEAR</option>
+                                    <option value="soft_overlay">SOFT OVERLAY</option>
+                                </select>
+                                <div class="range-wrap">
+                                    <input type="range" min="0.3" max="3.0" step="0.1" .value="${String(this.fadeDurationSec)}" @input="${this.handleFadeDurationInput}" />
+                                    <div class="range-value">${this.fadeDurationSec.toFixed(1)}s</div>
+                                </div>
+                                <button class="primary-btn" @click="${this.applyNextObjectTransition}">
+                                    APPLY TO NEXT OBJECT
+                                </button>
+                            </div>
+                            <div class="panel-note">
+                                ${this.transitionMode === 'AUTO'
+                                    ? 'Auto matrix selects transition from mode pairing.'
+                                    : 'Manual preset applies once on next object switch.'}
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
 
             </div>
+            ${this.organicPanelOpen ? html`
+                <div class="organic-modal-backdrop" @click="${this.closeOrganicPanel}">
+                    <div class="organic-modal" @click="${(e: Event) => e.stopPropagation()}">
+                        <div class="modal-head">
+                            <div class="modal-title">Organic Input Set</div>
+                            <button class="modal-close" @click="${this.closeOrganicPanel}">×</button>
+                        </div>
+
+                        <div class="sub-section">
+                            <div class="panel-header">INPUTS</div>
+                            <div class="row-group">
+                                <div>
+                                    <label class="file-btn">
+                                        DECK A
+                                        <input type="file" hidden accept="image/*,video/*" @change="${(e: any) => this.handleFile(e, 'A')}" />
+                                    </label>
+                                    <div class="status-text" id="status-a">DEFAULT</div>
+                                </div>
+                                <div>
+                                    <label class="file-btn">
+                                        DECK B
+                                        <input type="file" hidden accept="image/*,video/*" @change="${(e: any) => this.handleFile(e, 'B')}" />
+                                    </label>
+                                    <div class="status-text" id="status-b">DEFAULT</div>
+                                </div>
+                                <div>
+                                    <button class="${this.webcamActive ? 'active' : ''}" @click="${this.toggleWebcam}">
+                                        CAM
+                                    </button>
+                                    <div class="status-text">${this.webcamActive ? 'ON' : 'OFF'}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="sub-section">
+                            <div class="panel-header">AUTO TEXTURE</div>
+                            <input
+                                class="auto-texture-input"
+                                type="text"
+                                placeholder="TEXTURE WORDS (e.g. rusty metal, wet concrete)"
+                                .value=${this.autoTextureKeyword}
+                                ?disabled=${this.autoTextureGenerating}
+                                @input=${this.handleAutoTextureInput}
+                                @keydown=${this.handleAutoTextureKeydown}
+                            />
+                            <button
+                                class="${this.autoTextureGenerating ? 'active' : ''}"
+                                ?disabled=${this.autoTextureGenerating}
+                                @click="${this.handleAutoTextureGenerate}"
+                            >
+                                ${this.autoTextureGenerating ? 'AUTO TEXTURE RUNNING...' : 'AUTO TEXTURE'}
+                            </button>
+                            <div class="auto-texture-preview">
+                                ${this.autoTexturePreviewUrl
+                                    ? html`<img src="${this.autoTexturePreviewUrl}" alt="Auto texture preview" />`
+                                    : html`<div class="auto-texture-placeholder">NO PREVIEW</div>`}
+                            </div>
+                            <div class="row-group">
+                                <button
+                                    ?disabled=${!this.autoTexturePreviewUrl || this.autoTextureGenerating}
+                                    @click="${() => this.applyAutoTexture('A')}"
+                                >
+                                    APPLY A
+                                </button>
+                                <button
+                                    ?disabled=${!this.autoTexturePreviewUrl || this.autoTextureGenerating}
+                                    @click="${() => this.applyAutoTexture('B')}"
+                                >
+                                    APPLY B
+                                </button>
+                            </div>
+                            <div class="status-text">${this.autoTextureError || this.autoTextureStatus}</div>
+                            ${this.autoTextureModel
+                                ? html`<div class="auto-texture-meta">MODEL: ${this.autoTextureModel}</div>`
+                                : null}
+                            ${this.autoTexturePrompt
+                                ? html`<div class="auto-texture-meta" title="${this.autoTexturePrompt}">PROMPT: ${this.autoTexturePrompt}</div>`
+                                : null}
+                        </div>
+                    </div>
+                </div>
+            ` : null}
         `;
     }
 
@@ -640,6 +1012,23 @@ export class VisualControls extends LitElement {
         reader.readAsDataURL(file);
     }
 
+    private toggleOrganicPanel() {
+        this.organicPanelOpen = !this.organicPanelOpen;
+    }
+
+    private closeOrganicPanel() {
+        this.organicPanelOpen = false;
+    }
+
+    private getModeLabel(mode: VisualMode): string {
+        if (mode === 'wireframe') return 'MATH';
+        if (mode === 'monochrome') return 'PARTICLES';
+        if (mode === 'suibokuga') return 'HALID';
+        if (mode === 'grid') return 'GLAZE';
+        if (mode === 'ai_grid') return 'GNOSIS';
+        return String(mode).toUpperCase();
+    }
+
     private toggleWebcam() {
         this.webcamActive = !this.webcamActive;
         // Dispatch Event
@@ -659,10 +1048,23 @@ export class VisualControls extends LitElement {
         this.autoTextureGenerating = true;
         this.autoTextureError = '';
         this.autoTextureStatus = 'GENERATING...';
+        const keyword = this.autoTextureKeyword.trim();
         this.dispatchEvent(new CustomEvent('auto-texture-generate', {
+            detail: { keyword },
             bubbles: true,
             composed: true
         }));
+    }
+
+    private handleAutoTextureInput(e: Event) {
+        const input = e.target as HTMLInputElement;
+        this.autoTextureKeyword = input.value;
+    }
+
+    private handleAutoTextureKeydown(e: KeyboardEvent) {
+        if (e.key !== 'Enter' || this.autoTextureGenerating) return;
+        e.preventDefault();
+        this.handleAutoTextureGenerate();
     }
 
     private applyAutoTexture(deck: 'A' | 'B') {
@@ -695,6 +1097,69 @@ export class VisualControls extends LitElement {
 
     private handleAiGridGen() {
         this.dispatchEvent(new CustomEvent('ai-grid-gen-trigger', {
+            bubbles: true,
+            composed: true
+        }));
+    }
+
+    private handleTransitionPresetChange(e: Event) {
+        const select = e.target as HTMLSelectElement;
+        this.transitionPreset = select.value as TransitionPreset;
+    }
+
+    private handleNextObjectModeChange(e: Event) {
+        const select = e.target as HTMLSelectElement;
+        this.nextObjectMode = select.value as VisualMode;
+    }
+
+    private applyNextObjectTransition() {
+        this.currentMode = this.nextObjectMode;
+        this.dispatchEvent(new CustomEvent('visual-next-object', {
+            detail: {
+                mode: this.nextObjectMode,
+                transitionPreset: this.transitionMode === 'AUTO' ? 'auto_matrix' : this.transitionPreset
+            },
+            bubbles: true,
+            composed: true
+        }));
+    }
+
+    private setTransitionMode(mode: TransitionMode) {
+        this.transitionMode = mode;
+    }
+
+    private handleFadeDurationInput(e: Event) {
+        const input = e.target as HTMLInputElement;
+        const value = Math.max(0.3, Math.min(3.0, Number(input.value) || 1.0));
+        this.fadeDurationSec = value;
+        this.dispatchEvent(new CustomEvent('visual-transition-config', {
+            detail: { fadeDurationSec: value },
+            bubbles: true,
+            composed: true
+        }));
+    }
+
+    private setFxMode(mode: FxMode) {
+        this.fxMode = mode;
+        this.dispatchFxConfig();
+    }
+
+    private setFxIntensity(intensity: number) {
+        this.fxIntensity = intensity;
+        this.dispatchFxConfig();
+    }
+
+    private dispatchFxConfig() {
+        this.dispatchEvent(new CustomEvent('visual-fx-config', {
+            detail: { mode: this.fxMode, intensity: this.fxIntensity },
+            bubbles: true,
+            composed: true
+        }));
+    }
+
+    private triggerSceneFx() {
+        this.dispatchEvent(new CustomEvent('visual-fx-trigger', {
+            detail: { intensity: this.fxIntensity },
             bubbles: true,
             composed: true
         }));

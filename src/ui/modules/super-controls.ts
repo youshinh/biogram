@@ -75,10 +75,10 @@ export class SuperControls extends LitElement {
 
     .mode-tab {
       min-height: 42px;
-      border: 1px solid #27272a;
-      border-radius: 999px;
-      background: rgba(0, 0, 0, 0.45);
-      color: #cfcfcf;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      background: #18181b;
+      color: #e4e4e7;
       font-family: inherit;
       font-size: 0.75rem;
       letter-spacing: 0.08em;
@@ -87,10 +87,16 @@ export class SuperControls extends LitElement {
       transition: all 0.2s;
     }
 
+    .mode-tab:hover:not(:disabled) {
+      background: #27272a;
+      border-color: #475569;
+    }
+
     .mode-tab.active {
       border-color: #0ea5e9;
       color: #e0f2fe;
-      box-shadow: 0 0 12px rgba(14, 165, 233, 0.2);
+      background: rgba(3, 105, 161, 0.18);
+      box-shadow: 0 0 10px rgba(14, 165, 233, 0.18);
     }
 
     .mode-tab:disabled {
@@ -113,6 +119,38 @@ export class SuperControls extends LitElement {
       border-color: #0ea5e9;
       color: #e0f2fe;
       box-shadow: 0 0 10px rgba(14, 165, 233, 0.2);
+    }
+
+    .mode-analysis-btn {
+      min-height: 42px;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      background: #18181b;
+      color: #e4e4e7;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-family: inherit;
+      font-size: 0.62rem;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mode-analysis-btn:hover:not(:disabled) {
+      background: #27272a;
+      border-color: #475569;
+    }
+
+    .mode-analysis-btn.active {
+      border-color: #10b981;
+      color: #d1fae5;
+      background: rgba(6, 78, 59, 0.28);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.18);
+    }
+
+    .mode-analysis-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
 
     .policy-box {
@@ -515,7 +553,12 @@ export class SuperControls extends LitElement {
                        ?disabled="${!canChangeMode}">
                    FREE
                </button>
-               <span class="chip ${this.aiVisualsEnabled ? 'active' : ''}">Analysis ${this.aiVisualsEnabled ? 'ON' : 'OFF'}</span>
+               <button
+                   class="mode-analysis-btn ${this.aiVisualsEnabled ? 'active' : ''}"
+                   @click="${this.toggleAiVisuals}"
+                   ?disabled="${!canChangeMode}">
+                   Analysis ${this.aiVisualsEnabled ? 'ON' : 'OFF'}
+               </button>
            </div>
            
            <div class="control-group">
@@ -564,9 +607,9 @@ export class SuperControls extends LitElement {
                        <option value="monochrome">PARTICLES</option>
                        <option value="rings">RINGS</option>
                        <option value="waves">WAVES</option>
-                       <option value="suibokuga">HALID</option>
-                       <option value="grid">GLAZE</option>
-                       <option value="ai_grid">GNOSIS</option>
+                       <option value="halid">HALID</option>
+                       <option value="glaze">GLAZE</option>
+                       <option value="gnosis">GNOSIS</option>
                    </select>
                </div>
            ` : ''}
@@ -622,11 +665,6 @@ export class SuperControls extends LitElement {
                    </button>
                `}
                
-               <button class="trigger-btn" 
-                       style="margin-top: 8px; border: 1px solid ${this.aiVisualsEnabled ? '#10b981' : '#333'}; color: ${this.aiVisualsEnabled ? '#10b981' : '#666'};"
-                       @click="${this.toggleAiVisuals}">
-                   ${this.aiVisualsEnabled ? 'AI ANALYSIS: ON' : 'AI ANALYSIS: OFF'}
-               </button>
            </div>
         </div>
 

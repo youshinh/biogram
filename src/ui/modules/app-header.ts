@@ -370,7 +370,7 @@ export class AppHeader extends LitElement {
   render() {
     return html`
       <div class="header-container">
-          <div class="logo">BIO:GRAM</div>
+          <div class="logo">Bio:gram</div>
           
           <!-- DESKTOP NAV -->
           <div class="desktop-nav">

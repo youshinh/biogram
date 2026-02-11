@@ -2,7 +2,7 @@
 
 [🇺🇸 English](README.md)
 
-![Main Interface](assets/screenshot1.png)
+![title](assets/zen_mode.png)
 
 ## 現在のプロダクト概要
 
@@ -30,6 +30,8 @@ Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な�
 - `src/ui/modules/deck-controller.ts`
 - `src/audio/engine.ts`
 
+![Main Interface](assets/screen1.png)
+
 ### 2. AI Prompt-to-Music フロー
 
 - 初回は `INITIALIZE SYSTEM` で初期化
@@ -56,6 +58,8 @@ Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な�
 - `src/ui/modules/super-controls.ts`
 - `src/ai/mix-generator.ts`
 - `src/ai/automation-engine.ts`
+
+![AI Mix](assets/screen4.png)
 
 ### 4. DSP / Mixer / FX
 
@@ -88,6 +92,8 @@ Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な�
 - `src/ui/visuals/ThreeViz.ts`
 - `src/ui/visuals/VisualControls.ts`
 - `src/ai/grid-generator.ts`
+
+![Visual System](assets/screen3.png)
 
 ### 6. ループライブラリ
 

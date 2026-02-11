@@ -2,7 +2,7 @@
 
 [🇯🇵 日本語版](README_JP.md)
 
-![Main Interface](assets/screenshot1.png)
+![title](assets/zen_mode.png)
 
 ## Current Product Summary
 
@@ -27,6 +27,8 @@ Relevant code:
 
 - `src/ui/modules/deck-controller.ts`
 - `src/audio/engine.ts`
+
+![Main Interface](assets/screen1.png)
 
 ### 2. AI Prompt-to-Music Flow
 
@@ -54,6 +56,8 @@ Relevant code:
 - `src/ui/modules/super-controls.ts`
 - `src/ai/mix-generator.ts`
 - `src/ai/automation-engine.ts`
+
+![AI Mix](assets/screen4.png)
 
 ### 4. DSP / Mixer / FX
 
@@ -87,6 +91,8 @@ Relevant code:
 - `src/ui/visuals/ThreeViz.ts`
 - `src/ui/visuals/VisualControls.ts`
 - `src/ai/grid-generator.ts`
+
+![Visual System](assets/screen3.png)
 
 ### 6. Loop Library
 

@@ -180,6 +180,12 @@ export class ThreeViz extends LitElement {
                 else if (data.type === 'TRANSITION_TYPE' && typeof data.transitionType === 'string') {
                     this.engine.setTransitionType(data.transitionType);
                 }
+                else if (data.type === 'TRANSITION_TYPE_ONCE' && typeof data.transitionType === 'string') {
+                    this.engine.setTransitionTypeOnce(data.transitionType);
+                }
+                else if (data.type === 'FADE_DURATION' && typeof data.seconds === 'number') {
+                    this.engine.setFadeTransitionDurationSec(data.seconds);
+                }
                 // 2. Webcam Update
                 else if (data.type === 'WEBCAM') {
                     this.engine.toggleWebcam(data.active);
@@ -277,6 +283,26 @@ export class ThreeViz extends LitElement {
              this.broadcast.postMessage({
                 type: 'TRANSITION_TYPE',
                 transitionType: type
+            });
+        }
+    }
+
+    public setTransitionTypeOnce(type: string) {
+        this.engine?.setTransitionTypeOnce(type);
+        if (this.mode === 'MASTER') {
+             this.broadcast.postMessage({
+                type: 'TRANSITION_TYPE_ONCE',
+                transitionType: type
+            });
+        }
+    }
+
+    public setFadeTransitionDurationSec(seconds: number) {
+        this.engine?.setFadeTransitionDurationSec(seconds);
+        if (this.mode === 'MASTER') {
+            this.broadcast.postMessage({
+                type: 'FADE_DURATION',
+                seconds
             });
         }
     }

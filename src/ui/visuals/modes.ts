@@ -4,11 +4,14 @@ export type VisualMode =
   | 'monochrome'
   | 'rings'
   | 'waves'
+  | 'halid'
+  | 'glaze'
+  | 'gnosis'
   | 'suibokuga'
   | 'grid'
   | 'ai_grid';
 
-export type ZenVisualMode = Exclude<VisualMode, 'ai_grid'>;
+export type ZenVisualMode = Exclude<VisualMode, 'ai_grid' | 'gnosis'>;
 
 export const VISUAL_MODES: readonly VisualMode[] = [
   'organic',
@@ -16,6 +19,9 @@ export const VISUAL_MODES: readonly VisualMode[] = [
   'monochrome',
   'rings',
   'waves',
+  'halid',
+  'glaze',
+  'gnosis',
   'suibokuga',
   'grid',
   'ai_grid'
@@ -30,4 +36,3 @@ export const ZEN_VISUAL_MODES: readonly ZenVisualMode[] = [
   'waves',
   'grid'
 ] as const;
-

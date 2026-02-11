@@ -97,11 +97,20 @@ const mixGen = new MixGenerator(apiKey);
 const gridGen = new GridGenerator(apiKey);
 const texturePromptGen = new TexturePromptGenerator(apiKey);
 const textureImageGen = new TextureImageGenerator(apiKey);
+let applyVisualMode: ((mode: VisualMode, source?: 'ui' | 'plan' | 'fallback') => void) | null = null;
+type VisualFxMode = 'OFF' | 'AUTO' | 'MANUAL';
+type VisualFxType = 'breath_pulse' | 'spectral_bloom' | 'chromatic_shear' | 'dust_veil';
 const visualTransitionEngine = new VisualTransitionEngine((targetId, value) => {
     const viz = (window as any).__threeViz as ThreeViz | undefined;
     if (!viz) return;
     mapVisualTargetToEngine(targetId, value, {
-        setMode: (mode) => viz.setMode(mode),
+        setMode: (mode) => {
+            if (applyVisualMode) {
+                applyVisualMode(mode, 'plan');
+            } else {
+                viz.setMode(mode);
+            }
+        },
         setTransitionType: (type) => viz.setTransitionType(type),
         sendParam: (id, val) => viz.sendMessage(id, val)
     });
@@ -575,7 +584,41 @@ if (isVizMode) {
     });
 
     let autoTextureReqId = 0;
+    let aiGridReqId = 0;
+    let lastAutoGnosisGenAtMs = 0;
+    let visualFxMode: VisualFxMode = 'OFF';
+    let visualFxIntensity = 0.55;
+    let lastVisualFxBar = -Infinity;
+    let lastVisualFxType: VisualFxType | null = null;
+    let activeFxResetTimer: number | null = null;
+    let lastAutoFxCheckBar = -1;
     const compactPrompt = (value: string) => value.replace(/\s+/g, ' ').trim();
+    const isGnosisMode = (mode: VisualMode) => mode === 'gnosis' || mode === 'ai_grid';
+    const normalizeVisualModeAlias = (mode: string): VisualMode => {
+        switch (mode) {
+            case 'halid':
+                return 'halid';
+            case 'glaze':
+                return 'glaze';
+            case 'gnosis':
+                return 'gnosis';
+            case 'suibokuga':
+                return 'halid';
+            case 'grid':
+                return 'glaze';
+            case 'ai_grid':
+                return 'gnosis';
+            case 'organic':
+            case 'wireframe':
+            case 'monochrome':
+            case 'rings':
+            case 'waves':
+                return mode;
+            default:
+                return 'organic';
+        }
+    };
+
     const resolveTextureSubjectFromContext = () => {
         const crossfader = Number(engine.getDspParam('CROSSFADER') ?? 0.5);
         const primaryDeck: 'A' | 'B' = crossfader <= 0.5 ? 'A' : 'B';
@@ -600,7 +643,131 @@ if (isVizMode) {
         };
     };
 
-    vizControls.addEventListener('auto-texture-generate', async () => {
+    const transitionPresetToType = (preset: string): string | null => {
+        switch (preset) {
+            case 'crossfade':
+            case 'sweep_line_smear':
+            case 'soft_overlay':
+            case 'fade_in':
+            case 'fade_out':
+                return preset;
+            default:
+                return null;
+        }
+    };
+
+    const sendFxPayload = (payload: Record<string, number>) => {
+        Object.entries(payload).forEach(([id, val]) => {
+            threeViz.sendMessage(id, val);
+        });
+    };
+
+    const resetVisualFxPayload = () => {
+        sendFxPayload({
+            DUB: 0,
+            CLOUD_MIX: 0,
+            CLOUD_ACTIVE: 0,
+            CLOUD_DENSITY: 0.5,
+            DECIMATOR_ACTIVE: 0,
+            BITS: 16,
+            GATE_THRESH: 0
+        });
+    };
+
+    const triggerSceneFx = (reason: 'manual' | 'auto', bar: number) => {
+        if (visualFxMode === 'OFF') return;
+        if (reason === 'auto' && visualFxMode !== 'AUTO') return;
+        if (reason === 'manual' && visualFxMode === 'OFF') return;
+        if (reason === 'auto' && bar - lastVisualFxBar < 8) return;
+
+        const allFx: VisualFxType[] = ['breath_pulse', 'spectral_bloom', 'chromatic_shear', 'dust_veil'];
+        const pool = allFx.filter((fx) => fx !== lastVisualFxType);
+        const chosen = pool[Math.floor(Math.random() * pool.length)] || allFx[0];
+        const i = Math.max(0, Math.min(1, visualFxIntensity));
+
+        if (activeFxResetTimer !== null) {
+            window.clearTimeout(activeFxResetTimer);
+            activeFxResetTimer = null;
+        }
+        resetVisualFxPayload();
+
+        let durationMs = 420;
+        switch (chosen) {
+            case 'breath_pulse':
+                durationMs = 900;
+                sendFxPayload({
+                    CLOUD_ACTIVE: 1,
+                    CLOUD_MIX: 0.2 + i * 0.45,
+                    CLOUD_DENSITY: 0.6 + i * 0.35
+                });
+                break;
+            case 'spectral_bloom':
+                durationMs = 380;
+                sendFxPayload({
+                    DUB: 0.15 + i * 0.55
+                });
+                break;
+            case 'chromatic_shear':
+                durationMs = 240;
+                sendFxPayload({
+                    DECIMATOR_ACTIVE: 1,
+                    BITS: Math.max(2, Math.round(10 - i * 6))
+                });
+                break;
+            case 'dust_veil':
+                durationMs = 650;
+                sendFxPayload({
+                    CLOUD_ACTIVE: 1,
+                    CLOUD_MIX: 0.1 + i * 0.3,
+                    CLOUD_DENSITY: 0.85
+                });
+                break;
+        }
+
+        activeFxResetTimer = window.setTimeout(() => {
+            resetVisualFxPayload();
+            activeFxResetTimer = null;
+        }, durationMs);
+        lastVisualFxType = chosen;
+        lastVisualFxBar = bar;
+    };
+
+    const generateAiGridParams = async (reason: 'manual' | 'mode-switch') => {
+        const reqId = ++aiGridReqId;
+        const context = `BPM: ${engine.masterBpm}, Mood: ${uiState.theme || 'Dynamic Flow'}, Trigger: ${reason}`;
+        try {
+            const params = await gridGen.generateParams(context);
+            if (reqId !== aiGridReqId) return;
+            if (params) {
+                if (import.meta.env.DEV) console.log('[Main] AI Grid Params Applied:', params);
+                threeViz.setAiGridParams(params);
+            }
+        } catch (e) {
+            console.error('[Main] AI Grid Gen Failed', e);
+        }
+    };
+
+    applyVisualMode = (mode: VisualMode, source: 'ui' | 'plan' | 'fallback' = 'ui') => {
+        const normalized = normalizeVisualModeAlias(mode);
+        const prevMode = (threeViz.visualMode || 'organic') as VisualMode;
+        const prevIsGnosis = isGnosisMode(normalizeVisualModeAlias(prevMode));
+        const nextIsGnosis = isGnosisMode(normalized);
+
+        threeViz.setMode(normalized);
+
+        if (nextIsGnosis && !prevIsGnosis) {
+            const now = performance.now();
+            if (now - lastAutoGnosisGenAtMs > 800) {
+                lastAutoGnosisGenAtMs = now;
+                void generateAiGridParams('mode-switch');
+            }
+        }
+        if (import.meta.env.DEV) {
+            console.log(`[Main] Visual mode applied (${source}): ${prevMode} -> ${normalized}`);
+        }
+    };
+
+    vizControls.addEventListener('auto-texture-generate', async (e: any) => {
         const reqId = ++autoTextureReqId;
         const hasKey = apiKeyManager.hasApiKey();
         vizControls.setAutoTextureState({
@@ -611,7 +778,9 @@ if (isVizMode) {
         });
 
         const ctx = resolveTextureSubjectFromContext();
-        const promptSubject = ctx.subject;
+        const keywordInput = compactPrompt(e?.detail?.keyword || '');
+        const promptSubject = keywordInput || ctx.subject;
+        const contextSource = keywordInput ? 'WORD INPUT' : `${ctx.primaryDeck} CONTEXT`;
 
         try {
             const texturePrompt = await texturePromptGen.generatePrompt(promptSubject, {
@@ -629,7 +798,7 @@ if (isVizMode) {
                 generating: false,
                 previewUrl: image.dataUrl,
                 prompt: texturePrompt,
-                status: `READY (${ctx.primaryDeck} CONTEXT)`,
+                status: `READY (${contextSource})`,
                 error: '',
                 model: image.modelUsed
             });
@@ -654,7 +823,31 @@ if (isVizMode) {
     });
 
     vizControls.addEventListener('visual-mode-change', (e: any) => {
-        threeViz.setMode(e.detail.mode);
+        applyVisualMode?.(e.detail.mode, 'ui');
+    });
+
+    vizControls.addEventListener('visual-next-object', (e: any) => {
+        const targetMode = normalizeVisualModeAlias(String(e?.detail?.mode || 'organic'));
+        const transitionType = transitionPresetToType(String(e?.detail?.transitionPreset || 'auto_matrix'));
+        if (transitionType) {
+            threeViz.setTransitionTypeOnce(transitionType);
+        }
+        applyVisualMode?.(targetMode, 'ui');
+    });
+
+    vizControls.addEventListener('visual-fx-config', (e: any) => {
+        const mode = String(e?.detail?.mode || 'OFF').toUpperCase();
+        visualFxMode = mode === 'AUTO' || mode === 'MANUAL' ? mode : 'OFF';
+        visualFxIntensity = Math.max(0, Math.min(1, Number(e?.detail?.intensity ?? 0.55)));
+    });
+
+    vizControls.addEventListener('visual-transition-config', (e: any) => {
+        const sec = Math.max(0.3, Math.min(3.0, Number(e?.detail?.fadeDurationSec ?? 1.0)));
+        threeViz.setFadeTransitionDurationSec(sec);
+    });
+
+    vizControls.addEventListener('visual-fx-trigger', () => {
+        triggerSceneFx('manual', lastVisualFxBar + 8.1);
     });
 
     vizControls.addEventListener('visual-blur-change', (e: any) => {
@@ -678,18 +871,7 @@ if (isVizMode) {
 
     vizControls.addEventListener('ai-grid-gen-trigger', async () => {
         if (import.meta.env.DEV) console.log('[Main] Generating AI Grid Params...');
-        // Context: Current BPM, Mood from UI State?
-        const context = `BPM: ${engine.masterBpm}, Mood: ${uiState.theme || 'Dynamic Flow'}`;
-        
-        try {
-            const params = await gridGen.generateParams(context);
-            if (params) {
-                if (import.meta.env.DEV) console.log('[Main] AI Grid Params Applied:', params);
-                threeViz.setAiGridParams(params);
-            }
-        } catch (e) {
-            console.error('[Main] AI Grid Gen Failed', e);
-        }
+        await generateAiGridParams('manual');
     });
 
 
@@ -700,6 +882,9 @@ if (isVizMode) {
         'monochrome',
         'rings',
         'waves',
+        'halid',
+        'glaze',
+        'gnosis',
         'suibokuga',
         'grid',
         'ai_grid'
@@ -707,7 +892,7 @@ if (isVizMode) {
 
     const normalizePreferredVisualMode = (mode: string): VisualMode => {
         if ((supportedMixVisualModes as readonly string[]).includes(mode)) {
-            return mode as VisualMode;
+            return normalizeVisualModeAlias(mode);
         }
         return 'organic';
     };
@@ -929,25 +1114,68 @@ if (isVizMode) {
         try {
             const sourceDeckCtrl = sourceId === 'A' ? deckA : deckB;
             const targetDeckCtrl = targetId === 'A' ? deckA : deckB;
+            const sourceStateSnapshot = {
+                ...uiState,
+                deckId: sourceId as 'A' | 'B',
+                deckPrompt: sourceId === 'A' ? (uiState.deckAPrompt || uiState.theme) : (uiState.deckBPrompt || uiState.theme),
+                currentBpm: engine.masterBpm,
+                keyRoot: uiState.keyRoot,
+                scalePrompt: uiState.scalePrompt,
+                scaleLabel: uiState.scaleLabel,
+                isSlamming
+            };
+            const targetStateSnapshot = {
+                ...uiState,
+                deckId: targetId as 'A' | 'B',
+                deckPrompt: targetId === 'A' ? (uiState.deckAPrompt || uiState.theme) : (uiState.deckBPrompt || uiState.theme),
+                currentBpm: engine.masterBpm,
+                keyRoot: uiState.keyRoot,
+                scalePrompt: uiState.scalePrompt,
+                scaleLabel: uiState.scaleLabel,
+                isSlamming
+            };
+            const sourceResolvedPrompt = generatePrompt(sourceStateSnapshot);
+            const targetResolvedPrompt = generatePrompt(targetStateSnapshot);
             const sourcePromptSnapshot = (
+                sourceResolvedPrompt ||
                 sourceDeckCtrl.generatedPrompt ||
                 (sourceId === 'A' ? uiState.deckAPrompt : uiState.deckBPrompt) ||
                 uiState.theme ||
                 'Unknown'
             ).trim();
             const targetPromptSnapshot = (
+                targetResolvedPrompt ||
                 targetDeckCtrl.generatedPrompt ||
                 (targetId === 'A' ? uiState.deckAPrompt : uiState.deckBPrompt) ||
                 uiState.theme ||
                 'Unknown'
             ).trim();
+            const arrangementHint = [
+                `mood=${String(mood)}`,
+                `theme=${uiState.theme || 'N/A'}`,
+                `ambient=${uiState.valAmbient}`,
+                `minimal=${uiState.valMinimal}`,
+                `dub=${uiState.valDub}`,
+                `impact=${uiState.valImpact}`,
+                `color=${uiState.valColor}`,
+                `texture=${uiState.typeTexture || 'N/A'}`,
+                `pulse=${uiState.typePulse || 'N/A'}`,
+                `target_duration_bars=${duration}`,
+                `phrase_contour=presence->handoff->wash_out`
+            ].join(', ');
             const promptContext: PromptContextInput = {
                 sourceDeck: sourceId as 'A' | 'B',
                 targetDeck: targetId as 'A' | 'B',
                 sourcePrompt: sourcePromptSnapshot,
                 targetPrompt: targetPromptSnapshot,
                 sourcePlaying: !engine.isDeckStopped(sourceId as 'A' | 'B'),
-                targetPlaying: !engine.isDeckStopped(targetId as 'A' | 'B')
+                targetPlaying: !engine.isDeckStopped(targetId as 'A' | 'B'),
+                keyRoot: uiState.keyRoot || '',
+                scaleLabel: uiState.scaleLabel || '',
+                scalePrompt: uiState.scalePrompt || '',
+                sourceGeneratedPrompt: sourceDeckCtrl.generatedPrompt || '',
+                targetGeneratedPrompt: targetDeckCtrl.generatedPrompt || '',
+                arrangementHint
             };
 
             const integratedPlan = await mixGen.generateIntegratedPlan(
@@ -1026,7 +1254,23 @@ if (isVizMode) {
                      }
                      if (threeViz.visualMode !== 'debug_ai' && !integratedPlan.visual_plan?.tracks?.length) {
                         const targetMode = resolveMixVisualMode(phase, preferredMode);
-                        threeViz.setMode(targetMode);
+                        applyVisualMode?.(targetMode, 'fallback');
+                     }
+
+                     const wholeBar = Math.floor(bar);
+                     if (visualFxMode === 'AUTO' && wholeBar !== lastAutoFxCheckBar) {
+                        lastAutoFxCheckBar = wholeBar;
+                        const canTry =
+                            wholeBar > 0 &&
+                            wholeBar < Math.max(2, duration - 1) &&
+                            wholeBar % 4 === 0 &&
+                            wholeBar - lastVisualFxBar >= 8;
+                        if (canTry) {
+                            const chance = 0.12 + visualFxIntensity * 0.2;
+                            if (Math.random() < chance) {
+                                triggerSceneFx('auto', bar);
+                            }
+                        }
                      }
 
                      if (!mixCompletionHandled && (phase === 'COMPLETE' || bar >= duration)) {

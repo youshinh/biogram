@@ -559,14 +559,28 @@ class GhostProcessor extends AudioWorkletProcessor {
 
         const readPtrA = Atomics.load(this.headerView, OFFSETS.READ_POINTER_A / 4);
         const readPtrB = Atomics.load(this.headerView, OFFSETS.READ_POINTER_B / 4);
+        const writePtrA = Atomics.load(this.headerView, OFFSETS.WRITE_POINTER_A / 4);
+        const writePtrB = Atomics.load(this.headerView, OFFSETS.WRITE_POINTER_B / 4);
         
         const velA = this.tapeA.process();
         const velB = this.tapeB.process();
 
         let ptrA = readPtrA;
         let ptrB = readPtrB;
+        const safeReadableA = Math.max(0, writePtrA - 2);
+        const safeReadableB = Math.max(0, writePtrB - 2);
 
         for (let i = 0; i < leftChannel.length; i++) {
+            // Fail-safe: never read beyond generated frames.
+            if (ptrA > safeReadableA) {
+                if (this.loopActiveA && this.loopStartA < safeReadableA) ptrA = this.loopStartA;
+                else ptrA = safeReadableA;
+            }
+            if (ptrB > safeReadableB) {
+                if (this.loopActiveB && this.loopStartB < safeReadableB) ptrB = this.loopStartB;
+                else ptrB = safeReadableB;
+            }
+
             // --- LOOP LOGIC A (Frames) ---
             if (this.loopActiveA && this.loopStartA !== this.loopEndA) {
                  if (ptrA >= this.loopEndA) {
@@ -603,6 +617,9 @@ class GhostProcessor extends AudioWorkletProcessor {
                 const distToEnd = this.loopEndA - ptrA;
                 if (distToEnd > 0 && distToEnd < this.loopCrossfadeA) {
                     const fade = distToEnd / this.loopCrossfadeA;
+                    const theta = (1.0 - fade) * (Math.PI / 2);
+                    const gainEnd = Math.cos(theta);
+                    const gainStart = Math.sin(theta);
                     const startPtr = this.loopStartA + (this.loopCrossfadeA - distToEnd);
                     
                     const localStartFrame = ((Math.floor(startPtr) % maxFrames) + maxFrames) % maxFrames;
@@ -611,8 +628,8 @@ class GhostProcessor extends AudioWorkletProcessor {
                     const sStartL = this.audioData[idxStart] || 0;
                     const sStartR = this.audioData[idxStart + 1] || 0;
                     
-                    sampleAL = sampleAL * fade + sStartL * (1.0 - fade);
-                    sampleAR = sampleAR * fade + sStartR * (1.0 - fade);
+                    sampleAL = sampleAL * gainEnd + sStartL * gainStart;
+                    sampleAR = sampleAR * gainEnd + sStartR * gainStart;
                 }
             }
 
@@ -631,7 +648,10 @@ class GhostProcessor extends AudioWorkletProcessor {
             if (this.loopActiveB && this.loopCrossfadeB > 0) {
                 const distToEnd = this.loopEndB - ptrB;
                 if (distToEnd > 0 && distToEnd < this.loopCrossfadeB) {
-                    const fade = distToEnd / this.loopCrossfadeB; 
+                    const fade = distToEnd / this.loopCrossfadeB;
+                    const theta = (1.0 - fade) * (Math.PI / 2);
+                    const gainEnd = Math.cos(theta);
+                    const gainStart = Math.sin(theta);
                     const startPtr = this.loopStartB + (this.loopCrossfadeB - distToEnd);
                     
                     const localStartFrame = ((Math.floor(startPtr) % maxFrames) + maxFrames) % maxFrames;
@@ -640,8 +660,8 @@ class GhostProcessor extends AudioWorkletProcessor {
                     const sStartL = this.audioData[idxStart] || 0;
                     const sStartR = this.audioData[idxStart + 1] || 0;
                     
-                    sampleBL = sampleBL * fade + sStartL * (1.0 - fade);
-                    sampleBR = sampleBR * fade + sStartR * (1.0 - fade);
+                    sampleBL = sampleBL * gainEnd + sStartL * gainStart;
+                    sampleBR = sampleBR * gainEnd + sStartR * gainStart;
                 }
             }
 

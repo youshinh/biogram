@@ -35,12 +35,14 @@ Your task is to create an "Integrated Mix Plan (JSON)" for audio + visual auto-m
 * Allowed transition types: fade_in, fade_out, crossfade, soft_overlay, sweep_line_smear.
 * Forbidden styles: strong flash, aggressive glitch, rapid strobe.
 * VISUAL_INTENSITY range: 0.0 .. 1.0 (default around 0.35).
-* VISUAL_MODE must be one of: organic, wireframe, monochrome, rings, waves, suibokuga, grid, ai_grid.
+* VISUAL_MODE must be one of: organic, wireframe, monochrome, rings, waves, halid, glaze, gnosis, suibokuga, grid, ai_grid.
 
 ## Prompt-aware Requirement
 * You MUST reflect prompt_context_ref in both audio_plan and visual_plan decisions.
 * If prompt includes ink/sumi/japan, prefer suibokuga in at least one phase.
 * If prompt includes organic/ambient/deep, prefer organic or waves in at least one phase.
+* If key_root/scale_prompt are provided, preserve harmonic continuity and avoid abrupt key clash.
+* If arrangement_hint is provided, align transition contour (presence -> handoff -> wash out) with it.
 `;
 
 export class MixGenerator {
@@ -103,6 +105,13 @@ Target Prompt: ${promptCtx.targetPrompt}
 Source Playing: ${promptCtx.sourcePlaying}
 Target Playing: ${promptCtx.targetPlaying}
 Context Hash: ${contextHash}
+[MUSICAL_CONTEXT]
+Key Root: ${promptCtx.keyRoot || 'N/A'}
+Scale Label: ${promptCtx.scaleLabel || 'N/A'}
+Scale Prompt: ${promptCtx.scalePrompt || 'N/A'}
+Source Generated Prompt: ${promptCtx.sourceGeneratedPrompt || 'N/A'}
+Target Generated Prompt: ${promptCtx.targetGeneratedPrompt || 'N/A'}
+Arrangement Hint: ${promptCtx.arrangementHint || 'N/A'}
 [INSTRUCTION]
 - Build integrated JSON root with meta/audio_plan/visual_plan/post_actions/prompt_context_ref.
 - Keep audio_plan compatible with existing AutomationScore.
@@ -293,7 +302,13 @@ Context Hash: ${contextHash}
                     target_prompt: promptCtx.targetPrompt,
                     source_is_playing: promptCtx.sourcePlaying,
                     target_is_playing: promptCtx.targetPlaying,
-                    context_hash: contextHash
+                    context_hash: contextHash,
+                    key_root: promptCtx.keyRoot || undefined,
+                    scale_label: promptCtx.scaleLabel || undefined,
+                    scale_prompt: promptCtx.scalePrompt || undefined,
+                    source_generated_prompt: promptCtx.sourceGeneratedPrompt || undefined,
+                    target_generated_prompt: promptCtx.targetGeneratedPrompt || undefined,
+                    arrangement_hint: promptCtx.arrangementHint || undefined
                 }
             };
             return mapped;
@@ -838,7 +853,13 @@ Context Hash: ${contextHash}
             sourcePrompt: promptContext?.sourcePrompt?.trim() || 'Unknown',
             targetPrompt: promptContext?.targetPrompt?.trim() || 'Unknown',
             sourcePlaying: promptContext?.sourcePlaying ?? true,
-            targetPlaying: promptContext?.targetPlaying ?? true
+            targetPlaying: promptContext?.targetPlaying ?? true,
+            keyRoot: promptContext?.keyRoot?.trim() || '',
+            scaleLabel: promptContext?.scaleLabel?.trim() || '',
+            scalePrompt: promptContext?.scalePrompt?.trim() || '',
+            sourceGeneratedPrompt: promptContext?.sourceGeneratedPrompt?.trim() || '',
+            targetGeneratedPrompt: promptContext?.targetGeneratedPrompt?.trim() || '',
+            arrangementHint: promptContext?.arrangementHint?.trim() || ''
         };
     }
 
@@ -967,7 +988,13 @@ Context Hash: ${contextHash}
                 target_prompt: promptCtx.targetPrompt,
                 source_is_playing: promptCtx.sourcePlaying,
                 target_is_playing: promptCtx.targetPlaying,
-                context_hash: contextHash
+                context_hash: contextHash,
+                key_root: promptCtx.keyRoot || undefined,
+                scale_label: promptCtx.scaleLabel || undefined,
+                scale_prompt: promptCtx.scalePrompt || undefined,
+                source_generated_prompt: promptCtx.sourceGeneratedPrompt || undefined,
+                target_generated_prompt: promptCtx.targetGeneratedPrompt || undefined,
+                arrangement_hint: promptCtx.arrangementHint || undefined
             }
         };
 
@@ -1165,77 +1192,67 @@ Context Hash: ${contextHash}
             plan.visual_plan.tracks = [];
         }
 
+        const safeMode = (v: any) =>
+            typeof v === 'string' && v.trim() ? v.trim().toLowerCase() : 'organic';
+        const safeTransition = (v: any): 'fade_in' | 'fade_out' | 'crossfade' | 'soft_overlay' | 'sweep_line_smear' => {
+            const t = typeof v === 'string' ? v.trim().toLowerCase() : 'crossfade';
+            if (t === 'fade_in' || t === 'fade_out' || t === 'crossfade' || t === 'soft_overlay' || t === 'sweep_line_smear') {
+                return t;
+            }
+            return 'crossfade';
+        };
+
         let modeTrack = plan.visual_plan.tracks.find((t) => t.target_id === 'VISUAL_MODE');
         if (!modeTrack) {
             modeTrack = {
                 target_id: 'VISUAL_MODE',
-                points: [
-                    { time: 0, value: 'wireframe', curve: 'STEP' },
-                    { time: Math.max(1, plan.meta.total_bars * 0.5), value: 'organic', curve: 'STEP' }
-                ]
+                points: [{ time: 0, value: 'organic', curve: 'STEP' }]
             };
             plan.visual_plan.tracks.push(modeTrack);
         }
-        modeTrack.points = [...modeTrack.points].sort((a, b) => a.time - b.time);
-
-        const modeChangeTimes: number[] = [];
-        for (let i = 1; i < modeTrack.points.length; i++) {
-            const prev = modeTrack.points[i - 1];
-            const curr = modeTrack.points[i];
-            if (prev.value !== curr.value) {
-                modeChangeTimes.push(curr.time);
-            }
+        modeTrack.points = [...modeTrack.points]
+            .map((p) => ({
+                time: Math.max(0, Number(p.time) || 0),
+                value: safeMode(p.value),
+                curve: p.curve || 'STEP'
+            }))
+            .sort((a, b) => a.time - b.time);
+        if (!modeTrack.points.length) {
+            modeTrack.points.push({ time: 0, value: 'organic', curve: 'STEP' });
         }
-
-        // Free modeでModeが固定だとsetModeが発火せず、遷移が見えない。
-        // 最低1回はモード変化を作る。
-        if (modeChangeTimes.length === 0) {
-            const first = String(modeTrack.points[0]?.value || 'organic');
-            const fallbackMode = first === 'wireframe' ? 'organic' : 'wireframe';
-            const pivot = Math.max(1, Math.floor(plan.meta.total_bars * 0.45));
-            modeTrack.points.push({ time: pivot, value: fallbackMode, curve: 'STEP' });
-            modeTrack.points.push({ time: Math.max(pivot + 1, Math.floor(plan.meta.total_bars * 0.75)), value: first, curve: 'STEP' });
-            modeTrack.points.sort((a, b) => a.time - b.time);
-            modeChangeTimes.push(pivot, Math.max(pivot + 1, Math.floor(plan.meta.total_bars * 0.75)));
+        if (Math.abs(modeTrack.points[0].time) > 0.001) {
+            modeTrack.points.unshift({
+                time: 0,
+                value: safeMode(modeTrack.points[0].value),
+                curve: 'STEP'
+            });
         }
 
         let transitionTrack = plan.visual_plan.tracks.find((t) => t.target_id === 'VISUAL_TRANSITION_TYPE');
         if (!transitionTrack) {
             transitionTrack = {
                 target_id: 'VISUAL_TRANSITION_TYPE',
-                points: [{ time: 0, value: 'sweep_line_smear', curve: 'STEP' }]
+                points: [{ time: 0, value: 'crossfade', curve: 'STEP' }]
             };
             plan.visual_plan.tracks.push(transitionTrack);
         }
 
-        transitionTrack.points = [...transitionTrack.points].sort((a, b) => a.time - b.time);
-        const hasAtTime = (time: number) =>
-            transitionTrack!.points.some((p) => Math.abs(p.time - time) < 0.001);
-
-        // Keep default as crossfade, and pulse sweep exactly at mode-change moments.
-        if (!hasAtTime(0)) {
-            transitionTrack.points.unshift({ time: 0, value: 'crossfade', curve: 'STEP' });
-        } else {
-            const p0 = transitionTrack.points.find((p) => Math.abs(p.time) < 0.001);
-            if (p0) p0.value = 'crossfade';
+        transitionTrack.points = [...transitionTrack.points]
+            .map((p) => ({
+                time: Math.max(0, Number(p.time) || 0),
+                value: safeTransition(p.value),
+                curve: p.curve || 'STEP'
+            }))
+            .sort((a, b) => a.time - b.time);
+        if (!transitionTrack.points.length) {
+            transitionTrack.points.push({ time: 0, value: 'crossfade', curve: 'STEP' });
         }
-
-        for (const t of modeChangeTimes) {
-            const pulseEnd = Math.min(plan.meta.total_bars, t + 0.2);
-            if (!hasAtTime(t)) {
-                transitionTrack.points.push({ time: t, value: 'sweep_line_smear', curve: 'STEP' });
-            } else {
-                const p = transitionTrack.points.find((pt) => Math.abs(pt.time - t) < 0.001);
-                if (p) p.value = 'sweep_line_smear';
-            }
-
-            if (!hasAtTime(pulseEnd)) {
-                transitionTrack.points.push({ time: pulseEnd, value: 'crossfade', curve: 'STEP' });
-            } else {
-                const p = transitionTrack.points.find((pt) => Math.abs(pt.time - pulseEnd) < 0.001);
-                if (p) p.value = 'crossfade';
-            }
+        if (Math.abs(transitionTrack.points[0].time) > 0.001) {
+            transitionTrack.points.unshift({
+                time: 0,
+                value: safeTransition(transitionTrack.points[0].value),
+                curve: 'STEP'
+            });
         }
-        transitionTrack.points.sort((a, b) => a.time - b.time);
     }
 }

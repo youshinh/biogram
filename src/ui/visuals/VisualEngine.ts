@@ -24,6 +24,21 @@ type VisualizerController = {
     setVisible?: (visible: boolean) => void;
     setParams?: (params: unknown) => void;
 };
+type MatrixMode =
+    | 'organic'
+    | 'math'
+    | 'gnosis_glaze'
+    | 'halid'
+    | 'waves'
+    | 'rings'
+    | 'particles'
+    | 'other';
+type TransitionBehavior = 'morph' | 'smear_then_fade' | 'particle_bridge' | 'radial_collapse' | 'slice' | 'fade';
+type TransitionPlan = {
+    behavior: TransitionBehavior;
+    transitionType: 'crossfade' | 'sweep_line_smear';
+    speed: number;
+};
 
 export class VisualEngine {
     private container: HTMLElement;
@@ -108,11 +123,13 @@ export class VisualEngine {
     private transitionDirection: 0 | 1 = 0;
     private currentTransitionType: string = 'crossfade';
     private activeTransitionType: string = 'crossfade';
+    private oneShotTransitionType: string | null = null;
     private pendingShaderMode: 'organic' | 'wireframe' | null = null;
     private pendingShaderApplied = false;
     private shaderBlendFrom: number | null = null;
     private shaderBlendTo: number | null = null;
     private shaderBlendStrategy: 'none' | 'midpoint' | 'lerp' | 'fade_swap' = 'none';
+    private fadeTransitionDurationSec = 1.0;
     private static readonly DEFAULT_TRANSITION_SPEED = 1.4;
     private static readonly SWEEP_TRANSITION_SPEED = 0.12;
 
@@ -238,7 +255,9 @@ export class VisualEngine {
         const standardVisualizer: VisualizerController = {
             mesh: this.mesh,
             update: (_dt: number, _data: unknown) => {}, // Logic is in shader
-            setOpacity: (alpha: number) => { } 
+            setOpacity: (alpha: number) => {
+                this.material.opacity = Math.max(0.0, Math.min(1.0, alpha));
+            }
         };
 
         const noOpVisualizer: VisualizerController = {
@@ -329,6 +348,9 @@ export class VisualEngine {
             'monochrome': this.monochromeFlow,
             'rings': this.ringDimensions,
             'waves': this.waveTerrain,
+            'halid': this.suibokuga,
+            'glaze': this.spectrumGrid,
+            'gnosis': this.aiDynamicGrid,
             'suibokuga': this.suibokuga,
             'grid': this.spectrumGrid,
             'ai_grid': this.aiDynamicGrid,
@@ -559,8 +581,6 @@ export class VisualEngine {
                 this.shaderBlendTo = null;
                 this.shaderBlendStrategy = 'none';
                 this.material.opacity = 1.0;
-                // Mode switch default should be crossfade unless explicitly re-set.
-                this.currentTransitionType = 'crossfade';
                 this.activeTransitionType = 'crossfade';
             }
         }
@@ -726,6 +746,117 @@ export class VisualEngine {
         }
     }
 
+    private isShaderFamilyMode(mode: string): mode is 'organic' | 'wireframe' {
+        return mode === 'organic' || mode === 'wireframe';
+    }
+
+    private normalizeModeForMatrix(mode: string): MatrixMode {
+        switch (mode) {
+            case 'wireframe':
+                return 'math';
+            case 'monochrome':
+                return 'particles';
+            case 'suibokuga':
+            case 'halid':
+                return 'halid';
+            case 'grid':
+            case 'glaze':
+            case 'ai_grid':
+            case 'gnosis':
+            case 'gnosis_glaze':
+                return 'gnosis_glaze';
+            case 'organic':
+            case 'waves':
+            case 'rings':
+                return mode;
+            default:
+                return 'other';
+        }
+    }
+
+    private resolveTransitionPlan(fromMode: string, toMode: string): TransitionPlan {
+        const from = this.normalizeModeForMatrix(fromMode);
+        const to = this.normalizeModeForMatrix(toMode);
+
+        const matrix: Partial<Record<MatrixMode, Partial<Record<MatrixMode, TransitionBehavior>>>> = {
+            organic: {
+                math: 'morph',
+                gnosis_glaze: 'morph',
+                halid: 'slice',
+                waves: 'smear_then_fade',
+                rings: 'radial_collapse',
+                particles: 'particle_bridge'
+            },
+            math: {
+                organic: 'morph',
+                gnosis_glaze: 'morph',
+                halid: 'slice',
+                waves: 'smear_then_fade',
+                rings: 'radial_collapse',
+                particles: 'particle_bridge'
+            },
+            gnosis_glaze: {
+                organic: 'morph',
+                math: 'morph',
+                halid: 'slice',
+                waves: 'smear_then_fade',
+                rings: 'radial_collapse',
+                particles: 'particle_bridge'
+            },
+            halid: {
+                organic: 'slice',
+                math: 'slice',
+                gnosis_glaze: 'slice',
+                waves: 'fade',
+                rings: 'radial_collapse',
+                particles: 'particle_bridge'
+            },
+            waves: {
+                organic: 'smear_then_fade',
+                math: 'smear_then_fade',
+                gnosis_glaze: 'smear_then_fade',
+                halid: 'fade',
+                rings: 'fade',
+                particles: 'fade'
+            },
+            rings: {
+                organic: 'radial_collapse',
+                math: 'radial_collapse',
+                gnosis_glaze: 'radial_collapse',
+                halid: 'radial_collapse',
+                waves: 'fade',
+                particles: 'particle_bridge'
+            },
+            particles: {
+                organic: 'particle_bridge',
+                math: 'particle_bridge',
+                gnosis_glaze: 'particle_bridge',
+                halid: 'particle_bridge',
+                waves: 'fade',
+                rings: 'particle_bridge'
+            }
+        };
+
+        const behavior = matrix[from]?.[to] ?? 'fade';
+        switch (behavior) {
+            case 'morph':
+                return { behavior, transitionType: 'crossfade', speed: 1.7 };
+            case 'smear_then_fade':
+                return { behavior, transitionType: 'sweep_line_smear', speed: VisualEngine.SWEEP_TRANSITION_SPEED };
+            case 'particle_bridge':
+                return { behavior, transitionType: 'crossfade', speed: 1.25 };
+            case 'radial_collapse':
+                return { behavior, transitionType: 'crossfade', speed: 1.1 };
+            case 'slice':
+                return { behavior, transitionType: 'crossfade', speed: 1.0 };
+            case 'fade':
+            default: {
+                const preferred = this.currentTransitionType === 'sweep_line_smear' ? 'sweep_line_smear' : 'crossfade';
+                return { behavior: 'fade', transitionType: preferred, speed: this.getTransitionSpeed(preferred) };
+            }
+        }
+    }
+
     public setMode(mode: VisualMode) {
         if (mode === this.currentModeName) return;
 
@@ -764,20 +895,31 @@ export class VisualEngine {
 
         const newViz = this.modeMap[mode] ?? null;
         if (!newViz) return;
+        const oneShotType = this.oneShotTransitionType;
+        this.oneShotTransitionType = null;
+        const baseTransitionPlan = this.resolveTransitionPlan(this.currentModeName, mode);
+        const transitionPlan: TransitionPlan = oneShotType
+            ? {
+                behavior: 'fade',
+                transitionType: oneShotType === 'sweep_line_smear' ? 'sweep_line_smear' : 'crossfade',
+                speed: this.getTransitionSpeed(oneShotType)
+            }
+            : baseTransitionPlan;
+        const resolvedTransitionType = oneShotType || transitionPlan.transitionType;
         
         // Handle Shader Modes separately?
-        if ((mode === 'organic' || mode === 'wireframe') && (this.currentModeName === 'organic' || this.currentModeName === 'wireframe')) {
+        if (this.isShaderFamilyMode(mode) && this.isShaderFamilyMode(this.currentModeName)) {
              const targetModeValue = (mode === 'wireframe') ? 1.0 : 0.0;
-             this.activeTransitionType = this.currentTransitionType || 'crossfade';
+             this.activeTransitionType = resolvedTransitionType;
 
              // sweep_line_smear on shader-family transitions causes black-frame artifacts.
              // Fallback to two-step fade (fade out/in) for stable visual handoff.
-             if (this.activeTransitionType === 'sweep_line_smear') {
+             if (this.activeTransitionType === 'sweep_line_smear' || transitionPlan.behavior !== 'morph') {
                  this.transition.fromMode = oldViz;
                  this.transition.toMode = newViz;
                  this.transition.active = true;
                  this.transition.progress = 0.0;
-                 this.transition.speed = Math.max(0.9, VisualEngine.DEFAULT_TRANSITION_SPEED * 0.9);
+                 this.transition.speed = Math.max(0.9, transitionPlan.speed);
                  this.transitionDirection = Math.random() < 0.5 ? 0 : 1;
                  this.pendingShaderMode = mode;
                  this.pendingShaderApplied = false;
@@ -795,7 +937,7 @@ export class VisualEngine {
              this.transition.toMode = newViz;
              this.transition.active = true;
              this.transition.progress = 0.0;
-             this.transition.speed = this.getTransitionSpeed(this.activeTransitionType);
+             this.transition.speed = transitionPlan.speed;
              this.currentModeName = mode;
              newViz.mesh.visible = true;
              this.pendingShaderMode = mode;
@@ -811,8 +953,8 @@ export class VisualEngine {
         this.transition.toMode = newViz;
         this.transition.active = true;
         this.transition.progress = 0.0;
-        this.activeTransitionType = this.currentTransitionType || 'crossfade';
-        this.transition.speed = this.getTransitionSpeed(this.activeTransitionType);
+        this.activeTransitionType = resolvedTransitionType;
+        this.transition.speed = transitionPlan.speed;
         this.transitionDirection = Math.random() < 0.5 ? 0 : 1;
         
         // Ensure new viz is visible for fade in
@@ -845,9 +987,22 @@ export class VisualEngine {
         this.currentTransitionType = type;
     }
 
+    public setTransitionTypeOnce(type: string) {
+        this.oneShotTransitionType = type;
+    }
+
+    public setFadeTransitionDurationSec(seconds: number) {
+        const s = Number(seconds);
+        if (!Number.isFinite(s)) return;
+        this.fadeTransitionDurationSec = Math.max(0.25, Math.min(4.0, s));
+    }
+
     private getTransitionSpeed(type: string): number {
         if (type === 'sweep_line_smear') return VisualEngine.SWEEP_TRANSITION_SPEED;
-        return VisualEngine.DEFAULT_TRANSITION_SPEED;
+        const base = 1.0 / Math.max(0.25, this.fadeTransitionDurationSec);
+        if (type === 'soft_overlay') return base * 1.2;
+        if (type === 'fade_in' || type === 'fade_out' || type === 'crossfade') return base;
+        return base;
     }
 
     // Helper to extract current state for Sync

@@ -58,6 +58,16 @@ export class HydraVisualizer extends LitElement {
       return this.deckId === 'B' ? 'B' : 'A';
   }
 
+  private getSampleRate(engine?: AudioEngine | null): number {
+      return engine?.getSampleRate?.() || 48000;
+  }
+
+  private projectToNearestCycle(anchor: number, reference: number, cycle: number): number {
+      if (!Number.isFinite(cycle) || cycle <= 0) return anchor;
+      const k = Math.round((reference - anchor) / cycle);
+      return anchor + (k * cycle);
+  }
+
   firstUpdated() {
     this.canvas = this.querySelector('canvas');
     if (this.canvas) {
@@ -74,7 +84,8 @@ export class HydraVisualizer extends LitElement {
             // Initial Zoom to 16 seconds
             const initialWidth = this.canvas.clientWidth;
             if (initialWidth > 0) {
-                this.zoomScale = (16 * 44100) / initialWidth;
+                const sampleRate = this.getSampleRate(this.getEngine());
+                this.zoomScale = (16 * sampleRate) / initialWidth;
                 this.lastStableZoom = this.zoomScale;
             }
             HydraVisualizer.zoomByDeck[this.deckId] = this.zoomScale;
@@ -162,8 +173,9 @@ export class HydraVisualizer extends LitElement {
       const deckBpm = isDeckA ? engine.bpmA : engine.bpmB;
       const deckOffset = isDeckA ? engine.offsetA : engine.offsetB;
       const bpm = deckBpm || engine.masterBpm || 120;
-      const samplesPerBar = (44100 * 60 * 4) / bpm;
-      const offsetSamples = (deckOffset || 0) * 44100;
+      const sampleRate = this.getSampleRate(engine);
+      const samplesPerBar = (sampleRate * 60 * 4) / bpm;
+      const offsetSamples = (deckOffset || 0) * sampleRate;
       
       const n = Math.round((sampleIndex - offsetSamples) / samplesPerBar);
       const quantizedSample = Math.floor(offsetSamples + (n * samplesPerBar));
@@ -193,7 +205,14 @@ export class HydraVisualizer extends LitElement {
       const engine = this.getEngine();
       if (!engine || this.loopStart === null || this.loopEnd === null) return;
       
-      const fadeSamples = this.loopCrossfadeVal > 0 ? (44100 * 0.1) : 0; 
+      const isDeckA = this.deckId === 'A';
+      const deckBpm = isDeckA ? engine.bpmA : engine.bpmB;
+      const bpm = deckBpm || engine.masterBpm || 120;
+      const sampleRate = this.getSampleRate(engine);
+      const samplesPerBeat = (sampleRate * 60) / Math.max(1, bpm);
+      const fadeSamples = this.loopCrossfadeVal > 0
+          ? Math.floor(Math.max(sampleRate * 0.02, samplesPerBeat * 0.5))
+          : 0;
       
       this.hasLoopConfigured = true;
       engine.setLoop(
@@ -355,7 +374,8 @@ export class HydraVisualizer extends LitElement {
     let headPos = isDeckB ? engine.getHeadB() : engine.getReadPointer();
     
     const latencySec = engine.getOutputLatency ? engine.getOutputLatency() : 0.0;
-    const latencySamples = Math.floor(latencySec * 44100);
+    const sampleRate = this.getSampleRate(engine);
+    const latencySamples = Math.floor(latencySec * sampleRate);
     
     // FIX: Only compensate latency when playing to avoid jitter when stopped
     if (!engine.isDeckStopped(this.getCurrentDeck())) {
@@ -422,7 +442,7 @@ export class HydraVisualizer extends LitElement {
     
      // Performance: DOM Updates
      const totalSamples = w * this.zoomScale;
-     const totalTimeSec = Math.round(totalSamples / 44100 * 100) / 100;
+     const totalTimeSec = Math.round((totalSamples / sampleRate) * 100) / 100;
      const infoEl = this.querySelector('.info-display');
      const isGenerating = engine.isGenerating(this.getCurrentDeck()) && (Date.now() % 1000 < 500);
      
@@ -611,26 +631,65 @@ export class HydraVisualizer extends LitElement {
       const deckBpm = isDeckA ? engine.bpmA : engine.bpmB;
       const deckOffset = isDeckA ? engine.offsetA : engine.offsetB;
       const bpm = deckBpm || engine.masterBpm || 120;
-      const samplesPerBar = (44100 * 60 * 4) / bpm;
-      const offsetSamples = (deckOffset || 0) * 44100;
+      const sampleRate = this.getSampleRate(engine);
+      const samplesPerBar = (sampleRate * 60 * 4) / bpm;
+      const offsetSamples = (deckOffset || 0) * sampleRate;
       const step = Math.ceil(this.zoomScale);
       const totalSamplesOnScreen = w * step;
       const barsOnScreen = Math.ceil(totalSamplesOnScreen / samplesPerBar) + 2;
       const n = Math.floor((headPos - offsetSamples) / samplesPerBar);
       const nearestBarSample = offsetSamples + (n * samplesPerBar);
-      
-      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'; 
-      this.ctx.lineWidth = 1;
+
+      const audioData = engine.getAudioData();
+      const ringFrames = Math.max(1, Math.floor(audioData.length / 4));
+      const deckStartFrame = engine.getDeckTrackStartFrame(this.getCurrentDeck());
+      const hasTrackStart = deckStartFrame !== null && Number.isFinite(deckStartFrame);
+      const projectedTrackStart = hasTrackStart
+          ? this.projectToNearestCycle(deckStartFrame as number, headPos, ringFrames)
+          : null;
+
+      const hasLoopStart = this.loopStart !== null;
+      const loopStartSample = this.loopStart ?? 0;
+      const loopStartTolerance = Math.max(4, samplesPerBar * 0.015);
       
       for (let i = -barsOnScreen / 2; i <= barsOnScreen / 2; i++) {
           const barSample = nearestBarSample + (i * samplesPerBar);
           const diff = barSample - headPos;
           const x = (w / 2) + (diff / step);
           if (x >= 0 && x <= w) {
+              const isLoopStartBar =
+                  hasLoopStart && Math.abs(barSample - loopStartSample) <= loopStartTolerance;
+              if (isLoopStartBar) {
+                  this.ctx.strokeStyle = 'rgba(251, 191, 36, 0.9)';
+                  this.ctx.lineWidth = 2;
+              } else {
+                  this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                  this.ctx.lineWidth = 1;
+              }
               this.ctx.beginPath();
               this.ctx.moveTo(x, 0);
               this.ctx.lineTo(x, h);
               this.ctx.stroke();
+          }
+      }
+
+      if (projectedTrackStart !== null) {
+          const trackStartX = (w / 2) + ((projectedTrackStart - headPos) / step);
+          if (trackStartX >= 0 && trackStartX <= w) {
+              this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.95)';
+              this.ctx.lineWidth = 2;
+              this.ctx.beginPath();
+              this.ctx.moveTo(trackStartX, 0);
+              this.ctx.lineTo(trackStartX, h);
+              this.ctx.stroke();
+
+              const labelX = Math.min(Math.max(trackStartX + 6, 6), Math.max(6, w - 110));
+              const labelY = 58; // Keep clearly below top overlays.
+              this.ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+              this.ctx.fillRect(labelX - 4, labelY - 12, 78, 16);
+              this.ctx.fillStyle = 'rgba(16, 185, 129, 0.98)';
+              this.ctx.font = '10px monospace';
+              this.ctx.fillText('GEN START', labelX, labelY);
           }
       }
   }
