@@ -18,6 +18,10 @@ export class AudioEngine {
   public musicClientA: MusicClient;
   public musicClientB: MusicClient;
   private isPlaying = false;
+  private deckSourceMode: { A: 'ai' | 'sample'; B: 'ai' | 'sample' } = {
+      A: 'ai',
+      B: 'ai'
+  };
 
   constructor(apiKey: string = '') {
     this.context = new AudioContext({ 
@@ -235,6 +239,8 @@ export class AudioEngine {
       } else if (deck === 'B' && this.musicClientB) {
           this.musicClientB.isAnalysisEnabled = shouldAnalyze;
       }
+
+      this.applyDeckGenerationState(deck);
   }
 
   setScratch(deck: 'A' | 'B', speed: number) {
@@ -249,6 +255,8 @@ export class AudioEngine {
    * Update AI Prompt Weights
    */
   updateAiPrompt(deck: 'A' | 'B', text: string, weight: number = 1.0) {
+      this.deckSourceMode[deck] = 'ai';
+      this.applyDeckGenerationState(deck);
       if (deck === 'B') this.musicClientB?.updatePrompt(text, weight);
       else this.musicClientA?.updatePrompt(text, weight);
   }
@@ -258,6 +266,7 @@ export class AudioEngine {
    * Used when GEN is pressed on a STOPPED deck to guarantee fresh context.
    */
   async resetAiSession(deck: 'A' | 'B', prompt: string) {
+      this.deckSourceMode[deck] = 'ai';
       // 1. Clear physical buffer and visual state immediately
       this.clearBuffer(deck);
       this.updateDspParam('TAPE_STOP', 1.0, deck); // Ensure tape is stopped until we are ready
@@ -299,8 +308,8 @@ export class AudioEngine {
           this.context.resume();
       }
       this.isPlaying = true;
-      this.musicClientA?.resume();
-      this.musicClientB?.resume();
+      this.applyDeckGenerationState('A');
+      this.applyDeckGenerationState('B');
   }
 
   callGhost() {
@@ -617,34 +626,54 @@ export class AudioEngine {
       const secondsPerBeat = 60 / bpm;
       const secondsPerBar = secondsPerBeat * beatsPerBar;
       const totalSeconds = secondsPerBar * bars;
-      const samplesToExtract = Math.floor(totalSeconds * 44100);
+      const sampleRate = this.context.sampleRate || 48000;
+      const requestedFrames = Math.floor(totalSeconds * sampleRate);
 
-      // Get current read pointer
+      // Anchor extraction at the playhead while playing, but at write head when stopped.
+      // Stopped decks often keep readPtr static, which can otherwise produce stale/silent exports.
       const readPtrOffset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;
-      const currentPtr = Atomics.load(this.headerView, readPtrOffset / 4);
+      const writePtrOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
+      const readPtr = Atomics.load(this.headerView, readPtrOffset / 4);
+      const writePtr = Atomics.load(this.headerView, writePtrOffset / 4);
+      const anchorPtr = this.deckStopped[deck] ? writePtr : readPtr;
       
       // Calculate start position (go back from current position)
-      const bufferSize = this.audioData.length / 2; // Half buffer per deck
-      const deckOffset = deck === 'A' ? 0 : bufferSize;
+      const floatsPerDeck = this.audioData.length / 2; // Half buffer per deck
+      const framesPerDeck = Math.floor(floatsPerDeck / 2);
+      const deckOffset = deck === 'A' ? 0 : floatsPerDeck;
       
+      // Avoid exporting long leading silence when requested length exceeds generated audio.
+      // This can happen right after a reset/start when writePtr is still short.
+      let framesToExtract = requestedFrames;
+      if (this.deckSourceMode[deck] === 'ai') {
+          const maxContiguousAvailable = Math.max(0, Math.min(writePtr, framesPerDeck));
+          framesToExtract = Math.min(framesToExtract, maxContiguousAvailable);
+      }
+      if (framesToExtract <= 0) {
+          console.warn('[Engine] Cannot extract loop: no generated frames available yet');
+          return null;
+      }
+
       // Extract samples from ring buffer
-      const result = new Float32Array(samplesToExtract);
-      const startPtr = currentPtr - samplesToExtract;
+      const result = new Float32Array(framesToExtract);
+      const startPtr = anchorPtr - framesToExtract;
       
-      for (let i = 0; i < samplesToExtract; i++) {
-          // Handle wrap-around in ring buffer
-          let srcIdx = ((startPtr + i) % bufferSize);
-          if (srcIdx < 0) srcIdx += bufferSize;
-          result[i] = this.audioData[deckOffset + srcIdx];
+      for (let i = 0; i < framesToExtract; i++) {
+          // Read LEFT channel per frame as mono export source.
+          let frameIdx = ((startPtr + i) % framesPerDeck);
+          if (frameIdx < 0) frameIdx += framesPerDeck;
+          const srcIdx = deckOffset + frameIdx * 2;
+          result[i] = this.audioData[srcIdx] || 0;
       }
 
       if (import.meta.env.DEV) {
-          console.log(`[Engine] Extracted ${bars} bars (${totalSeconds.toFixed(2)}s) at ${bpm} BPM`);
+          const actualSeconds = framesToExtract / sampleRate;
+          console.log(`[Engine] Extracted ${bars} bars request -> ${actualSeconds.toFixed(2)}s actual at ${bpm} BPM`);
       }
 
       return {
           pcmData: result,
-          duration: totalSeconds,
+          duration: framesToExtract / sampleRate,
           bpm
       };
   }
@@ -656,21 +685,34 @@ export class AudioEngine {
    * @param bpm The BPM of the sample (for sync)
    */
   loadSampleToBuffer(deck: 'A' | 'B', pcmData: Float32Array, bpm: number) {
+      if (!pcmData || pcmData.length === 0) {
+          console.warn(`[Engine] Failed to load sample on Deck ${deck}: empty pcmData`);
+          return;
+      }
+
+      this.deckSourceMode[deck] = 'sample';
+      this.applyDeckGenerationState(deck);
+
       // Calculate buffer positions
-      const bufferSize = this.audioData.length / 2; // Half buffer per deck
+      // Each deck buffer is interleaved stereo: [L, R, L, R, ...]
+      const bufferSize = this.audioData.length / 2; // Float count per deck
+      const framesPerDeck = Math.floor(bufferSize / 2);
       const deckOffset = deck === 'A' ? 0 : bufferSize;
       
-      // Fill entire buffer with looped sample data
+      // Fill entire deck buffer with duplicated mono signal (L/R)
+      // to match the worklet's stereo-interleaved read path.
       const sampleLength = pcmData.length;
-      for (let i = 0; i < bufferSize; i++) {
-          // Loop the sample to fill the entire buffer
-          this.audioData[deckOffset + i] = pcmData[i % sampleLength];
+      for (let frame = 0; frame < framesPerDeck; frame++) {
+          const s = pcmData[frame % sampleLength];
+          const idx = deckOffset + frame * 2;
+          this.audioData[idx] = s;
+          this.audioData[idx + 1] = s;
       }
       
-      // Set write pointer to a very high value to allow continuous looping
+      // Set write pointer to a very high frame value to allow continuous looping
       // The AudioWorklet processor will read up to writePtr, so we set it very high
       const writePtrOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
-      const loopWritePtr = bufferSize * 1000; // Allow many loops before potential wrap
+      const loopWritePtr = framesPerDeck * 1000; // Allow many loops before potential wrap
       Atomics.store(this.headerView, writePtrOffset / 4, loopWritePtr);
       
       // Reset read pointer to start of buffer
@@ -689,7 +731,8 @@ export class AudioEngine {
       }));
       
       if (import.meta.env.DEV) {
-          console.log(`[Engine] Loaded sample to Deck ${deck}: ${sampleLength} samples (${(sampleLength/44100).toFixed(2)}s) at ${bpm} BPM, buffer filled with loops`);
+          const sr = this.context.sampleRate || 44100;
+          console.log(`[Engine] Loaded sample to Deck ${deck}: ${sampleLength} mono samples (${(sampleLength/sr).toFixed(2)}s) at ${bpm} BPM, buffer filled with loops`);
       }
   }
 
@@ -734,5 +777,17 @@ export class AudioEngine {
       const rhythm = 0.5; // Placeholder - would need beat detection
       
       return { brightness, energy, rhythm };
+  }
+
+  private getMusicClient(deck: 'A' | 'B'): MusicClient | null {
+      return deck === 'A' ? this.musicClientA : this.musicClientB;
+  }
+
+  private applyDeckGenerationState(deck: 'A' | 'B') {
+      const client = this.getMusicClient(deck);
+      if (!client) return;
+      const shouldGenerate = this.deckSourceMode[deck] === 'ai' && !this.deckStopped[deck];
+      if (shouldGenerate) client.resume();
+      else client.pause();
   }
 }

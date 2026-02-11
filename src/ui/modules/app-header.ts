@@ -385,7 +385,7 @@ export class AppHeader extends LitElement {
           </div>
 
           <div class="right-controls">
-              <button class="api-btn" @click="${this.openApiSettings}">API</button>
+              <button class="api-btn" @click="${this.openApiSettings}">API KEY</button>
           </div>
 
       </div>

@@ -1,14 +1,13 @@
-# Bio:gram (Ghost in the Groove)
-
-現行実装（`src/`）を起点に再構成したコード準拠ドキュメントです。
-「理想仕様」ではなく、現在のコードで実際に動作している内容を記載しています。
+# Bio:gram
 
 [🇺🇸 English](README.md)
 
 ![Main Interface](assets/screenshot1.png)
 
 ## 現在のプロダクト概要
+
 Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な要素は以下です。
+
 - Google Lyria (`lyria-realtime-exp`) によるデュアルデッキのリアルタイム音楽生成
 - Mix計画時のみ Gemini 3 Pro (`gemini-3-pro-preview`) による統合ミックスプラン生成
 - Grid/解析など軽量処理には Gemini Flash Lite (`gemini-flash-lite-latest`) を使用
@@ -19,6 +18,7 @@ Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な�
 ## 実装済み機能（コード基準）
 
 ### 1. デッキとトランスポート
+
 - Deck A / Deck B の独立再生・停止
 - SYNC トグル、BPM調整、TAP BPM
 - デッキごとのプロンプト入力と `GEN` トリガー
@@ -26,21 +26,25 @@ Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な�
 - `AudioEngine` 側で BPM 比率同期 + 位相合わせ
 
 関連:
+
 - `src/ui/modules/deck-controller.ts`
 - `src/audio/engine.ts`
 
 ### 2. AI Prompt-to-Music フロー
+
 - 初回は `INITIALIZE SYSTEM` で初期化
 - AudioWorklet ロード後、両デッキの Lyria セッションを接続
 - `GEN` でプロンプト更新（停止中デッキはハードリセット経由）
 - プロンプトは UI 状態（Ambient/Minimal/Dub/Impact/Color、Texture/Pulse、Key/Scale、Deck特性、SLAM状態）から生成
 
 関連:
+
 - `src/main.ts`
 - `src/ai/prompt-generator.ts`
 - `src/ai/music-client.ts`
 
 ### 3. AI Mix（Director Panel）
+
 - `A->B` / `B->A` のミックス生成要求
 - Duration（16/32/64/128）、Mood、Visual指定を付与
 - Gemini 3 Pro が統合ミックスプランを返却し、その `audio_plan` を `AutomationScore` として実行
@@ -48,23 +52,27 @@ Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な�
 - UI 状態遷移: `IDLE -> GENERATING -> READY -> MIXING`
 
 関連:
+
 - `src/ui/modules/super-controls.ts`
 - `src/ai/mix-generator.ts`
 - `src/ai/automation-engine.ts`
 
 ### 4. DSP / Mixer / FX
+
 - AudioWorklet Processor を中心にDSPを処理
 - クロスフェーダー、EQ/KILL、TRIM/DRIVE 連携
 - FXラック（Filter/Tape Echo/Bloom Verb/Spectral Gate/Cloud Grain/Decimator/Dynamics など）
 - SLAM マクロ（Filter/Res/Drive/Noise を連動）
 
 関連:
+
 - `src/audio/worklet/processor.ts`
 - `src/audio/worklet/dsp/*`
 - `src/ui/modules/dj-mixer.ts`
 - `src/ui/modules/fx-rack.ts`
 
 ### 5. Visual System
+
 - 背景 `three-viz` を中心にビジュアル描画
 - Visual Controls:
   - モード切替（`organic`, `wireframe`, `monochrome`, `rings`, `waves`, `suibokuga`, `grid`, `ai_grid`）
@@ -76,11 +84,13 @@ Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な�
 - Visualスコア同期は `MusicClient` が出すオーディオフレーム時刻（`startFrame/endFrame`）を優先し、ドリフトを抑制
 
 関連:
+
 - `src/ui/visuals/ThreeViz.ts`
 - `src/ui/visuals/VisualControls.ts`
 - `src/ai/grid-generator.ts`
 
 ### 6. ループライブラリ
+
 - 現在デッキ音声を 8/16/32/64/128 小節で保存
 - 保存前に音声有効率チェック
 - IndexedDB にタグ・ベクトル・BPM・プロンプト付きで保存
@@ -89,17 +99,20 @@ Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な�
 - サイドバー開閉は明示制御（`setLibraryPanelVisible`）に変更し、開いた後に閉じられない問題を回避
 
 関連:
+
 - `src/ui/modules/loop-library-panel.ts`
 - `src/audio/db/library-store.ts`
 - `src/audio/utils/audio-analysis.ts`
 - `src/ui/bootstrap/library-sidebar.ts`
 
 ### 7. モバイルUI（現状）
+
 - 下部固定タブバーでビュー切替（`DECK / FX / VISUAL / AI MIX`）
 - デッキのモバイルミニ操作をタッチ向けに拡大（PLAY/GEN/BPM）
 - GENボタンに短いパルス演出を追加（押下フィードバック）
 
 ## 実行アーキテクチャ
+
 - Main/UIスレッド:
   - Lit コンポーネント
   - `main.ts` で全体オーケストレーション
@@ -118,30 +131,38 @@ Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な�
 ## セットアップ
 
 ### 前提
+
 - Node.js 18+
 - コード内で使用する Gemini/Lyria へアクセスできる API キー
 
 ### インストール
+
 ```bash
 npm install
 ```
 
 ### 環境変数
+
 プロジェクトルートに `.env` を作成:
+
 ```env
 VITE_GEMINI_API_KEY=your_api_key_here
 ```
 
 補足:
+
 - 現在のクライアント実装は `VITE_GEMINI_API_KEY` を使用します。
 
 ### 起動
+
 ```bash
 npm run dev
 ```
+
 `http://localhost:3000` を開きます。
 
 ## 基本操作フロー
+
 1. `INITIALIZE SYSTEM` を押す
 2. Deck A/B の再生と BPM・プロンプトを調整
 3. `GEN` でデッキの生成文脈を更新
@@ -151,18 +172,22 @@ npm run dev
 7. ループを保存し、ライブラリから再読込
 
 ## 評価・検証アセット
+
 現時点では `npm test` は未定義です。補助スクリプトとして以下があります。
+
 - `scripts/eval-beat-detector.ts`
 - `scripts/eval-beat-detector.js`
 - `py_bridge/analyze.py`
 - `py_bridge/test_analyze.py`
 
 ## 重要な制約
+
 - `SharedArrayBuffer` 利用のため、Vite 開発サーバーでは COOP/COEP ヘッダを設定しています（`vite.config.ts`）。
 - Docker/Nginx 側は SPA 配信設定はありますが、COOP/COEP ヘッダはデフォルトで追加していません。
 - 品質・応答速度は外部モデルの可用性、API制限、レイテンシに依存します。
 
 ## ディレクトリ概要
+
 ```text
 src/
   ai/           Gemini/Lyria クライアント、Mix生成
@@ -173,4 +198,5 @@ src/
 ```
 
 ## ライセンス
+
 MIT

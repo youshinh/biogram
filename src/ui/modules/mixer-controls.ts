@@ -95,7 +95,7 @@ export class MixerControls extends LitElement {
 
            <!-- CROSSFADER -->
            <div class="flex-shrink-0 w-full p-3 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 shadow-lg flex flex-col items-center">
-               <div class="text-[10px] tracking-[0.3em] text-zinc-400 mb-2 uppercase font-semibold">Collider // X-Fader</div>
+               <div class="text-[10px] tracking-[0.3em] text-zinc-400 mb-2 uppercase font-semibold">XFADE</div>
                
                <input type="range" 
                       class="w-full h-4 bg-zinc-800 rounded-full appearance-none outline-none cursor-ew-resize accent-zinc-300 [&::-webkit-slider-thumb]:w-8 [&::-webkit-slider-thumb]:h-8 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(255,255,255,0.6)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-ew-resize"

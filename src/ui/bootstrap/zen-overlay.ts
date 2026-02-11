@@ -40,26 +40,44 @@ export function setupZenOverlay(params: {
   });
 
   const zenOffBtn = document.createElement('button');
-  zenOffBtn.textContent = 'OFF';
+  zenOffBtn.textContent = '×';
+  zenOffBtn.setAttribute('aria-label', 'Exit Zen Mode');
+  zenOffBtn.title = 'Exit Zen Mode';
   Object.assign(zenOffBtn.style, {
     position: 'absolute',
-    bottom: '20px',
-    right: '20px',
-    padding: '10px 20px',
+    top: '18px',
+    right: '18px',
+    width: '40px',
+    height: '40px',
+    padding: '0',
     background: 'rgba(0,0,0,0.6)',
     color: '#fff',
     border: '1px solid rgba(255,255,255,0.3)',
-    borderRadius: '6px',
+    borderRadius: '999px',
     cursor: 'pointer',
     pointerEvents: 'auto',
     opacity: '0',
-    transition: 'opacity 0.3s',
+    transition: 'opacity 0.3s, border-color 0.2s, box-shadow 0.2s, color 0.2s',
     fontFamily: 'monospace',
     fontWeight: 'bold',
     zIndex: '1501',
-    fontSize: '12px',
-    letterSpacing: '1px'
+    fontSize: '26px',
+    lineHeight: '1',
+    letterSpacing: '0px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
   });
+  zenOffBtn.onmouseenter = () => {
+    zenOffBtn.style.borderColor = 'rgba(248,113,113,0.9)';
+    zenOffBtn.style.color = '#fecaca';
+    zenOffBtn.style.boxShadow = '0 0 14px rgba(248,113,113,0.35)';
+  };
+  zenOffBtn.onmouseleave = () => {
+    zenOffBtn.style.borderColor = 'rgba(255,255,255,0.3)';
+    zenOffBtn.style.color = '#fff';
+    zenOffBtn.style.boxShadow = 'none';
+  };
   zenOffBtn.onclick = () => {
     vizControls.toggleZenMode?.();
   };

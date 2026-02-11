@@ -151,41 +151,52 @@ if (isVizMode) {
         Object.assign(overlay.style, {
             position: 'fixed',
             inset: '0',
-            background: 'rgba(0,0,0,0.78)',
+            background: 'rgba(0,0,0,0.4)',
+            backdropFilter: 'blur(20px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: '2500'
+            zIndex: '2500',
+            opacity: '0',
+            transition: 'opacity 0.3s ease'
         });
 
         const panel = document.createElement('div');
         Object.assign(panel.style, {
-            width: 'min(92vw, 460px)',
-            background: '#0b0b0b',
-            border: '1px solid #2c2c2c',
-            borderRadius: '14px',
-            padding: '18px',
-            color: '#ddd',
-            fontFamily: 'monospace',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.45)'
+            width: 'min(92vw, 420px)',
+            background: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(40px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '1.5rem',
+            padding: '24px',
+            color: '#d4d4d8',
+            fontFamily: "'Comfortaa', sans-serif",
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            transform: 'scale(0.95)',
+            transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)'
         });
 
         const title = document.createElement('h3');
         title.textContent = 'API SETTINGS';
-        title.style.margin = '0 0 10px 0';
-        title.style.fontSize = '14px';
-        title.style.letterSpacing = '0.12em';
+        Object.assign(title.style, {
+            margin: '0 0 12px 0',
+            fontSize: '0.65rem',
+            fontFamily: "'JetBrains Mono', monospace",
+            letterSpacing: '0.2em',
+            color: '#3f3f46',
+            fontWeight: 'bold'
+        });
         panel.appendChild(title);
 
         const desc = document.createElement('p');
         desc.textContent = required
-            ? 'APIキーが未設定です。ローカル保存して初期化を続行してください。'
-            : 'Gemini APIキーをローカル保存します。保存後、ページを再読み込みします。';
+            ? 'API Key is missing. Save it locally to proceed.'
+            : 'Save Gemini API Key locally. Reloads page after saving.';
         Object.assign(desc.style, {
-            margin: '0 0 12px 0',
+            margin: '0 0 20px 0',
             color: '#a1a1aa',
-            fontSize: '12px',
-            lineHeight: '1.5'
+            fontSize: '13px',
+            lineHeight: '1.6'
         });
         panel.appendChild(desc);
 
@@ -196,60 +207,113 @@ if (isVizMode) {
         Object.assign(input.style, {
             width: '100%',
             boxSizing: 'border-box',
-            padding: '10px 12px',
-            borderRadius: '10px',
-            border: '1px solid #3a3a3a',
-            background: '#111',
+            padding: '12px 16px',
+            borderRadius: '0.75rem',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: 'rgba(255, 255, 255, 0.05)',
             color: '#fff',
-            marginBottom: '12px'
+            marginBottom: '20px',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: '14px',
+            outline: 'none',
+            transition: 'border-color 0.2s, box-shadow 0.2s'
         });
+        input.onfocus = () => {
+            input.style.borderColor = 'rgba(34, 211, 238, 0.5)';
+            input.style.boxShadow = '0 0 0 2px rgba(34, 211, 238, 0.2)';
+        };
+        input.onblur = () => {
+            input.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+            input.style.boxShadow = 'none';
+        };
         panel.appendChild(input);
 
         const actions = document.createElement('div');
         Object.assign(actions.style, {
             display: 'flex',
-            gap: '8px',
+            gap: '12px',
             justifyContent: 'flex-end'
         });
 
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = 'CLOSE';
-        Object.assign(closeBtn.style, {
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: '1px solid #3a3a3a',
-            background: '#161616',
-            color: '#a1a1aa',
-            cursor: required ? 'not-allowed' : 'pointer',
-            opacity: required ? '0.5' : '1'
-        });
-        closeBtn.disabled = required;
+        const createStyledBtn = (label: string, isPrimary: boolean = false, isDanger: boolean = false) => {
+            const btn = document.createElement('button');
+            btn.textContent = label;
+            
+            const baseBg = isPrimary 
+                ? 'rgba(34, 211, 238, 0.15)' 
+                : isDanger 
+                    ? 'rgba(239, 68, 68, 0.15)' 
+                    : 'rgba(255, 255, 255, 0.05)';
+            
+            const accentColor = isPrimary 
+                ? '#22d3ee' 
+                : isDanger 
+                    ? '#ef4444' 
+                    : '#a1a1aa';
 
-        const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'CLEAR';
-        Object.assign(clearBtn.style, {
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: '1px solid #5b1f1f',
-            background: '#1a0d0d',
-            color: '#fca5a5',
-            cursor: 'pointer'
-        });
+            Object.assign(btn.style, {
+                padding: '10px 20px',
+                borderRadius: '0.75rem',
+                border: `1px solid ${isPrimary || isDanger ? accentColor + '44' : 'rgba(255, 255, 255, 0.1)'}`,
+                background: baseBg,
+                color: isPrimary || isDanger ? accentColor : '#a1a1aa',
+                fontSize: '11px',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontWeight: 'bold',
+                letterSpacing: '0.1em',
+                cursor: 'pointer',
+                transition: 'all 0.2s cubic-bezier(0.23, 1, 0.32, 1)',
+                backdropFilter: 'blur(10px)',
+                textShadow: isPrimary || isDanger ? `0 0 10px ${accentColor}66` : 'none'
+            });
 
-        const saveBtn = document.createElement('button');
-        saveBtn.textContent = 'SAVE';
-        Object.assign(saveBtn.style, {
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: '1px solid #06b6d4',
-            background: '#08363d',
-            color: '#e0f2fe',
-            cursor: 'pointer'
-        });
+            btn.onmouseenter = () => {
+                btn.style.background = isPrimary 
+                    ? 'rgba(34, 211, 238, 0.25)' 
+                    : isDanger 
+                        ? 'rgba(239, 68, 68, 0.25)' 
+                        : 'rgba(255, 255, 255, 0.1)';
+                btn.style.borderColor = accentColor;
+                btn.style.color = '#fff';
+                btn.style.boxShadow = `0 0 15px ${accentColor}33`;
+                btn.style.transform = 'translateY(-1px)';
+            };
+            btn.onmouseleave = () => {
+                btn.style.background = baseBg;
+                btn.style.borderColor = isPrimary || isDanger ? accentColor + '44' : 'rgba(255, 255, 255, 0.1)';
+                btn.style.color = isPrimary || isDanger ? accentColor : '#a1a1aa';
+                btn.style.boxShadow = 'none';
+                btn.style.transform = 'none';
+            };
+            btn.onmousedown = () => {
+                btn.style.transform = 'translateY(1px) scale(0.98)';
+                btn.style.filter = 'brightness(0.8)';
+            };
+            btn.onmouseup = () => {
+                btn.style.transform = 'translateY(-1px)';
+                btn.style.filter = 'none';
+            };
+            return btn;
+        };
+
+        const closeBtn = createStyledBtn('CLOSE');
+        if (required) {
+            closeBtn.disabled = true;
+            closeBtn.style.opacity = '0.3';
+            closeBtn.style.cursor = 'not-allowed';
+            closeBtn.style.background = '#18181b';
+        }
+
+        const clearBtn = createStyledBtn('CLEAR', false, true);
+        const saveBtn = createStyledBtn('SAVE', true);
 
         const closeModal = () => {
-            overlay.remove();
-            apiSettingsOverlay = null;
+            overlay.style.opacity = '0';
+            panel.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                overlay.remove();
+                apiSettingsOverlay = null;
+            }, 300);
         };
 
         closeBtn.onclick = () => closeModal();
@@ -258,17 +322,19 @@ if (isVizMode) {
             if (e.target === overlay) closeModal();
         };
         clearBtn.onclick = () => {
-            apiKeyManager.clearApiKey();
-            input.value = '';
+            if (confirm('Clear the API Key?')) {
+                apiKeyManager.clearApiKey();
+                input.value = '';
+            }
         };
         saveBtn.onclick = () => {
             const key = input.value.trim();
             if (!key) {
-                alert('APIキーを入力してください。');
+                alert('Please enter an API Key.');
                 return;
             }
             apiKeyManager.setApiKey(key);
-            alert('APIキーを保存しました。再読み込みして反映します。');
+            alert('API Key saved. Reloading to apply changes.');
             window.location.reload();
         };
 
@@ -278,6 +344,13 @@ if (isVizMode) {
         panel.appendChild(actions);
         overlay.appendChild(panel);
         document.body.appendChild(overlay);
+        
+        // Trigger reveal animation
+        requestAnimationFrame(() => {
+            overlay.style.opacity = '1';
+            panel.style.transform = 'scale(1)';
+        });
+
         input.focus();
     };
 
@@ -653,6 +726,7 @@ if (isVizMode) {
     let mixCompletionHandled = false;
     let freeModeTimer: number | null = null;
     let lastMixStartPerfMs = 0;
+    let lastRhythmRelockBar = -Infinity;
     let freeModeSession: null | {
         active: boolean;
         pattern: 'PINGPONG' | 'ABBA';
@@ -762,6 +836,50 @@ if (isVizMode) {
         }
     };
 
+    const setDeckSyncState = (deck: 'A' | 'B', sync: boolean) => {
+        window.dispatchEvent(new CustomEvent('deck-sync-toggle', {
+            detail: { deck, sync }
+        }));
+        window.dispatchEvent(new CustomEvent('deck-sync-state', {
+            detail: { deck, sync }
+        }));
+    };
+
+    const lockMixRhythm = (
+        sourceDeck: 'A' | 'B',
+        targetDeck: 'A' | 'B',
+        targetBpmRaw: number,
+        reason: 'START' | 'RELOCK'
+    ) => {
+        const fallbackBpm = Number(engine.masterBpm) || 120;
+        const safeBpm = Math.max(
+            60,
+            Math.min(200, Number.isFinite(targetBpmRaw) ? Number(targetBpmRaw) : fallbackBpm)
+        );
+
+        // Keep generation, transport, and mixer clocks aligned.
+        engine.setMasterBpm(safeBpm);
+
+        // AutoMix always forces SYNC ON for both decks.
+        setDeckSyncState(sourceDeck, true);
+        setDeckSyncState(targetDeck, true);
+
+        // Seed deck BPMs to avoid stale/invalid sync ratio.
+        engine.setDeckBpm(sourceDeck, safeBpm);
+        engine.setDeckBpm(targetDeck, safeBpm);
+
+        // Speed + phase lock (target deck is critical during handoff).
+        engine.syncDeck(sourceDeck);
+        engine.syncDeck(targetDeck);
+        engine.alignPhase(targetDeck);
+
+        if (reason === 'START') {
+            superCtrl.addLog(`RHYTHM LOCK: ${safeBpm.toFixed(1)} BPM / SYNC ${sourceDeck}+${targetDeck}`);
+        } else if (import.meta.env.DEV) {
+            console.log(`[AI Mix] Rhythm relock at ${safeBpm.toFixed(1)} BPM (${sourceDeck}->${targetDeck})`);
+        }
+    };
+
     // AI Mix Event Handling
     superCtrl.addEventListener('ai-mix-trigger', async (e: any) => {
         const {
@@ -851,12 +969,16 @@ if (isVizMode) {
                     if (integratedPlan.meta.plan_fallback_reason) {
                         superCtrl.addLog(`FALLBACK REASON: ${integratedPlan.meta.plan_fallback_reason}`);
                     }
-                    if (!allowTemplateMixPlan) {
+                    const canRunTemplate = sessionMode === 'free' || allowTemplateMixPlan;
+                    if (!canRunTemplate) {
                         superCtrl.mixState = 'IDLE';
                         superCtrl.addLog('MIX BLOCKED: Gemini planner unavailable.');
                         superCtrl.addLog('Add ?allowTemplatePlan=1 to URL only if you want forced template mix.');
                         pendingIntegratedPlan = null;
                         return;
+                    }
+                    if (sessionMode === 'free') {
+                        superCtrl.addLog('FREE MODE CONTINUE: using safe subset fallback plan (autoplay maintained).');
                     }
                 }
                 if (integratedPlan.meta.description) {
@@ -872,6 +994,21 @@ if (isVizMode) {
                 autoEngine.setOnProgress((bar, phase) => {
                      superCtrl.updateStatus(bar, phase, duration);
                      visualTransitionEngine.update(bar);
+                     if (
+                        pendingMixContext &&
+                        bar >= 4 &&
+                        bar < Math.max(8, duration - 4) &&
+                        (bar - lastRhythmRelockBar) >= 16
+                     ) {
+                        const { sourceId, targetId } = pendingMixContext;
+                        const planBpm =
+                            Number(integratedPlan.meta.target_bpm) ||
+                            Number(score.meta.target_bpm) ||
+                            Number(engine.masterBpm) ||
+                            120;
+                        lockMixRhythm(sourceId as 'A' | 'B', targetId as 'A' | 'B', planBpm, 'RELOCK');
+                        lastRhythmRelockBar = bar;
+                     }
                      if (applyAutoPromptFromMix) {
                         applyAutoPromptFromMix(bar, phase, duration, String(mood));
                      }
@@ -906,11 +1043,20 @@ if (isVizMode) {
                          const dir = integratedPlan.meta.direction;
                          const stoppedDeck = dir === 'A->B' ? 'A' : 'B';
                          if (integratedPlan.post_actions?.regen_stopped_deck) {
-                             superCtrl.mixState = 'POST_REGEN';
-                             superCtrl.addLog(`POST REGEN: DECK ${stoppedDeck}`);
-                             if (freeModeSession?.active) freeModeSession.metrics.regenAttempts += 1;
-                             triggerDeckRegeneration(stoppedDeck);
-                             if (freeModeSession?.active) freeModeSession.metrics.regenSuccess += 1;
+                             if (freeModeSession?.active) {
+                                 superCtrl.mixState = 'POST_REGEN';
+                                 superCtrl.addLog(`POST REGEN: DECK ${stoppedDeck}`);
+                                 freeModeSession.metrics.regenAttempts += 1;
+                                 triggerDeckRegeneration(stoppedDeck);
+                                 freeModeSession.metrics.regenSuccess += 1;
+                             } else {
+                                 // SINGLE mode: regenerate in background, but return UI to IDLE
+                                 // so users can immediately choose the next manual action.
+                                 superCtrl.addLog(`POST REGEN (background): DECK ${stoppedDeck}`);
+                                 triggerDeckRegeneration(stoppedDeck);
+                                 superCtrl.addLog('SINGLE MODE: no automatic next mix. Choose A→B or B→A to continue.');
+                                 superCtrl.mixState = 'IDLE';
+                             }
                          }
 
                          if (freeModeSession?.active) {
@@ -1006,6 +1152,7 @@ if (isVizMode) {
         
         if (import.meta.env.DEV) console.log(`[AI Mix] Starting Mix...`);
         superCtrl.mixState = 'MIXING';
+        lastRhythmRelockBar = -Infinity;
         superCtrl.addLog(`MIX STARTED.`);
         promptAutoControlActive = promptAutoEnabledSetting;
         promptAutoLastUiPushMs = 0;
@@ -1028,6 +1175,14 @@ if (isVizMode) {
             // 2. Force Target Deck to Play (The track entering)
             if (import.meta.env.DEV) console.log(`[SafetyNet] Force Ensuring Target Deck ${targetId} Playing`);
             window.dispatchEvent(new CustomEvent('deck-play-toggle', { detail: { deckId: targetId, playing: true } }));
+
+            // 3. Hard lock rhythm before automation starts.
+            const planBpm =
+                Number(pendingIntegratedPlan?.meta?.target_bpm) ||
+                Number(pendingIntegratedPlan?.audio_plan?.meta?.target_bpm) ||
+                Number(engine.masterBpm) ||
+                120;
+            lockMixRhythm(sourceId as 'A' | 'B', targetId as 'A' | 'B', planBpm, 'START');
         }
 
         // Delay AutomationEngine start to ensure SafetyNet transport commands are fully processed
@@ -1315,6 +1470,9 @@ if (isVizMode) {
             
             // Visual feedback
             alert(`ループを保存しました: ${name}\nタグ: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
+
+            // Notify library to refresh
+            window.dispatchEvent(new CustomEvent('library-updated', { bubbles: true, composed: true }));
         } catch (err) {
             console.error('[SAVE HANDLER] Failed to save loop:', err);
             alert('保存に失敗しました');

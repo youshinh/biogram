@@ -20,33 +20,82 @@ export class SuperControls extends LitElement {
 
     .container {
       display: grid;
-      grid-template-columns: minmax(320px, 420px) minmax(260px, 0.82fr) minmax(320px, 420px);
       gap: 14px;
       height: 100%;
       min-height: 0;
+    }
+
+    .container.layout-idle {
+      grid-template-columns: minmax(420px, 1.45fr) minmax(240px, 0.85fr) minmax(340px, 1.15fr);
+    }
+
+    .container.layout-live {
+      grid-template-columns: minmax(360px, 1.15fr) minmax(320px, 1.1fr) minmax(320px, 1fr);
     }
 
     .panel {
       background: rgba(0, 0, 0, 0.4); 
       border: 1px solid rgba(255, 255, 255, 0.05);
       border-radius: 1.5rem; 
-      padding: 12px; /* Reduced from 16px */
+      padding: 12px;
       display: flex;
       flex-direction: column;
-      gap: 8px; /* Reduced from 16px to fit without scroll */
+      gap: 8px;
       backdrop-filter: blur(12px);
       overflow-y: auto; 
       min-height: 0;
     }
 
+    .panel-director {
+      padding: 14px;
+      gap: 10px;
+    }
+
     .panel-monitor {
       overflow: hidden;
+      padding-bottom: 10px;
+    }
+
+    .panel-log {
+      min-width: 0;
     }
 
     .status-strip {
       display: flex;
       gap: 6px;
       flex-wrap: wrap;
+    }
+
+    .mode-switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .mode-tab {
+      min-height: 42px;
+      border: 1px solid #27272a;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.45);
+      color: #cfcfcf;
+      font-family: inherit;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mode-tab.active {
+      border-color: #0ea5e9;
+      color: #e0f2fe;
+      box-shadow: 0 0 12px rgba(14, 165, 233, 0.2);
+    }
+
+    .mode-tab:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
 
     .chip {
@@ -114,9 +163,10 @@ export class SuperControls extends LitElement {
       background: rgba(0,0,0,0.5); 
       border: 1px solid #27272a;
       color: #d4d4d8;
-      padding: 6px; /* Reduced from 8px */
+      padding: 9px 10px;
       border-radius: 8px; 
       font-family: inherit;
+      min-height: 42px;
       outline: none;
     }
     
@@ -199,8 +249,12 @@ export class SuperControls extends LitElement {
       align-items: center;
       justify-content: center;
       flex-direction: column;
-      min-height: 244px;
+      min-height: 228px;
       height: 100%;
+    }
+
+    .container.layout-idle .monitor-display {
+      min-height: 148px;
     }
 
     .monitor-display.state-idle { border-color: #3f3f46; }
@@ -288,6 +342,22 @@ export class SuperControls extends LitElement {
     }
     .log-time { color: #52525b; margin-right: 8px; }
 
+    .action-hint {
+      font-size: 0.68rem;
+      line-height: 1.45;
+      color: #94a3b8;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: rgba(8,8,8,0.5);
+    }
+
+    .action-hint strong {
+      color: #e4e4e7;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
     /* Custom Scrollbar */
     *::-webkit-scrollbar {
       width: 4px;
@@ -306,13 +376,48 @@ export class SuperControls extends LitElement {
     @media (max-width: 1280px) {
       .container {
         grid-template-columns: 1fr;
-        grid-auto-rows: minmax(220px, auto);
+        grid-auto-rows: auto;
       }
       .panel {
-        max-height: 36vh;
+        max-height: none;
+      }
+      .panel-director { order: 1; }
+      .panel-monitor { order: 2; }
+      .panel-log { order: 3; }
+      .monitor-display {
+        min-height: 170px;
+      }
+    }
+
+    @media (max-width: 820px) {
+      :host {
+        padding: 6px 4px 4px 4px;
+      }
+      .panel {
+        border-radius: 1rem;
+      }
+      .panel-director {
+        padding: 10px;
+      }
+      .mode-switch {
+        grid-template-columns: 1fr 1fr;
+      }
+      .mode-switch .chip {
+        grid-column: 1 / -1;
+        justify-self: start;
+      }
+      .mix-actions .trigger-btn {
+        min-height: 52px;
+        font-size: 0.9rem;
       }
       .monitor-display {
-        min-height: 200px;
+        min-height: 150px;
+      }
+      .phase-text {
+        font-size: 1rem;
+      }
+      .action-hint {
+        font-size: 0.64rem;
       }
     }
 
@@ -383,22 +488,34 @@ export class SuperControls extends LitElement {
   @state() preferredVisual: VisualMode = 'organic';
   @state() sessionMode: 'single' | 'free' = 'single';
   @state() maxRuntimeMin = 60;
-  @state() aiVisualsEnabled = false;
+  @state() aiVisualsEnabled = true;
   @state() promptAutoEnabled = true;
   @state() promptAutoCurve: 'BALANCED' | 'AGGRESSIVE' | 'CINEMATIC' = 'BALANCED';
   @state() logs: string[] = [];
 
 	  render() {
       const stateClass = this.getStateClass();
+      const liveStates = new Set(['GENERATING', 'MIXING', 'WAIT_NEXT', 'POST_REGEN']);
+      const layoutClass = liveStates.has(this.mixState) ? 'layout-live' : 'layout-idle';
+      const canChangeMode = this.mixState === 'IDLE' || this.mixState === 'COMPLETE';
+      const actionHint = this.getActionHint();
 	    return html`
-      <div class="container">
+      <div class="container ${layoutClass}">
         <!-- 1. DIRECTOR PANEL -->
-        <div class="panel">
+        <div class="panel panel-director">
            <div class="panel-header">AI DIRECTOR</div>
-           <div class="status-strip">
-               <span class="chip ${this.sessionMode === 'single' ? 'active' : ''}">Single</span>
-               <span class="chip ${this.sessionMode === 'free' ? 'active' : ''}">Free</span>
-               <span class="chip ${this.aiVisualsEnabled ? 'active' : ''}">Visual AI ${this.aiVisualsEnabled ? 'ON' : 'OFF'}</span>
+           <div class="mode-switch">
+               <button class="mode-tab ${this.sessionMode === 'single' ? 'active' : ''}"
+                       @click="${() => this.setSessionMode('single')}"
+                       ?disabled="${!canChangeMode}">
+                   SINGLE
+               </button>
+               <button class="mode-tab ${this.sessionMode === 'free' ? 'active' : ''}"
+                       @click="${() => this.setSessionMode('free')}"
+                       ?disabled="${!canChangeMode}">
+                   FREE
+               </button>
+               <span class="chip ${this.aiVisualsEnabled ? 'active' : ''}">Analysis ${this.aiVisualsEnabled ? 'ON' : 'OFF'}</span>
            </div>
            
            <div class="control-group">
@@ -408,14 +525,6 @@ export class SuperControls extends LitElement {
                    <option value="32">32 - Standard</option>
                    <option value="64">64 - Long Mix</option>
                    <option value="128">128 - Extended</option>
-               </select>
-           </div>
-
-           <div class="control-group">
-               <label>SESSION MODE</label>
-               <select .value="${this.sessionMode}" @change="${(e:any) => this.sessionMode = e.target.value}">
-                   <option value="single">SINGLE MIX</option>
-                   <option value="free">FREE MODE</option>
                </select>
            </div>
 
@@ -467,6 +576,7 @@ export class SuperControls extends LitElement {
                <div class="policy-line">Allowed: fade_in / fade_out / crossfade / soft_overlay / sweep_line_smear</div>
                <div class="policy-line">Intensity: 0.0 - 1.0 (default 0.35)</div>
                <div class="policy-line">No hard flash / no aggressive glitch / no strobe</div>
+               <div class="policy-line">AI Analysis controls BPM/visual analysis pipeline only (not mix planner).</div>
            </div>
 
            <div class="policy-box">
@@ -515,7 +625,7 @@ export class SuperControls extends LitElement {
                <button class="trigger-btn" 
                        style="margin-top: 8px; border: 1px solid ${this.aiVisualsEnabled ? '#10b981' : '#333'}; color: ${this.aiVisualsEnabled ? '#10b981' : '#666'};"
                        @click="${this.toggleAiVisuals}">
-                   ${this.aiVisualsEnabled ? 'AI AUTO-MIX: ON' : 'AI AUTO-MIX: OFF'}
+                   ${this.aiVisualsEnabled ? 'AI ANALYSIS: ON' : 'AI ANALYSIS: OFF'}
                </button>
            </div>
         </div>
@@ -569,13 +679,14 @@ export class SuperControls extends LitElement {
         </div>
 
         <!-- 3. LOGS / STATUS -->
-        <div class="panel">
+        <div class="panel panel-log">
             <div class="panel-header">SYSTEM LOG / ACTION</div>
             <div class="status-strip">
                 <span class="chip">Mode ${this.sessionMode.toUpperCase()}</span>
                 <span class="chip">${this.sessionMode === 'free' ? 'PINGPONG AUTO' : 'ONE SHOT'}</span>
                 <span class="chip">Bars ${this.duration}</span>
             </div>
+            <div class="action-hint">${actionHint}</div>
             <div style="overflow-y:auto; flex-grow:1; display:flex; flex-direction:column-reverse;">
                 ${this.logs.map(log => html`
                     <div class="log-entry">${log}</div>
@@ -604,8 +715,35 @@ export class SuperControls extends LitElement {
     `;
   }
 
+  private setSessionMode(mode: 'single' | 'free') {
+      this.sessionMode = mode;
+      if (mode === 'free') {
+          this.preferredVisual = 'organic';
+      }
+  }
+
+  private getActionHint() {
+      if (this.mixState === 'READY') {
+          return html`<strong>NEXT:</strong> Press <strong>START MIX</strong> to execute the generated plan.`;
+      }
+      if (this.mixState === 'MIXING') {
+          return html`<strong>LIVE:</strong> Mix is running. Press <strong>STOP</strong> only if you need to abort.`;
+      }
+      if (this.mixState === 'WAIT_NEXT') {
+          return html`<strong>AUTO:</strong> Free mode will trigger the next mix automatically after standby.`;
+      }
+      if (this.mixState === 'POST_REGEN') {
+          return html`<strong>POST:</strong> Regenerating the stopped deck. Mix chain will resume automatically in Free mode.`;
+      }
+      if (this.sessionMode === 'single') {
+          return html`<strong>NEXT:</strong> Choose <strong>DECK A→B</strong> or <strong>DECK B→A</strong> to run a one-shot mix.`;
+      }
+      return html`<strong>NEXT:</strong> Press <strong>START FREE MODE</strong>. The system will continue in ping-pong automation.`;
+  }
+
   toggleAiVisuals() {
       this.aiVisualsEnabled = !this.aiVisualsEnabled;
+      this.addLog(`AI ANALYSIS ${this.aiVisualsEnabled ? 'ENABLED' : 'DISABLED'}`);
       this.dispatchEvent(new CustomEvent('visual-ai-toggle', {
           detail: { enabled: this.aiVisualsEnabled },
           bubbles: true,

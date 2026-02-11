@@ -17,6 +17,8 @@ export class DeckController extends LitElement {
   @state() bpm = 120.0;
   @state() isManual = false;
   @state() genPulse = false;
+  private lastManualBpmChangeAt = 0;
+  private readonly MANUAL_BPM_LOCK_MS = 2500;
 
   public clearVisualizer() {
       const viz = this.querySelector('hydra-visualizer') as HydraVisualizer | null;
@@ -37,6 +39,7 @@ export class DeckController extends LitElement {
       window.addEventListener('deck-bpm-update', this.onBpmUpdate);
       window.addEventListener('deck-action', this.handleMidiAction);
       window.addEventListener('deck-play-sync', this.onPlaySync);
+      window.addEventListener('deck-sync-state', this.onSyncState as EventListener);
   }
 
   disconnectedCallback() {
@@ -44,6 +47,7 @@ export class DeckController extends LitElement {
       window.removeEventListener('deck-bpm-update', this.onBpmUpdate);
       window.removeEventListener('deck-action', this.handleMidiAction);
       window.removeEventListener('deck-play-sync', this.onPlaySync);
+      window.removeEventListener('deck-sync-state', this.onSyncState as EventListener);
   }
 
   private handleMidiAction = (e: any) => {
@@ -58,6 +62,9 @@ export class DeckController extends LitElement {
   private onBpmUpdate = (e: any) => {
       const { deck, bpm } = e.detail;
       if (deck === this.deckId) {
+          if (performance.now() - this.lastManualBpmChangeAt < this.MANUAL_BPM_LOCK_MS) {
+              return;
+          }
           this.bpm = parseFloat(bpm.toFixed(1));
           this.requestUpdate();
       }
@@ -69,6 +76,13 @@ export class DeckController extends LitElement {
           this.isPlaying = playing;
           this.requestUpdate();
       }
+  };
+
+  private onSyncState = (e: any) => {
+      const { deck, sync } = e.detail || {};
+      if (deck !== this.deckId) return;
+      this.isSync = !!sync;
+      this.requestUpdate();
   };
 
   render() {
@@ -261,21 +275,114 @@ export class DeckController extends LitElement {
 
   private adjustBpm(delta: number) {
       this.bpm = Math.max(60, Math.min(200, this.bpm + delta));
-      this.isManual = true;
+      this.markManualBpmChange();
       this.dispatchBpm();
   }
   
   private lastTap = 0;
+  private tapIntervals: number[] = [];
+  private estimatedIntervalMs = 0;
+  private readonly TAP_TIMEOUT_MS = 2000;
+  private readonly TAP_MIN_BPM = 60;
+  private readonly TAP_MAX_BPM = 200;
+  private readonly TAP_HISTORY_SIZE = 8;
+  private readonly TAP_OUTLIER_TOLERANCE = 0.3;
+  private readonly TAP_SMOOTHING_ALPHA = 0.22;
+  private readonly TAP_MULTIPLE_SNAP_TOLERANCE = 0.12;
+
+  private markManualBpmChange(now: number = performance.now()) {
+      this.isManual = true;
+      this.lastManualBpmChangeAt = now;
+  }
+
+  private resetTapSession(now: number) {
+      this.tapIntervals = [];
+      this.estimatedIntervalMs = 0;
+      this.lastTap = now;
+  }
+
+  private median(values: number[]): number {
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0
+          ? (sorted[mid - 1] + sorted[mid]) / 2
+          : sorted[mid];
+  }
+
+  private isValidTapInterval(intervalMs: number): boolean {
+      const bpm = 60000 / intervalMs;
+      return bpm >= this.TAP_MIN_BPM && bpm <= this.TAP_MAX_BPM;
+  }
+
+  private isOutlier(intervalMs: number): boolean {
+      if (this.tapIntervals.length < 2) return false;
+      const baseline = this.estimatedIntervalMs > 0
+          ? this.estimatedIntervalMs
+          : this.median(this.tapIntervals);
+      const deviation = Math.abs(intervalMs - baseline) / baseline;
+      return deviation > this.TAP_OUTLIER_TOLERANCE;
+  }
+
+  private normalizeTapInterval(intervalMs: number): number {
+      if (this.estimatedIntervalMs <= 0 || this.tapIntervals.length < 3) {
+          return intervalMs;
+      }
+
+      const ratio = intervalMs / this.estimatedIntervalMs;
+      const snappedMultiple = Math.round(ratio);
+      const isCandidateMultiple = snappedMultiple >= 2 && snappedMultiple <= 4;
+      const isCloseToMultiple = Math.abs(ratio - snappedMultiple) <= this.TAP_MULTIPLE_SNAP_TOLERANCE;
+
+      if (!isCandidateMultiple || !isCloseToMultiple) {
+          return intervalMs;
+      }
+
+      const normalized = intervalMs / snappedMultiple;
+      return this.isValidTapInterval(normalized) ? normalized : intervalMs;
+  }
+
   private tapBpm() {
       const now = performance.now();
-      if (now - this.lastTap < 2000) {
-          const interval = now - this.lastTap;
-          const newBpm = 60000 / interval;
-          this.bpm = Math.round(newBpm * 10) / 10;
-          this.isManual = true;
-          this.dispatchBpm();
+      if (this.lastTap === 0 || now - this.lastTap > this.TAP_TIMEOUT_MS) {
+          this.resetTapSession(now);
+          return;
       }
+
+      const rawInterval = now - this.lastTap;
       this.lastTap = now;
+      const interval = this.normalizeTapInterval(rawInterval);
+
+      if (!this.isValidTapInterval(interval)) {
+          this.resetTapSession(now);
+          return;
+      }
+      if (this.isOutlier(interval)) {
+          return;
+      }
+
+      this.tapIntervals.push(interval);
+      if (this.tapIntervals.length > this.TAP_HISTORY_SIZE) {
+          this.tapIntervals.shift();
+      }
+
+      if (this.estimatedIntervalMs === 0) {
+          this.estimatedIntervalMs = interval;
+      } else {
+          this.estimatedIntervalMs = (this.estimatedIntervalMs * 0.75) + (interval * 0.25);
+      }
+
+      // Require at least 3 taps (2 intervals) before updating BPM.
+      if (this.tapIntervals.length < 2) {
+          return;
+      }
+
+      const stableMedian = this.median(this.tapIntervals);
+      const stableInterval = (stableMedian + this.estimatedIntervalMs) * 0.5;
+      const measuredBpm = 60000 / stableInterval;
+      const smoothed = this.bpm + (measuredBpm - this.bpm) * this.TAP_SMOOTHING_ALPHA;
+      this.bpm = Math.round(Math.max(this.TAP_MIN_BPM, Math.min(this.TAP_MAX_BPM, smoothed)) * 10) / 10;
+      this.markManualBpmChange(now);
+      this.dispatchBpm();
   }
   
   private dispatchBpm() {

@@ -247,11 +247,15 @@ export class MusicClient {
         if (!this.session) await this.connect();
         // Default prompts to get silence or initial sound
         await this.updatePrompt(initialPrompt, 1.0);
-        
+
         if (autoPlay) {
+            this.isManuallyPaused = false;
             this.session?.play();
+        } else {
+            this.isManuallyPaused = true;
+            this.session?.pause();
         }
-        
+
         this.startHealthCheck();
     }
 
@@ -280,10 +284,12 @@ export class MusicClient {
     }
 
     pause() {
+        this.isManuallyPaused = true;
         this.session?.pause();
     }
 
     resume() {
+        this.isManuallyPaused = false;
         this.session?.play();
     }
 
@@ -312,6 +318,7 @@ export class MusicClient {
     // --- Smart Buffer Management ---
     private healthCheckInterval: number = 0;
     private isSmartPaused = false;
+    private isManuallyPaused = false;
     private bufferHealth = 0; // 0..100% (based on 50s target)
 
     private startHealthCheck() {
@@ -338,6 +345,7 @@ export class MusicClient {
         
         // Target: 12s = 100% (User requested lower latency)
         this.bufferHealth = Math.min(100, Math.max(0, (secondsBuffered / 12) * 100));
+        if (this.isManuallyPaused) return;
 
         // Logic
         const now = Date.now();
@@ -363,11 +371,12 @@ export class MusicClient {
     }
 
     public getSmartStatus(): string {
+        if (this.isManuallyPaused) return 'PAUSED';
         return this.isSmartPaused ? 'SAVING' : 'GENERATING';
     }
 
     public isGenerating(): boolean {
-        return this.isConnected && !this.isSmartPaused;
+        return this.isConnected && !this.isSmartPaused && !this.isManuallyPaused;
     }
 
     public isConnectedState(): boolean {
@@ -392,6 +401,7 @@ export class MusicClient {
         this.resetBufferCount = 0;
         this.hasHighConfidenceBpm = false;
         this.pendingJump = false;
+        this.isManuallyPaused = false;
         
         // Reconnect (which creates new session)
         await this.connect();

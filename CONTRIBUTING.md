@@ -1,21 +1,21 @@
 # Contributing to Bio:gram
 
-Bio:gram プロジェクトへの貢献に興味を持っていただきありがとうございます！
+Thank you for your interest in contributing to the Bio:gram project!
 
-## 開発プロセス
+## Development Process
 
-1.  このリポジトリをフォークします。
-2.  新しいブランチを作成します (`git checkout -b feature/amazing-feature`).
-3.  変更をコミットします (`git commit -m 'Add some amazing feature'`).
-4.  ブランチにプッシュします (`git push origin feature/amazing-feature`).
-5.  プルリクエストを作成します。
+1.  Fork this repository.
+2.  Create a new branch (`git checkout -b feature/amazing-feature`).
+3.  Commit your changes (`git commit -m 'Add some amazing feature'`).
+4.  Push to the branch (`git push origin feature/amazing-feature`).
+5.  Create a Pull Request.
 
-## コードスタイル
+## Code Style
 
-- TypeScriptを使用しています。型定義を適切に行ってください。
-- コミットメッセージは明確に、何を変更したかがわかるように記述してください。
+- We use TypeScript. Please define types appropriately.
+- Write clear commit messages that explain what changes were made.
 
-## バグ報告
+## Bug Reporting
 
-Issue Tracker を使用してバグを報告してください。
-再現手順、期待される動作、実際の動作を含めてください。
+Please report bugs using the Issue Tracker.
+Include reproduction steps, expected behavior, and actual behavior.

@@ -261,33 +261,31 @@ export class LoopLibraryPanel extends LitElement {
   @state() private selectedId: string | null = null;
   @state() private availableTags: string[] = [];
   @state() private selectedTag: string = '';
-  @state() private isRecommendMode: boolean = false;
-  @property({ type: String }) targetDeck: 'A' | 'B' = 'A';
-
   private libraryStore: LibraryStore | null = null;
   
   // Minimum valid audio ratio for displaying samples (lower than this will be hidden)
   private static readonly MIN_VALID_AUDIO_RATIO = 0.8;
 
-  async connectedCallback() {
+  connectedCallback() {
     super.connectedCallback();
-    await this.loadLibrary();
+    this.loadLibrary();
+    window.addEventListener('library-updated', this.handleLibraryUpdated);
   }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('library-updated', this.handleLibraryUpdated);
+  }
+
+  private handleLibraryUpdated = async () => {
+    await this.loadLibrary();
+  };
 
   private async loadLibrary() {
     try {
       this.libraryStore = new LibraryStore();
       await this.libraryStore.init();
-      const allSamples = await this.libraryStore.getAllSamples();
-      
-      // Filter out samples with insufficient audio (but keep legacy samples without validAudioRatio)
-      this.samples = allSamples.filter((s) => {
-        // If validAudioRatio is not set (legacy data), show it
-        if (s.validAudioRatio === undefined) return true;
-        // Otherwise, only show samples with enough valid audio
-        return s.validAudioRatio >= LoopLibraryPanel.MIN_VALID_AUDIO_RATIO;
-      });
-      
+      this.samples = await this.libraryStore.getAllSamples();
       this.filteredSamples = this.samples;
       this.availableTags = await this.libraryStore.getAllTags();
     } catch (e) {
@@ -297,29 +295,10 @@ export class LoopLibraryPanel extends LitElement {
 
   private filterByTag(tag: string) {
     this.selectedTag = tag;
-    this.isRecommendMode = false;
     if (!tag) {
       this.filteredSamples = this.samples;
     } else {
       this.filteredSamples = this.samples.filter(s => s.tags.includes(tag));
-    }
-  }
-
-  private async showRecommendations() {
-    this.isRecommendMode = !this.isRecommendMode;
-    this.selectedTag = '';
-    
-    if (this.isRecommendMode) {
-      // Get current deck vector from engine
-      const engine = window.engine;
-      if (engine && engine.getCurrentVector) {
-        const vector = engine.getCurrentVector(this.targetDeck);
-        if (!this.libraryStore) return;
-        this.filteredSamples = await this.libraryStore.findSimilar(vector, 10);
-        if (import.meta.env.DEV) console.log('[LoopLibrary] Showing recommendations based on deck', this.targetDeck);
-      }
-    } else {
-      this.filteredSamples = this.samples;
     }
   }
 
@@ -336,10 +315,6 @@ export class LoopLibraryPanel extends LitElement {
 
   private handleSelect(id: string) {
     this.selectedId = this.selectedId === id ? null : id;
-  }
-
-  private setTargetDeck(deck: 'A' | 'B') {
-    this.targetDeck = deck;
   }
 
   private async handleLoad(sample: LoopSample, deck: 'A' | 'B') {
@@ -485,12 +460,6 @@ export class LoopLibraryPanel extends LitElement {
     return html`
       <div class="header">
         <span class="title">LOOP LIBRARY</span>
-        <div class="deck-selector">
-          <button class="deck-btn ${this.targetDeck === 'A' ? 'active' : ''}"
-                  @click="${() => this.setTargetDeck('A')}">A</button>
-          <button class="deck-btn ${this.targetDeck === 'B' ? 'active' : ''}"
-                  @click="${() => this.setTargetDeck('B')}">B</button>
-        </div>
       </div>
       
       <!-- TOOLBAR: Tag Filter + Recommend -->
@@ -507,19 +476,15 @@ export class LoopLibraryPanel extends LitElement {
             <option value="${tag}" ?selected="${tag === this.selectedTag}">${tag}</option>
           `)}
         </select>
-        <button class="toolbar-btn ${this.isRecommendMode ? 'active' : ''}" 
-                @click="${this.showRecommendations}">
-          ✨ REC
-        </button>
       </div>
       
       <div class="list">
         ${this.filteredSamples.length === 0 
           ? html`
             <div class="empty">
-              <div class="empty-icon">${this.isRecommendMode ? '✨' : '💾'}</div>
-              <div>${this.isRecommendMode ? '推薦なし' : 'ライブラリが空です'}</div>
-              <div style="font-size: 9px; margin-top: 4px;">${this.isRecommendMode ? 'デッキを再生してください' : 'SAVEボタンでループを保存'}</div>
+              <div class="empty-icon">💾</div>
+              <div>ライブラリが空です</div>
+              <div style="font-size: 9px; margin-top: 4px;">SAVEボタンでループを保存</div>
             </div>
           `
           : this.filteredSamples.map(sample => html`

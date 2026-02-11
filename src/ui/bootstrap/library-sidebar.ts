@@ -33,7 +33,7 @@ export function setupLibrarySidebar(params: {
     height: '100vh',
     background: '#0a0a0a',
     borderLeft: '1px solid #222',
-    zIndex: '500',
+    zIndex: '2000',
     transition: 'right 0.3s ease-in-out',
     boxShadow: '-4px 0 20px rgba(0,0,0,0.5)'
   });
@@ -70,7 +70,7 @@ export function setupLibrarySidebar(params: {
     borderRight: 'none',
     borderRadius: '8px 0 0 8px',
     cursor: 'pointer',
-    zIndex: '499',
+    zIndex: '2001',
     fontSize: '12px',
     fontFamily: 'monospace',
     letterSpacing: '3px',
@@ -102,7 +102,7 @@ export function setupLibrarySidebar(params: {
     color: '#71717a',
     fontSize: '20px',
     cursor: 'pointer',
-    zIndex: '501',
+    zIndex: '2002',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

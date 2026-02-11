@@ -28,6 +28,16 @@ export class AutomationEngine {
       'DECK_A_SLICER_RATE', 'DECK_B_SLICER_RATE',
       'SLICER_ON', 'SLICER_RATE', 'SLICER_ACTIVE'
   ];
+
+  // Strict allowlist for AI automation path:
+  // EQ + crossfader + mild echo/reverb only.
+  private static readonly ALLOWED_PARAMS = [
+      'CROSSFADER',
+      'DECK_A_EQ_HI', 'DECK_A_EQ_MID', 'DECK_A_EQ_LOW',
+      'DECK_B_EQ_HI', 'DECK_B_EQ_MID', 'DECK_B_EQ_LOW',
+      'DECK_A_ECHO_SEND', 'DECK_B_ECHO_SEND',
+      'DECK_A_REVERB_MIX', 'DECK_B_REVERB_MIX'
+  ];
   
   // Track mix direction to protect source deck from being stopped
   private mixDirection: 'A->B' | 'B->A' | null = null;
@@ -314,6 +324,14 @@ export class AutomationEngine {
   }
 
   private applyParam(id: ParameterID, val: number | boolean) {
+      if (!AutomationEngine.ALLOWED_PARAMS.includes(id as string)) {
+          if (!this.loggedBlockedCommands.has(`not_allowed_${id}`)) {
+              this.loggedBlockedCommands.add(`not_allowed_${id}`);
+              console.warn(`[AutomationEngine] Blocked non-allowed parameter: ${id}`);
+          }
+          return;
+      }
+
       // Block FORBIDDEN parameters (TRIM, DRIVE)
       if (AutomationEngine.FORBIDDEN_PARAMS.includes(id as string)) {
           // Log only once
