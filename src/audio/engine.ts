@@ -423,6 +423,7 @@ export class AudioEngine {
    */
   updateAiPrompt(deck: 'A' | 'B', text: string, weight: number = 1.0) {
       this.deckSourceMode[deck] = 'ai';
+      this.updateDspParam('SOURCE_MODE', 0.0, deck);
       this.applyDeckGenerationState(deck);
       if (deck === 'B') this.musicClientB?.updatePrompt(text, weight);
       else this.musicClientA?.updatePrompt(text, weight);
@@ -434,6 +435,7 @@ export class AudioEngine {
    */
   async resetAiSession(deck: 'A' | 'B', prompt: string) {
       this.deckSourceMode[deck] = 'ai';
+      this.updateDspParam('SOURCE_MODE', 0.0, deck);
       // 1. Clear physical buffer and visual state immediately
       this.clearBuffer(deck);
       this.updateDspParam('TAPE_STOP', 1.0, deck); // Ensure tape is stopped until we are ready
@@ -868,7 +870,9 @@ export class AudioEngine {
       }
 
       this.deckSourceMode[deck] = 'sample';
+      this.updateDspParam('SOURCE_MODE', 1.0, deck);
       this.applyDeckGenerationState(deck);
+      this.setLoop(deck, 0, 0, 0, -1, false);
 
       // Calculate buffer positions
       // Each deck buffer is interleaved stereo: [L, R, L, R, ...]
@@ -886,11 +890,10 @@ export class AudioEngine {
           this.audioData[idx + 1] = s;
       }
       
-      // Set write pointer to a very high frame value to allow continuous looping
-      // The AudioWorklet processor will read up to writePtr, so we set it very high
+      // Sample mode wraps read pointers in the worklet, so we only need one deck-length readable window.
       const writePtrOffset = deck === 'A' ? OFFSETS.WRITE_POINTER_A : OFFSETS.WRITE_POINTER_B;
-      const loopWritePtr = framesPerDeck * 1000; // Allow many loops before potential wrap
-      Atomics.store(this.headerView, writePtrOffset / 4, loopWritePtr);
+      const minWritePtr = Math.max(4, framesPerDeck + 2);
+      Atomics.store(this.headerView, writePtrOffset / 4, minWritePtr);
       
       // Reset read pointer to start of buffer
       const readPtrOffset = deck === 'A' ? OFFSETS.READ_POINTER_A : OFFSETS.READ_POINTER_B;

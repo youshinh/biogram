@@ -22,7 +22,8 @@ export function setupLibrarySidebar(params: {
   const { engine, deckA, deckB } = params;
 
   let libraryPanelVisible = false;
-  const libraryPanel = document.createElement('loop-library-panel') as LoopLibraryPanelElement;
+  let panelModulePromise: Promise<unknown> | null = null;
+  let libraryPanel: LoopLibraryPanelElement | null = null;
   const libraryPanelContainer = document.createElement('div');
 
   const isMobile = () => window.innerWidth <= 1024;
@@ -41,22 +42,32 @@ export function setupLibrarySidebar(params: {
     boxShadow: '-4px 0 20px rgba(0,0,0,0.5)'
   });
 
-  libraryPanelContainer.appendChild(libraryPanel);
   document.body.appendChild(libraryPanelContainer);
 
-  const setLibraryPanelVisible = (visible: boolean) => {
+  const ensureLibraryPanel = async () => {
+    if (libraryPanel) return libraryPanel;
+    if (!panelModulePromise) {
+      panelModulePromise = import('../modules/loop-library-panel');
+    }
+    await panelModulePromise;
+    libraryPanel = document.createElement('loop-library-panel') as LoopLibraryPanelElement;
+    libraryPanelContainer.appendChild(libraryPanel);
+    return libraryPanel;
+  };
+
+  const setLibraryPanelVisible = async (visible: boolean) => {
     libraryPanelVisible = visible;
     const width = panelWidth();
     libraryPanelContainer.style.width = width;
     libraryPanelContainer.style.right = libraryPanelVisible ? '0' : `-${width}`;
     sideToggleBtn.style.right = libraryPanelVisible ? width : '0';
     if (libraryPanelVisible) {
-      libraryPanel.refresh?.();
+      (await ensureLibraryPanel()).refresh?.();
     }
   };
 
-  const toggleLibraryPanel = () => {
-    setLibraryPanelVisible(!libraryPanelVisible);
+  const toggleLibraryPanel = async () => {
+    await setLibraryPanelVisible(!libraryPanelVisible);
   };
 
   const sideToggleBtn = document.createElement('button');
@@ -91,7 +102,9 @@ export function setupLibrarySidebar(params: {
     sideToggleBtn.style.background = '#18181b';
     sideToggleBtn.style.color = '#a1a1aa';
   };
-  sideToggleBtn.onclick = toggleLibraryPanel;
+  sideToggleBtn.onclick = () => {
+    void toggleLibraryPanel();
+  };
   document.body.appendChild(sideToggleBtn);
 
   const closeBtn = document.createElement('button');
@@ -121,7 +134,9 @@ export function setupLibrarySidebar(params: {
     closeBtn.style.color = '#71717a';
     closeBtn.style.background = 'transparent';
   };
-  closeBtn.onclick = () => setLibraryPanelVisible(false);
+  closeBtn.onclick = () => {
+    void setLibraryPanelVisible(false);
+  };
   libraryPanelContainer.appendChild(closeBtn);
 
   const handleLoopLoad = (event: Event) => {
@@ -132,7 +147,7 @@ export function setupLibrarySidebar(params: {
     const targetDeck = deck === 'A' ? deckA : deckB;
     targetDeck.bpm = sample.bpm;
     targetDeck.generatedPrompt = `[LOOP] ${sample.name}`;
-    setLibraryPanelVisible(false);
+    void setLibraryPanelVisible(false);
   };
 
   window.addEventListener('loop-load', handleLoopLoad);

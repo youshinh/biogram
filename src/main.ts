@@ -1,5 +1,10 @@
 import '../index.css';
 
+// Suppress the noisy Lit dev-mode warning in local dev logs.
+// This does not change runtime behavior.
+const litWarnings = ((globalThis as any).litIssuedWarnings ??= new Set<string>());
+litWarnings.add('dev-mode');
+
 const preboot = document.createElement('div');
 preboot.className = 'boot-overlay';
 
@@ -17,7 +22,12 @@ stage.appendChild(logo);
 preboot.appendChild(stage);
 document.body.appendChild(preboot);
 
-void import('./app')
+const params = new URLSearchParams(window.location.search);
+const appModulePromise = params.get('mode') === 'viz'
+  ? import('./viz-app')
+  : import('./app');
+
+void appModulePromise
   .then(() => {
     preboot.style.opacity = '0';
     window.setTimeout(() => preboot.remove(), 220);

@@ -2,16 +2,25 @@ import { ControlRouter } from '../control/control-router';
 import { getParameterDefinition, type ParameterId } from '../control/parameter-registry';
 import { MidiMappingStore, type MidiMapping, type MidiMessage } from './midi-mapping-store';
 
+type MidiManagerOptions = {
+  enabled?: boolean;
+};
+
 export class MidiManager {
   private midi: WebMidi.MIDIAccess | null = null;
   private inputs: Map<string, WebMidi.MIDIInput> = new Map();
   private readonly router: ControlRouter;
   private readonly mappingStore = new MidiMappingStore();
   private toggleState = new Map<string, boolean>();
+  private enabled = false;
+  private initializing = false;
 
-  constructor(router: ControlRouter) {
+  constructor(router: ControlRouter, options: MidiManagerOptions = {}) {
     this.router = router;
-    void this.init();
+    this.enabled = Boolean(options.enabled);
+    if (this.enabled) {
+      void this.enable();
+    }
   }
 
   getMappings(): MidiMapping[] {
@@ -26,12 +35,42 @@ export class MidiManager {
     this.mappingStore.resetToDefault();
   }
 
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  async enable(): Promise<void> {
+    if (this.enabled && this.midi) return;
+    this.enabled = true;
+    await this.init();
+  }
+
+  disable(): void {
+    this.enabled = false;
+    this.teardown();
+  }
+
+  private teardown() {
+    this.midi?.inputs.forEach((input) => {
+      input.onmidimessage = null;
+      void input.close().catch(() => undefined);
+    });
+    if (this.midi) {
+      this.midi.onstatechange = null;
+    }
+    this.inputs.clear();
+    this.midi = null;
+  }
+
   private async init() {
+    if (!this.enabled) return;
+    if (this.initializing || this.midi) return;
     if (!navigator.requestMIDIAccess) {
       console.warn('[MIDI] Web MIDI API not supported.');
       return;
     }
 
+    this.initializing = true;
     try {
       this.midi = await navigator.requestMIDIAccess();
       console.log('[MIDI] Access granted');
@@ -41,6 +80,7 @@ export class MidiManager {
       });
 
       this.midi.onstatechange = (e: WebMidi.MIDIConnectionEvent) => {
+        if (!this.enabled) return;
         const port = e.port;
         if (port.type !== 'input') return;
 
@@ -52,10 +92,13 @@ export class MidiManager {
       };
     } catch (err) {
       console.error('[MIDI] Access denied or failed', err);
+    } finally {
+      this.initializing = false;
     }
   }
 
   private addInput(input: WebMidi.MIDIInput) {
+    if (!this.enabled) return;
     if (this.inputs.has(input.id)) return;
 
     console.log(`[MIDI] Input connected: ${input.name} (${input.manufacturer})`);
@@ -70,6 +113,7 @@ export class MidiManager {
   }
 
   private handleMessage(inputId: string, e: WebMidi.MIDIMessageEvent) {
+    if (!this.enabled) return;
     const data = e.data;
     if (!data || data.length < 2) return;
 

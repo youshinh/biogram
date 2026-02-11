@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
-import { LibraryStore, type LoopSample } from '../../audio/db/library-store';
+import type { LibraryStore, LoopSample } from '../../audio/db/library-store';
+import { getLibraryStore as getSharedLibraryStore } from '../../audio/db/library-store-singleton';
 import { BeatDetector } from '../../audio/analysis/beat-detector';
 import { calculateVector } from '../../audio/utils/audio-analysis';
 
@@ -382,8 +383,7 @@ export class LoopLibraryPanel extends LitElement {
 
   private async loadLibrary() {
     try {
-      this.libraryStore = new LibraryStore();
-      await this.libraryStore.init();
+      this.libraryStore = await getSharedLibraryStore();
       this.samples = await this.libraryStore.getAllSamples();
       this.filteredSamples = this.samples;
       this.availableTags = await this.libraryStore.getAllTags();

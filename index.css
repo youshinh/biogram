@@ -81,6 +81,8 @@ body {
   transition: all 0.2s ease;
   opacity: 0;
   pointer-events: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .boot-start-btn.visible {
@@ -88,10 +90,12 @@ body {
   pointer-events: auto;
 }
 
-.boot-start-btn:hover {
-  color: #fff;
-  border-color: #06b6d4;
-  box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+@media (hover: hover) and (pointer: fine) {
+  .boot-start-btn:hover {
+    color: #fff;
+    border-color: #06b6d4;
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+  }
 }
 
 .boot-start-btn:active {

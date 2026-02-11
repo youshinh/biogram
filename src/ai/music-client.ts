@@ -1,7 +1,8 @@
 import type { LiveMusicSession, LiveMusicServerMessage } from '@google/genai';
 import { GoogleGenAI } from '@google/genai';
 import { StreamAdapter } from '../audio/stream-adapter';
-import { LibraryStore } from '../audio/db/library-store';
+import type { LibraryStore } from '../audio/db/library-store';
+import { getLibraryStore } from '../audio/db/library-store-singleton';
 import { AudioAnalyser } from '../audio/analysis/analyser';
 import { BeatDetector } from '../audio/analysis/beat-detector';
 import { VisualAnalyzer } from './visual-analyzer';
@@ -35,7 +36,7 @@ export class MusicClient {
     private isConnected = false;
 
     // Ghost System
-    private library: LibraryStore;
+    private library: LibraryStore | null = null;
     private archiveBuffer: Float32Array[] = [];
     private archiveSampleCount = 0;
     private readonly ARCHIVE_THRESHOLD = 48000 * 4; // ~4 seconds chunk size
@@ -52,6 +53,9 @@ export class MusicClient {
     // Auto-Reconnect
     private lastPromptText: string = '';
     private lastPromptWeight: number = 1.0;
+    private lastSentPromptText: string = '';
+    private lastSentPromptWeight: number = 1.0;
+    private lastSentPromptAt: number = 0;
     private reconnectAttempts = 0;
     private readonly MAX_RECONNECT_ATTEMPTS = 5;
     private reconnectTimer: number = 0;
@@ -79,8 +83,8 @@ export class MusicClient {
         this.onAnalysis = onAnalysis;
         this.onTrackStart = onTrackStart;
         this.visualAnalyzer = new VisualAnalyzer();
-        this.library = new LibraryStore();
-        this.library.init().then(() => {
+        getLibraryStore().then((store) => {
+             this.library = store;
              this.library.getCount().then(c => this.savedChunksCount = c || 0);
         }).catch(e => console.error("Library Init Failed", e));
     }
@@ -198,6 +202,10 @@ export class MusicClient {
         const startFrame = Math.max(0, endFrame - chunkFrames);
         
     // Analyze & Save (Async)
+        if (!this.library) {
+            this.library = await getLibraryStore();
+        }
+
         const stats = AudioAnalyser.analyze(merged);
         await this.library.saveChunk(merged, stats);
         this.savedChunksCount++;
@@ -280,10 +288,19 @@ export class MusicClient {
         this.lastPromptWeight = weight;
         
         if (!this.session) return;
+        const now = Date.now();
+        const isDuplicate =
+            this.lastSentPromptText === text &&
+            this.lastSentPromptWeight === weight &&
+            (now - this.lastSentPromptAt) < 1000;
+        if (isDuplicate) return;
         try {
             await this.session.setWeightedPrompts({
                 weightedPrompts: [{ text, weight }]
             });
+            this.lastSentPromptText = text;
+            this.lastSentPromptWeight = weight;
+            this.lastSentPromptAt = now;
             console.log(`MusicClient: Prompt updated: ${text}`);
             this.lastPromptChange = Date.now(); // Trigger Burst Mode
         } catch(e) {

@@ -176,6 +176,42 @@ Open: `http://localhost:3000`
 6. Optionally switch visual modes or open projector mode.
 7. Save loops to library and reload/import/export as needed.
 
+## WebMCP (AIMIX Agent Control)
+
+Bio:gram now exposes AIMIX controls to in-browser agents via WebMCP (Imperative API).
+
+### Exposed tools
+
+- `aimix_generate`: request mix generation (single/free mode).
+- `aimix_start`: start generated mix (`READY` required).
+- `aimix_cancel`: cancel generated mix before start (`READY` required).
+- `aimix_abort`: stop running mix (`MIXING/WAIT_NEXT/POST_REGEN` required).
+- `aimix_get_state`: read current AIMIX/deck state snapshot.
+
+### Agent-side setup (Chrome Early Preview)
+
+1. Use Chrome `146.0.7672.0` or newer.
+2. Open `chrome://flags/#enable-webmcp-testing` and set **WebMCP for testing** to `Enabled`.
+3. Relaunch Chrome.
+4. Start Bio:gram (`npm run dev`) and open the app tab.
+5. (Recommended) Install and open **Model Context Tool Inspector** extension to:
+   - confirm registered tools
+   - run tools manually
+   - test natural-language invocation via Gemini in the extension
+
+### Recommended invocation flow
+
+1. Ask user to click `INITIALIZE SYSTEM` first.
+2. Call `aimix_generate` with desired parameters.
+3. Poll `aimix_get_state` until `mixState === "READY"`.
+4. Call `aimix_start`.
+5. During playback, use `aimix_get_state` (and `aimix_abort` if needed).
+
+### Important note (MCP vs WebMCP)
+
+- This implementation is **WebMCP** (browser-native, tab context required), not a standalone MCP server endpoint.
+- If you need remote/server-side MCP clients, add a separate MCP server layer that calls app/backend APIs.
+
 ## Evaluation / Verification Assets
 
 There is no `npm test` script yet.

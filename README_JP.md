@@ -178,6 +178,43 @@ npm run dev
 6. 必要に応じて Visual モード切替 / Projector 利用
 7. ループを保存し、ライブラリから再読込
 
+## WebMCP（AIMIX のエージェント操作）
+
+Bio:gram は WebMCP（Imperative API）で AIMIX 操作を外部エージェントに公開しています。
+
+### 公開ツール
+
+- `aimix_generate`: ミックス生成要求（single/free 両対応）
+- `aimix_start`: 生成済みミックスの開始（`READY` 必須）
+- `aimix_cancel`: 開始前キャンセル（`READY` 必須）
+- `aimix_abort`: 実行中停止（`MIXING/WAIT_NEXT/POST_REGEN` 必須）
+- `aimix_get_state`: AIMIX/Deck の状態スナップショット取得
+
+### 利用者側設定（Chrome Early Preview）
+
+1. Chrome `146.0.7672.0` 以上を使用
+2. `chrome://flags/#enable-webmcp-testing` を開く
+3. **WebMCP for testing** を `Enabled` にする
+4. Chrome を再起動
+5. `npm run dev` で Bio:gram を起動してタブを開く
+6. （推奨）**Model Context Tool Inspector** 拡張を入れて、
+   - ツール登録確認
+   - 手動実行
+   - Gemini 連携で自然言語呼び出しテスト
+
+### 推奨呼び出しフロー
+
+1. ユーザーに `INITIALIZE SYSTEM` を押してもらう
+2. `aimix_generate` を呼ぶ
+3. `aimix_get_state` で `mixState === "READY"` を待つ
+4. `aimix_start` を呼ぶ
+5. 実行中は `aimix_get_state` を参照し、必要時に `aimix_abort`
+
+### 重要: MCP と WebMCP の違い
+
+- 今回の実装は **WebMCP**（ブラウザ内・タブ文脈必須）です。単体の MCP サーバーではありません。
+- サーバー側/リモート MCP クライアント対応が必要なら、別途 MCP サーバー層を追加してください。
+
 ## 評価・検証アセット
 
 現時点では `npm test` は未定義です。補助スクリプトとして以下があります。

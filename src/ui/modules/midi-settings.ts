@@ -81,6 +81,7 @@ export class MidiSettings extends LitElement {
 
   @state() private open = false;
   @state() private mappings: MidiMapping[] = [];
+  @state() private midiEnabled = false;
 
   private parameterIds = Object.keys(PARAMETER_REGISTRY);
 
@@ -93,6 +94,7 @@ export class MidiSettings extends LitElement {
     const midiManager = window.midiManager;
     if (!midiManager) return;
     this.mappings = midiManager.getMappings();
+    this.midiEnabled = midiManager.isEnabled();
   }
 
   private toggleOpen = () => {
@@ -130,6 +132,17 @@ export class MidiSettings extends LitElement {
     this.reloadMappings();
   };
 
+  private toggleMidiEnabled = async () => {
+    const midiManager = window.midiManager;
+    if (!midiManager) return;
+    if (midiManager.isEnabled()) {
+      midiManager.disable();
+    } else {
+      await midiManager.enable();
+    }
+    this.reloadMappings();
+  };
+
   render() {
     return html`
       ${this.open
@@ -138,9 +151,10 @@ export class MidiSettings extends LitElement {
               <div class="actions">
                 <div>
                   <div>MIDI MAPPING</div>
-                  <div class="hint">CC/NOTE -> PARAMETER ROUTING</div>
+                  <div class="hint">CC/NOTE -> PARAMETER ROUTING (${this.midiEnabled ? 'ON' : 'OFF'})</div>
                 </div>
                 <div>
+                  <button class="btn" @click=${this.toggleMidiEnabled}>${this.midiEnabled ? 'DISABLE MIDI' : 'ENABLE MIDI'}</button>
                   <button class="btn" @click=${this.saveMappings}>SAVE</button>
                   <button class="btn" @click=${this.resetMappings}>RESET</button>
                 </div>

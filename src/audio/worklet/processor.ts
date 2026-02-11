@@ -228,6 +228,8 @@ class GhostProcessor extends AudioWorkletProcessor {
   private loopCrossfadeB: number = 0;
   private loopCountB: number = -1;
   private loopRemainingB: number = -1;
+  private sampleModeA: boolean = false;
+  private sampleModeB: boolean = false;
 
   // CLOUD GRAIN STATE
   private cloudActive: boolean = false;
@@ -341,6 +343,11 @@ class GhostProcessor extends AudioWorkletProcessor {
 
           if (param === 'MUTE_A') this.muteTargetA = (value > 0.5) ? 0.0 : 1.0; 
           if (param === 'MUTE_B') this.muteTargetB = (value > 0.5) ? 0.0 : 1.0;
+          if (param === 'SOURCE_MODE') {
+              const isSample = value > 0.5;
+              if (deck === 'A') this.sampleModeA = isSample;
+              if (deck === 'B') this.sampleModeB = isSample;
+          }
 
           if (param === 'FILTER_ACTIVE') this.filterActive = value > 0.5;
           if (param === 'FILTER_DRIVE') this.filterDrive = value;
@@ -573,11 +580,15 @@ class GhostProcessor extends AudioWorkletProcessor {
         for (let i = 0; i < leftChannel.length; i++) {
             // Fail-safe: never read beyond generated frames.
             if (ptrA > safeReadableA) {
-                if (this.loopActiveA && this.loopStartA < safeReadableA) ptrA = this.loopStartA;
+                if (this.sampleModeA) {
+                    ptrA = ((Math.floor(ptrA) % maxFrames) + maxFrames) % maxFrames;
+                } else if (this.loopActiveA && this.loopStartA < safeReadableA) ptrA = this.loopStartA;
                 else ptrA = safeReadableA;
             }
             if (ptrB > safeReadableB) {
-                if (this.loopActiveB && this.loopStartB < safeReadableB) ptrB = this.loopStartB;
+                if (this.sampleModeB) {
+                    ptrB = ((Math.floor(ptrB) % maxFrames) + maxFrames) % maxFrames;
+                } else if (this.loopActiveB && this.loopStartB < safeReadableB) ptrB = this.loopStartB;
                 else ptrB = safeReadableB;
             }
 
