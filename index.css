@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Oswald:wght@400;500;600&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Oswald:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -7,7 +7,7 @@
 :root {
   background-color: #0a0a0c;
   color: #d4d4d8;
-  font-family: 'Comfortaa', sans-serif;
+  font-family: "Comfortaa", sans-serif;
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -32,9 +32,81 @@ body {
   background: transparent;
 }
 
+/* Boot Overlay */
+.boot-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2400;
+  opacity: 1;
+  transition: opacity 420ms ease;
+}
+
+.boot-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 24px;
+}
+
+.boot-logo {
+  color: #fff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: clamp(18px, 3.2vw, 42px);
+  letter-spacing: 0.12em;
+  opacity: 0;
+  transition: opacity 640ms ease;
+}
+
+.boot-logo.visible {
+  opacity: 1;
+}
+
+.boot-start-btn {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: 1px solid #333;
+  background: #0b0b0b;
+  color: #9ca3af;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot-start-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.boot-start-btn:hover {
+  color: #fff;
+  border-color: #06b6d4;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+}
+
+.boot-start-btn:active {
+  transform: translateY(1px);
+}
+
+.boot-start-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+}
+
 /* Slider value font - bold, no slashed zeros */
 .slider-value {
-  font-family: 'Oswald', sans-serif;
+  font-family: "Oswald", sans-serif;
   font-weight: 500;
 }
 
@@ -55,7 +127,7 @@ body {
   justify-content: center;
   aspect-ratio: 1;
   position: relative;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .xy-cell.wide {
@@ -68,7 +140,7 @@ body {
   border-radius: 9999px;
   background: radial-gradient(130% 130% at 30% 30%, #3f3f46 0%, #18181b 100%);
   border: 1px solid #09090b;
-  box-shadow: 
+  box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition: all 0.05s ease-out;
@@ -84,12 +156,13 @@ body {
   color: #e4e4e7; /* zinc-200 */
 }
 
-.btn-xy:active, .btn-xy.active {
+.btn-xy:active,
+.btn-xy.active {
   width: 68%; /* Slight shrink effect */
   height: 68%;
   background: #18181b;
-  box-shadow: 
-    0 0 0 1px rgba(0,0,0,0.5),
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
     inset 0 1px 3px rgba(0, 0, 0, 0.8);
   transform: translateY(1px);
   border-color: #000;
@@ -108,10 +181,8 @@ body {
   align-items: center;
   justify-content: center;
   color: #fff;
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
 }
-
-
 
 /* Responsive Controls Grid */
 .controls-grid {
@@ -124,26 +195,35 @@ body {
 @media (max-width: 1024px) {
   .controls-grid {
     display: flex;
-    flex-wrap: nowrap; /* Change to nowrap for horizontal scroll */
+    flex-wrap: nowrap;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     gap: 12px;
     height: auto;
     min-height: 140px;
-    padding-bottom: 8px; /* Scrollbar space */
+    padding-bottom: 8px;
   }
 
-  /* MOBILE: Enable scrolling by overriding :root overflow */
-  :root, html, body {
-    overflow: auto !important;
-    overflow-x: hidden !important;
-    height: auto !important;
-    min-height: 100% !important;
+  /* MOBILE: Lock viewport to prevent body scroll — shell handles its own scroll */
+  :root,
+  html,
+  body {
+    overflow: hidden !important;
+    height: 100vh !important;
+    height: 100dvh !important;
   }
-  
+
   #app-root {
-    height: auto !important;
-    min-height: 100vh;
-    overflow: visible !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
     display: block;
+  }
+
+  /* Touch-friendly interactive elements */
+  button,
+  select,
+  input[type="range"] {
+    touch-action: manipulation;
   }
 }

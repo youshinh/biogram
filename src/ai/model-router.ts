@@ -1,4 +1,4 @@
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { postBackendJson } from '../api/backend-client';
 
 export type PlannerModel =
   | 'gemini-flash-lite-latest'
@@ -21,11 +21,7 @@ type GenerationRequest = {
 type ProProfile = 'low' | 'balanced';
 
 export class ModelRouter {
-  private ai: GoogleGenAI;
-
-  constructor(ai: GoogleGenAI) {
-    this.ai = ai;
-  }
+  constructor() {}
 
   async generateWithFallback(
     req: GenerationRequest,
@@ -108,41 +104,21 @@ export class ModelRouter {
     timeoutMs: number,
     proProfile: ProProfile = 'low'
   ): Promise<string> {
-    const config: any = {
-      responseMimeType: 'application/json',
-      systemInstruction: {
-        parts: [{ text: req.systemPrompt }]
-      }
-    };
-
-    // Apply high-thinking planner config only for Gemini 3 Pro mix planning.
-    if (model === 'gemini-3-pro-preview') {
-      if (proProfile === 'low') {
-        config.temperature = 1.1;
-        config.thinkingConfig = {
-          thinkingLevel: ThinkingLevel.LOW
-        };
-      } else {
-        // Retry profile prioritizes response latency over maximal reasoning depth.
-        config.temperature = 0.8;
-        config.thinkingConfig = {
-          thinkingLevel: ThinkingLevel.MEDIUM
-        };
-      }
-    }
-
-    const response = await this.withTimeout(
-      this.ai.models.generateContent({
-        model,
-        config,
-        contents: [{
-          role: 'user',
-          parts: [{ text: req.userPrompt }]
-        }]
-      }),
-      timeoutMs
-    );
-
+    const mode = model === 'gemini-3-pro-preview'
+      ? 'mix-pro'
+      : model === 'gemini-3-flash-preview'
+        ? 'flash-preview'
+        : 'lite';
+    const response = await this.withTimeout(postBackendJson<{
+      text: string;
+      modelUsed: string;
+    }>('/api/ai/route', {
+      mode,
+      proProfile,
+      timeoutMs,
+      systemPrompt: req.systemPrompt,
+      userPrompt: req.userPrompt
+    }), timeoutMs + 1_000);
     const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim();
     if (!text) throw new Error(`Empty response from ${model}`);
     return text;

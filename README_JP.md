@@ -152,12 +152,13 @@ npm install
 プロジェクトルートに `.env` を作成:
 
 ```env
-VITE_GEMINI_API_KEY=your_api_key_here
+GEMINI_API_KEY=your_api_key_here
 ```
 
 補足:
 
-- 現在のクライアント実装は `VITE_GEMINI_API_KEY` を使用します。
+- `GEMINI_API_KEY` はローカルバックエンドミドルウェア（`/api/*`）のみで使用され、ブラウザ側コードには露出しません。
+- Realtime Lyria（Deck生成）は、WSリレー実装前のため、現状はアプリ内 API 設定ダイアログで入力したキーをクライアント側で利用します。
 
 ### 起動
 

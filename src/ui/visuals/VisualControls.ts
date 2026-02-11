@@ -111,6 +111,14 @@ export class VisualControls extends LitElement {
             .row-group > * {
                 flex: none;
             }
+
+            /* Hide non-essential panels on mobile */
+            .system-panel {
+                display: none;
+            }
+            .stack-col {
+                display: none;
+            }
         }
         
         /* Panel Containers */

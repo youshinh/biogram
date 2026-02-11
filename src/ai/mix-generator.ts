@@ -1,5 +1,3 @@
-
-import { GoogleGenAI } from '@google/genai';
 import type { AutomationScore } from '../types/ai-mix';
 import type {
     IntegratedMixPlan,
@@ -46,12 +44,10 @@ Your task is to create an "Integrated Mix Plan (JSON)" for audio + visual auto-m
 `;
 
 export class MixGenerator {
-    private ai: GoogleGenAI;
     private router: ModelRouter;
 
-    constructor(apiKey: string) {
-        this.ai = new GoogleGenAI({ apiKey });
-        this.router = new ModelRouter(this.ai);
+    constructor() {
+        this.router = new ModelRouter();
     }
 
     async generateScore(

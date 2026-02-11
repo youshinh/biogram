@@ -25,11 +25,14 @@ export function setupLibrarySidebar(params: {
   const libraryPanel = document.createElement('loop-library-panel') as LoopLibraryPanelElement;
   const libraryPanelContainer = document.createElement('div');
 
+  const isMobile = () => window.innerWidth <= 1024;
+  const panelWidth = () => isMobile() ? '100vw' : '300px';
+
   Object.assign(libraryPanelContainer.style, {
     position: 'fixed',
     top: '0',
-    right: '-300px',
-    width: '300px',
+    right: `-${isMobile() ? '100vw' : '300px'}`,
+    width: panelWidth(),
     height: '100vh',
     background: '#0a0a0a',
     borderLeft: '1px solid #222',
@@ -43,8 +46,10 @@ export function setupLibrarySidebar(params: {
 
   const setLibraryPanelVisible = (visible: boolean) => {
     libraryPanelVisible = visible;
-    libraryPanelContainer.style.right = libraryPanelVisible ? '0' : '-300px';
-    sideToggleBtn.style.right = libraryPanelVisible ? '300px' : '0';
+    const width = panelWidth();
+    libraryPanelContainer.style.width = width;
+    libraryPanelContainer.style.right = libraryPanelVisible ? '0' : `-${width}`;
+    sideToggleBtn.style.right = libraryPanelVisible ? width : '0';
     if (libraryPanelVisible) {
       libraryPanel.refresh?.();
     }
@@ -95,18 +100,18 @@ export function setupLibrarySidebar(params: {
     position: 'absolute',
     top: '10px',
     right: '10px',
-    width: '24px',
-    height: '24px',
+    width: '44px',
+    height: '44px',
     background: 'transparent',
     border: 'none',
     color: '#71717a',
-    fontSize: '20px',
+    fontSize: '24px',
     cursor: 'pointer',
     zIndex: '2002',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: '4px'
+    borderRadius: '8px'
   });
   closeBtn.onmouseenter = () => {
     closeBtn.style.color = 'white';

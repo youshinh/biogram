@@ -10,9 +10,9 @@ RUN npm install
 # Copy source
 COPY . .
 
-# Build (Accept API Key as Build Argument if needed, or use .env)
-# ARG VITE_GEMINI_API_KEY
-# ENV VITE_GEMINI_API_KEY=$VITE_GEMINI_API_KEY
+# Build (Server-side key is read at runtime by Vite middleware in dev/preview)
+# ARG GEMINI_API_KEY
+# ENV GEMINI_API_KEY=$GEMINI_API_KEY
 
 RUN npm run build
 

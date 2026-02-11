@@ -278,19 +278,28 @@ export class AppHeader extends LitElement {
         display: none !important;
       }
 
+      :host {
+        height: 48px;
+      }
+
       .mobile-tabbar {
         position: fixed;
         left: 0;
         right: 0;
         bottom: 0;
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-        padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
         background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.95));
         backdrop-filter: blur(14px);
         border-top: 1px solid rgba(255, 255, 255, 0.08);
         z-index: 1200;
+      }
+
+      .mobile-tab-btn {
+        min-height: 56px;
+        font-size: 13px;
       }
     }
   `;
@@ -367,6 +376,13 @@ export class AppHeader extends LitElement {
       }));
   }
 
+  private openMidiSettings() {
+      this.dispatchEvent(new CustomEvent('midi-settings-open', {
+          bubbles: true,
+          composed: true
+      }));
+  }
+
   render() {
     return html`
       <div class="header-container">
@@ -385,19 +401,18 @@ export class AppHeader extends LitElement {
           </div>
 
           <div class="right-controls">
+              <button class="api-btn" @click="${this.openMidiSettings}">MIDI</button>
               <button class="api-btn" @click="${this.openApiSettings}">API KEY</button>
           </div>
 
       </div>
 
-      <!-- MOBILE TAB BAR -->
+      <!-- MOBILE TAB BAR (3 tabs) -->
       <div class="mobile-tabbar">
           <button class="mobile-tab-btn ${this.currentView === 'DECK' ? 'active' : ''}"
                   @click="${() => this.switchView('DECK')}">Deck</button>
-          <button class="mobile-tab-btn ${this.currentView === 'RACK' ? 'active-rack' : ''}"
-                  @click="${() => this.switchView('RACK')}">FX</button>
-          <button class="mobile-tab-btn ${this.currentView === 'VISUAL' ? 'active-visual' : ''}"
-                  @click="${() => this.switchView('VISUAL')}">Visual</button>
+          <button class="mobile-tab-btn ${this.currentView === 'RACK' || this.currentView === 'VISUAL' ? (this.currentView === 'RACK' ? 'active-rack' : 'active-visual') : ''}"
+                  @click="${() => this.switchView(this.currentView === 'RACK' ? 'VISUAL' : 'RACK')}">FX / Visual</button>
           <button class="mobile-tab-btn ${this.currentView === 'SUPER' ? 'active-super' : ''}"
                   @click="${() => this.switchView('SUPER')}">AI Mix</button>
       </div>

@@ -430,12 +430,35 @@ export class SuperControls extends LitElement {
     @media (max-width: 820px) {
       :host {
         padding: 6px 4px 4px 4px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      /* Force single-column on mobile */
+      .container,
+      .container.layout-idle,
+      .container.layout-live {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: auto;
       }
       .panel {
         border-radius: 1rem;
       }
       .panel-director {
         padding: 10px;
+      }
+      /* On mobile, simplify panel-log: hide logs/status but keep action buttons */
+      .panel-log .log-entry { display: none; }
+      .panel-log .status-strip { display: none; }
+      .panel-log .action-hint { display: none; }
+      .panel-log .panel-header { display: none; }
+      .panel-log {
+        padding: 8px;
+        min-height: auto;
+        flex-grow: 0;
+      }
+      .panel-log > div:not(:last-child):not(:nth-last-child(2)) {
+        display: none;
       }
       .mode-switch {
         grid-template-columns: 1fr 1fr;
@@ -456,6 +479,18 @@ export class SuperControls extends LitElement {
       }
       .action-hint {
         font-size: 0.64rem;
+      }
+      /* Increase all button targets */
+      button {
+        min-height: 44px;
+        font-size: 14px;
+      }
+      .panel-header {
+        font-size: 14px;
+      }
+      .sub-section label,
+      .sub-section span {
+        font-size: 13px;
       }
     }
 
@@ -526,7 +561,7 @@ export class SuperControls extends LitElement {
   @state() preferredVisual: VisualMode = 'organic';
   @state() sessionMode: 'single' | 'free' = 'single';
   @state() maxRuntimeMin = 60;
-  @state() aiVisualsEnabled = true;
+  @state() aiVisualsEnabled = false;
   @state() promptAutoEnabled = false;
   @state() promptAutoCurve: 'BALANCED' | 'AGGRESSIVE' | 'CINEMATIC' = 'BALANCED';
   @state() logs: string[] = [];

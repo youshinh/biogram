@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 export type GridShape = "sphere" | "torus" | "cylinder" | "wobble";
 
-export type WaveFunc = "sine" | "sawtooth" | "noise" | "pulse";
+export type WaveFunc = "sine" | "sawtooth" | "noise" | "pulse" | "fm_chaos" | "strange_attractor";
 
 export type ColorScheme = "monochrome" | "complementary" | "gradient";
 
@@ -189,6 +189,7 @@ export class AiDynamicGrid {
         this.params.material.glowOpacity += (this.targetParams.material.glowOpacity - this.params.material.glowOpacity) * lerpFactor;
         // Color lerp is complex, skipping for now (just immediate switch)
         this.params.material.color = this.targetParams.material.color;
+        this.params.material.secondaryColor = this.targetParams.material.secondaryColor;
     }
 
     public update(dt: number, audioData: { low: number, high: number, kick: boolean, spectrum?: any }) {
@@ -221,7 +222,10 @@ export class AiDynamicGrid {
 
         // --- Geometry Generation ---
         const p = this.params;
-        const colorObj = new THREE.Color(p.material.color);
+        const baseColor = new THREE.Color(p.material.color);
+        const secondaryColor = new THREE.Color(p.material.secondaryColor || p.material.color);
+        const lineColor = new THREE.Color();
+        const glowColor = new THREE.Color();
 
         for (let lineIdx = 0; lineIdx < this.lineCount; lineIdx++) {
             const coreLine = this.coreLines[lineIdx];
@@ -240,10 +244,16 @@ export class AiDynamicGrid {
             // If blurStrength is high, core opacity drops, glow jitter increases
             const fuzziness = p.material.blurStrength;
             
-            coreMat.color = colorObj;
+            const lineMixBase = lineIdx / Math.max(1, this.lineCount - 1);
+            const chaosPulse = (Math.sin(this.time * (0.6 + p.wave.speed * 0.6) + lineIdx * 0.35) * 0.5 + 0.5) * p.wave.complexity;
+            const lineMix = Math.max(0, Math.min(1, lineMixBase * 0.7 + chaosPulse * 0.3));
+            lineColor.copy(baseColor).lerp(secondaryColor, lineMix);
+            glowColor.copy(lineColor).offsetHSL(0, 0.08 * p.wave.complexity, 0.04);
+
+            coreMat.color.copy(lineColor);
             coreMat.opacity = p.material.coreOpacity * (1.0 - fuzziness * 0.8) + (level * 0.2);
             
-            glowMat.color = colorObj;
+            glowMat.color.copy(glowColor);
             glowMat.opacity = p.material.glowOpacity * (0.5 + level * 0.5);
 
             for (let i = 0; i <= this.pointsPerLine; i++) {
@@ -314,10 +324,10 @@ export class AiDynamicGrid {
                 }
 
                 // 2. Calculate Wave Displacement
-                // Use Function Composer logic
                 let waveVal = 0;
                 const phase = this.time * p.wave.speed + v * 2.0; // Base phase animation
                 const space = u * p.wave.frequency * Math.PI * 2; // Spatial frequency
+                const c = Math.max(0, Math.min(1, p.wave.complexity));
 
                 if (p.wave.func === 'sine') {
                     waveVal = Math.sin(space + phase);
@@ -329,6 +339,31 @@ export class AiDynamicGrid {
                     waveVal = Math.sin(space * 3.4 + phase) * 0.5 + Math.cos(space * 1.5 - phase * 0.5) * 0.5;
                 } else if (p.wave.func === 'pulse') {
                     waveVal = Math.sin(space + phase) > 0.0 ? 1.0 : -1.0;
+                } else if (p.wave.func === 'fm_chaos') {
+                    // Frequency-modulated nested oscillators with slow chaotic phase drift.
+                    const modA = Math.sin(space * (1.8 + c * 2.5) + phase * (0.6 + c * 1.1));
+                    const modB = Math.cos(space * (3.2 + c * 4.2) - phase * (1.0 + c * 1.7) + modA * (1.2 + c * 2.2));
+                    const carrier = Math.sin(space + phase + modA * (1.8 + c * 2.8) + modB * (0.8 + c * 1.6));
+                    waveVal = carrier * 0.7 + modB * 0.3;
+                } else if (p.wave.func === 'strange_attractor') {
+                    // Lightweight attractor-inspired deformation (iterative non-linear fold).
+                    let ax = Math.sin(space + phase * 0.7);
+                    let ay = Math.cos(space * 0.6 - phase * 1.1);
+                    const iter = 2 + Math.floor(c * 4); // 2..6 iterations
+                    for (let it = 0; it < iter; it++) {
+                        const nxA = Math.sin((1.4 + c) * ay + phase * (0.25 + 0.08 * it)) - Math.cos((2.2 + c * 2.0) * ax);
+                        const nyA = Math.sin((2.0 + c * 1.6) * ax - phase * (0.18 + 0.05 * it)) + Math.cos((1.3 + c) * ay);
+                        ax = nxA;
+                        ay = nyA;
+                    }
+                    waveVal = Math.max(-1.0, Math.min(1.0, (ax + ay) * 0.45));
+                }
+
+                // Add harmonic detail progressively as complexity grows.
+                if (c > 0.45) {
+                    const harmonic = Math.sin(space * (2.0 + c * 5.0) - phase * (0.7 + c * 1.4));
+                    const cross = Math.cos((u + v) * Math.PI * (3.0 + c * 4.0) + phase * 0.5);
+                    waveVal = waveVal * (0.78 - c * 0.18) + harmonic * (0.18 + c * 0.18) + cross * (0.04 + c * 0.12);
                 }
 
                 // Audio Modulation

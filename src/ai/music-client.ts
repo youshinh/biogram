@@ -49,6 +49,14 @@ export class MusicClient {
     private resetStartWritePtr = 0; // Track where new audio started being written
     private readonly RESET_THRESHOLD = 48000 * 0.5; // Wait for 0.5s of new audio for faster jump
     
+    // Auto-Reconnect
+    private lastPromptText: string = '';
+    private lastPromptWeight: number = 1.0;
+    private reconnectAttempts = 0;
+    private readonly MAX_RECONNECT_ATTEMPTS = 5;
+    private reconnectTimer: number = 0;
+    private isIntentionalClose = false;
+    
     // Performance: Skip BPM detection if already have high confidence result
     private hasHighConfidenceBpm = false;
     
@@ -70,7 +78,7 @@ export class MusicClient {
         this.deckId = deckId;
         this.onAnalysis = onAnalysis;
         this.onTrackStart = onTrackStart;
-        this.visualAnalyzer = new VisualAnalyzer(apiKey);
+        this.visualAnalyzer = new VisualAnalyzer();
         this.library = new LibraryStore();
         this.library.init().then(() => {
              this.library.getCount().then(c => this.savedChunksCount = c || 0);
@@ -149,12 +157,19 @@ export class MusicClient {
                     }
                 },
                 onerror: () => {
-                    console.error("MusicClient: Connection Error");
+                    console.error(`MusicClient[${this.deckId}]: Connection Error`);
                     this.isConnected = false;
                 },
                 onclose: () => {
-                    console.warn("MusicClient: Closed");
+                    console.warn(`MusicClient[${this.deckId}]: WebSocket Closed`);
                     this.isConnected = false;
+                    this.isSmartPaused = false;
+                    
+                    // Auto-reconnect unless intentionally closed or manually paused
+                    if (!this.isIntentionalClose && !this.isManuallyPaused) {
+                        this.scheduleReconnect();
+                    }
+                    this.isIntentionalClose = false;
                 }
             }
         });
@@ -260,6 +275,10 @@ export class MusicClient {
     }
 
     async updatePrompt(text: string, weight: number = 1.0) {
+        // Always track last prompt for reconnect recovery
+        this.lastPromptText = text;
+        this.lastPromptWeight = weight;
+        
         if (!this.session) return;
         try {
             await this.session.setWeightedPrompts({
@@ -267,9 +286,6 @@ export class MusicClient {
             });
             console.log(`MusicClient: Prompt updated: ${text}`);
             this.lastPromptChange = Date.now(); // Trigger Burst Mode
-            // We rely on onTrackStart to jump, but if we want strictly "Reset" behavior, 
-            // we will handle it in clearBuffer via Engine.
-            // this.pendingJump = true; // REMOVED to prevent clicking on slider drag 
         } catch(e) {
             console.warn("MusicClient: Failed to update prompt", e);
         }
@@ -285,11 +301,23 @@ export class MusicClient {
 
     pause() {
         this.isManuallyPaused = true;
+        // Cancel any pending reconnect when user explicitly pauses
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = 0;
+        }
         this.session?.pause();
     }
 
     resume() {
         this.isManuallyPaused = false;
+        
+        // If session is dead, trigger reconnect instead of sending to dead socket
+        if (!this.isConnected || !this.session) {
+            console.warn(`MusicClient[${this.deckId}]: Session dead on resume -> scheduling reconnect`);
+            this.scheduleReconnect();
+            return;
+        }
         this.session?.play();
     }
 
@@ -384,8 +412,16 @@ export class MusicClient {
     }
 
     async resetSession() {
+        // Cancel any pending reconnect
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = 0;
+        }
+        this.reconnectAttempts = 0;
+        
         if (this.session) {
             console.log(`MusicClient[${this.deckId}]: Resetting session...`);
+            this.isIntentionalClose = true; // Prevent onclose from triggering auto-reconnect
             const session = this.session as LiveMusicSession & { close?: () => void };
             if (session.close) {
                 session.close();
@@ -408,5 +444,53 @@ export class MusicClient {
         
         // Restore Config (BPM, etc.)
         await this.setConfig(this.currentConfig);
+    }
+
+    // --- Auto-Reconnect ---
+    
+    private scheduleReconnect() {
+        // Don't schedule if already pending or max attempts reached
+        if (this.reconnectTimer) return;
+        if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+            console.error(`MusicClient[${this.deckId}]: Max reconnect attempts (${this.MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
+            window.dispatchEvent(new CustomEvent('ai-connection-lost', { detail: { deck: this.deckId } }));
+            return;
+        }
+
+        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 8000);
+        this.reconnectAttempts++;
+        console.log(`MusicClient[${this.deckId}]: Auto-reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})...`);
+        
+        this.reconnectTimer = window.setTimeout(() => {
+            this.reconnectTimer = 0;
+            this.autoReconnect();
+        }, delay);
+    }
+
+    private async autoReconnect() {
+        try {
+            // Close stale session reference
+            this.session = null;
+            this.isConnected = false;
+            
+            await this.connect();
+            await this.setConfig(this.currentConfig);
+
+            // Restore last prompt
+            if (this.lastPromptText) {
+                await this.updatePrompt(this.lastPromptText, this.lastPromptWeight);
+            }
+
+            // Resume generation if not manually paused
+            if (!this.isManuallyPaused) {
+                this.session?.play();
+            }
+
+            this.reconnectAttempts = 0;
+            console.log(`MusicClient[${this.deckId}]: Auto-reconnect successful.`);
+        } catch (e) {
+            console.error(`MusicClient[${this.deckId}]: Auto-reconnect failed:`, e);
+            this.scheduleReconnect();
+        }
     }
 }

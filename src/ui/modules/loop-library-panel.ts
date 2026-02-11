@@ -254,6 +254,105 @@ export class LoopLibraryPanel extends LitElement {
       background: #333;
       border-radius: 2px;
     }
+
+    /* --- MOBILE --- */
+    @media (max-width: 1024px) {
+      :host {
+        font-size: 14px;
+      }
+
+      .header {
+        padding: 12px 16px;
+      }
+
+      .title {
+        font-size: 14px;
+      }
+
+      .toolbar {
+        padding: 8px 12px;
+        gap: 8px;
+      }
+
+      .toolbar-btn {
+        min-height: 44px;
+        padding: 10px 16px;
+        font-size: 13px;
+      }
+
+      .tag-select {
+        min-height: 44px;
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+
+      .list {
+        padding: 8px;
+        height: calc(100% - 110px);
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .item {
+        padding: 14px;
+        margin: 4px 0;
+        min-height: 56px;
+        border-radius: 12px;
+      }
+
+      .item-name {
+        font-size: 15px;
+      }
+
+      .item-bpm {
+        font-size: 13px;
+      }
+
+      .item-meta {
+        font-size: 12px;
+        gap: 12px;
+      }
+
+      .item-prompt {
+        font-size: 12px;
+      }
+
+      .tag {
+        padding: 4px 10px;
+        font-size: 11px;
+        border-radius: 6px;
+      }
+
+      .item-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .btn {
+        min-height: 44px;
+        padding: 10px 16px;
+        font-size: 13px;
+        border-radius: 8px;
+      }
+
+      .btn.load {
+        flex: 1;
+      }
+
+      .deck-btn {
+        min-height: 44px;
+        padding: 8px 16px;
+        font-size: 13px;
+      }
+
+      .empty {
+        padding: 40px 20px;
+      }
+
+      .empty-icon {
+        font-size: 36px;
+      }
+    }
   `;
 
   @state() private samples: LoopSample[] = [];

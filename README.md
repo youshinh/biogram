@@ -150,12 +150,13 @@ npm install
 Create `.env` in project root:
 
 ```env
-VITE_GEMINI_API_KEY=your_api_key_here
+GEMINI_API_KEY=your_api_key_here
 ```
 
 Notes:
 
-- Current code path uses `VITE_GEMINI_API_KEY` on the client side.
+- `GEMINI_API_KEY` is used only on the local backend middleware (`/api/*`) and is not exposed to browser code.
+- Realtime Lyria deck generation still uses the local API key entered in the app's API settings dialog (client-side), until a WS relay path is introduced.
 
 ### Start
 

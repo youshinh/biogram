@@ -97,6 +97,9 @@ export class VisualEngine {
     
     // AI State (Shared across visualizers)
     private currentAiParams: unknown = null;
+    private visualIntensity = 0.5;
+    private visualBlendOverride: number | null = null;
+    private visualOverlayAlpha = 0.0;
 
     // --- Post-Processing Blur (Math Mode) ---
     private blurRenderTarget1!: THREE.WebGLRenderTarget;
@@ -526,6 +529,9 @@ export class VisualEngine {
         this.camera.position.set(0, 0, baseDist - zoom); // Zoom in on high energy
         this.camera.lookAt(0, 0, 0);
         this.uniforms.uCameraPos.value.copy(this.camera.position);
+        if (!this.transition.active) {
+            this.material.opacity = Math.max(0.2, 1.0 - (this.visualOverlayAlpha * 0.8));
+        }
 
         // --- Transition Logic ---
         if (this.transition.active) {
@@ -603,7 +609,13 @@ export class VisualEngine {
 
         // --- Use Shared AI Params (Updated in updateUniforms) ---
         const crossfader = this.uniforms.uCrossfade.value;
-        const vizUpdateData = { ...audioData, ai: this.currentAiParams, crossfader };
+        const vizUpdateData = {
+            ...audioData,
+            ai: this.currentAiParams,
+            crossfader,
+            visualIntensity: this.visualIntensity,
+            visualBlend: this.visualBlendOverride
+        };
         
         // Update visualizers with AI + Audio data
         if (this.monochromeFlow.mesh.visible) this.monochromeFlow.update(delta, vizUpdateData);
@@ -1014,7 +1026,19 @@ export class VisualEngine {
     }
 
     public updateUniforms(data: any) {
-        if (data.crossfader !== undefined) this.uniforms.uCrossfade.value = data.crossfader;
+        if (typeof data.VISUAL_INTENSITY === 'number') {
+            this.visualIntensity = Math.max(0, Math.min(1, data.VISUAL_INTENSITY));
+        }
+        if (typeof data.VISUAL_BLEND === 'number') {
+            this.visualBlendOverride = Math.max(0, Math.min(1, data.VISUAL_BLEND));
+        }
+        if (typeof data.VISUAL_OVERLAY_ALPHA === 'number') {
+            this.visualOverlayAlpha = Math.max(0, Math.min(1, data.VISUAL_OVERLAY_ALPHA));
+        }
+        if (data.crossfader !== undefined) {
+            const cf = Math.max(0, Math.min(1, Number(data.crossfader)));
+            this.uniforms.uCrossfade.value = this.visualBlendOverride ?? cf;
+        }
         if (data.lowA !== undefined) this.uniforms.uLowA.value = data.lowA;
         if (data.highA !== undefined) this.uniforms.uHighA.value = data.highA;
         if (data.lowB !== undefined) this.uniforms.uLowB.value = data.lowB;
@@ -1090,29 +1114,35 @@ export class VisualEngine {
 
             // Apply directly to Organic Shader (if active)
             if (this.currentModeName === 'organic' || this.currentModeName === 'wireframe') {
-                 this.uniforms.uGloss.value = 0.3 + avgEnergy * 0.7; 
-                 this.uniforms.uChaos.value = avgChaos;
+                 const intensityScale = 0.35 + (this.visualIntensity * 0.65);
+                 this.uniforms.uGloss.value = Math.max(0, Math.min(1, 0.3 + (avgEnergy * 0.7 * intensityScale)));
+                 this.uniforms.uChaos.value = Math.max(0, Math.min(1, avgChaos * intensityScale));
 
                  const colA = new THREE.Color().setHSL(0.0 + stateA.chaos * 0.2, 1.0, 0.5 + stateA.energy * 0.4); 
                  const colB = new THREE.Color().setHSL(0.6 + stateB.chaos * 0.2, 1.0, 0.5 + stateB.energy * 0.4); 
                  this.uniforms.uColorA.value.lerp(colA, 0.1); 
                  this.uniforms.uColorB.value.lerp(colB, 0.1);
-                 this.cameraDistanceOffset = avgEnergy * 0.5;
+                 this.cameraDistanceOffset = avgEnergy * 0.5 * intensityScale;
             }
         } else {
             this.currentAiParams = null;
         }
 
-        if (data.DUB !== undefined) this.uniforms.uDub.value = data.DUB;
+        const fxIntensity = 0.2 + (this.visualIntensity * 0.8);
+        if (data.DUB !== undefined) this.uniforms.uDub.value = data.DUB * fxIntensity;
         if (data.TAPE_ACTIVE !== undefined && data.TAPE_ACTIVE === 0) this.uniforms.uDub.value = 0;
-        if (data.GATE_THRESH !== undefined) this.uniforms.uGate.value = data.GATE_THRESH * 5.0; 
-        if (data.CLOUD_MIX !== undefined) this.uniforms.uCloud.value = data.CLOUD_MIX;
+        if (data.GATE_THRESH !== undefined) this.uniforms.uGate.value = data.GATE_THRESH * 5.0 * fxIntensity; 
+        if (data.CLOUD_MIX !== undefined) this.uniforms.uCloud.value = data.CLOUD_MIX * fxIntensity;
         if (data.CLOUD_ACTIVE !== undefined) {
              if (data.CLOUD_ACTIVE === 0) this.uniforms.uCloud.value = 0;
              else if (this.uniforms.uCloud.value === 0) this.uniforms.uCloud.value = 0.5;
         }
-        if (data.CLOUD_DENSITY !== undefined) this.uniforms.uCloudDensity.value = data.CLOUD_DENSITY;
-        if (data.DECIMATOR_ACTIVE !== undefined) this.uniforms.uDecimator.value = data.DECIMATOR_ACTIVE ? 1.0 : 0.0;
+        if (data.CLOUD_DENSITY !== undefined) {
+            this.uniforms.uCloudDensity.value = 0.5 + ((data.CLOUD_DENSITY - 0.5) * fxIntensity);
+        }
+        if (data.DECIMATOR_ACTIVE !== undefined) {
+            this.uniforms.uDecimator.value = data.DECIMATOR_ACTIVE ? (0.5 + 0.5 * fxIntensity) : 0.0;
+        }
         if (data.BITS !== undefined) {
              const norm = 1.0 - (data.BITS / 16.0);
              if (this.uniforms.uDecimator.value > 0.5) {

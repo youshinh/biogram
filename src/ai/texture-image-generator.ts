@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { postBackendJson } from '../api/backend-client';
 
 export type TextureImageResult = {
   dataUrl: string;
@@ -11,18 +11,8 @@ type TextureImageOptions = {
   imageSize?: '1K' | '2K';
 };
 
-const IMAGE_MODELS = [
-  'imagen-4.0-fast-generate-001',
-  'imagen-4.0-generate-001',
-  'imagen-3.0-generate-002'
-] as const;
-
 export class TextureImageGenerator {
-  private ai: GoogleGenAI;
-
-  constructor(apiKey: string) {
-    this.ai = new GoogleGenAI({ apiKey });
-  }
+  constructor() {}
 
   async generateTextureImage(
     prompt: string,
@@ -40,32 +30,16 @@ export class TextureImageGenerator {
     const aspectRatio = options.aspectRatio ?? '1:1';
     const imageSize = options.imageSize ?? '1K';
 
-    for (const model of IMAGE_MODELS) {
-      try {
-        const response = await this.ai.models.generateImages({
-          model,
-          prompt: safePrompt,
-          config: {
-            numberOfImages: 1,
-            aspectRatio,
-            imageSize,
-            outputMimeType: 'image/png'
-          }
-        });
-
-        const image = response.generatedImages?.[0]?.image;
-        const imageBytes = image?.imageBytes;
-        const mimeType = image?.mimeType || 'image/png';
-        if (imageBytes) {
-          return {
-            dataUrl: `data:${mimeType};base64,${imageBytes}`,
-            mimeType,
-            modelUsed: model
-          };
+    try {
+      return await postBackendJson<TextureImageResult>('/api/ai/texture-image', {
+        prompt: safePrompt,
+        options: {
+          aspectRatio,
+          imageSize
         }
-      } catch (error) {
-        console.warn(`[TextureImageGenerator] ${model} failed`, error);
-      }
+      });
+    } catch (error) {
+      console.warn('[TextureImageGenerator] API generation failed', error);
     }
 
     return {

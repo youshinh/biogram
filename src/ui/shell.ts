@@ -239,145 +239,162 @@ export class AppShell extends LitElement {
       50% { opacity: 0.5; }
     }
 
+    /* --- MOBILE DECK SWITCHER --- */
+    .mobile-deck-switcher {
+      display: none; /* Hidden on desktop */
+    }
+
     /* --- MOBILE RESPONSIVE OVERRIDES (1024px and below) --- */
     @media (max-width: 1024px) {
-      /* ... existing overrides ... */
       :host {
         --mobile-header-height: 48px;
         height: auto;
         min-height: 100vh;
+        min-height: 100dvh;
         overflow: visible;
       }
 
       .shell-container {
-        display: block;
+        display: flex;
+        flex-direction: column;
         padding: 0;
-        height: auto;
-        min-height: 100vh;
-        overflow-y: visible; /* Let body handle scroll */
-        overflow-x: hidden;
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
       }
 
       main {
         display: flex;
         flex-direction: column;
-        height: auto;
-        min-height: 100vh;
-        overflow: visible;
-        padding-bottom: calc(92px + env(safe-area-inset-bottom)); /* Space for mobile tab bar */
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        padding-bottom: calc(80px + env(safe-area-inset-bottom)); /* Tab bar space */
       }
-      
-      /* Deck Row: Vertical stack */
+
+      /* --- DECK VIEW: Single Deck + Switcher --- */
       .deck-row {
         display: flex;
         flex-direction: column;
-        gap: 8px;
-        height: auto;
+        flex: 1;
         min-height: 0;
-        padding: 8px;
-      }
-      
-      .mixer-column-wrapper {
-          width: 100%;
-          height: auto;
-          gap: 12px;
+        padding: 0;
+        gap: 0;
       }
 
-      /* Each deck takes substantial height */
-      .deck-container {
-        width: 100%;
-        height: 45vh; /* Fixed height for each deck */
-        min-height: 320px;
+      /* Pin order: switcher -> crossfader -> active deck */
+      .mobile-deck-switcher { order: 1; }
+      .mixer-column-wrapper { order: 2; }
+      .deck-container { order: 3; }
+
+      /* Mobile Deck A/B Switcher */
+      .mobile-deck-switcher {
+        display: flex;
+        gap: 0;
+        padding: 6px 8px;
+        background: rgba(0, 0, 0, 0.6);
         flex-shrink: 0;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        background: rgba(0, 0, 0, 0.3);
+      }
+
+      .mobile-deck-tab {
+        flex: 1;
+        min-height: 40px;
+        border: 1px solid #27272a;
+        background: #0c0c0c;
+        color: #71717a;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .mobile-deck-tab:first-child {
+        border-radius: 10px 0 0 10px;
+      }
+
+      .mobile-deck-tab:last-child {
+        border-radius: 0 10px 10px 0;
+      }
+
+      .mobile-deck-tab:active {
+        transform: scale(0.97);
+      }
+
+      .mobile-deck-tab.active-a {
+        background: rgba(6, 182, 212, 0.15);
+        border-color: rgba(6, 182, 212, 0.5);
+        color: #22d3ee;
+        box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+      }
+
+      .mobile-deck-tab.active-b {
+        background: rgba(16, 185, 129, 0.15);
+        border-color: rgba(16, 185, 129, 0.5);
+        color: #10b981;
+        box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+      }
+
+      /* Single deck takes all available space */
+      .deck-container {
+        flex: 1;
+        width: 100%;
+        height: auto;
+        min-height: 0;
+        border-radius: 0;
+        border: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        background: rgba(0, 0, 0, 0.2);
         margin: 0;
         position: relative;
         z-index: 10;
         overflow: hidden;
       }
-      
+
+      /* Hide inactive deck on mobile */
+      .deck-container.mobile-hidden {
+        display: none;
+      }
+
+      /* Mixer column: compact inline strip, pinned above deck */
+      .mixer-column-wrapper {
+        width: 100%;
+        height: auto;
+        gap: 0;
+        flex-shrink: 0;
+      }
+
+      /* Mixer EQ: completely hidden on DECK view (accessible via FX tab) */
+      .mixer-container {
+        display: none;
+      }
+
+      .mixer-header { display: none; }
       .mixer-divider { display: none; }
       
-      /* Mixer: Collapsed (Show header only) */
-      .mixer-container {
+      /* Mixer controls (BPM/Crossfader): always visible compact strip */
+      .mixer-controls-static {
+        flex-shrink: 0;
         width: 100%;
-        height: 40px;
-        min-height: 40px;
-        flex-grow: 0;
-        border-radius: 8px;
-        padding: 0;
+      }
+
+      /* Deck fills remaining height below crossfader */
+      .deck-container:not(.mobile-hidden) {
         display: flex;
         flex-direction: column;
-        background: rgba(0,0,0,0.6);
-        border: 1px solid rgba(255,255,255,0.1);
-        transition: all 0.3s ease;
         overflow: hidden;
-      }
-      
-      .mixer-header {
-        height: 40px; /* Slightly smaller header */
-        width: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 16px;
-        cursor: pointer;
-        background: rgba(255,255,255,0.05);
-        border-bottom: 1px solid rgba(255,255,255,0.05);
-        display: flex; /* Ensure visible */
-      }
-      
-      .mixer-label {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.75rem;
-        color: #a1a1aa;
-        letter-spacing: 0.1em;
-      }
-      
-      .mixer-icon {
-        color: #71717a;
-        transition: transform 0.3s;
-      }
-      
-      /* Mixer Content: Hidden when collapsed */
-      .mixer-content {
-        height: 0;
-        opacity: 0;
-        display: none;
-        transition: opacity 0.3s;
-        padding: 8px 4px;
-      }
-      
-      /* Expanded Mixer */
-      .mixer-container.mixer-expanded {
-        height: auto;
-        min-height: 500px;
-      }
-      
-      .mixer-container.mixer-expanded .mixer-content {
-        height: auto;
-        opacity: 1;
-        display: flex;
-        overflow-y: visible;
-        padding: 8px;
-        padding-bottom: 20px;
-      }
-      
-      .mixer-container.mixer-expanded .mixer-icon {
-        transform: rotate(180deg);
       }
 
       /* -- MOBILE VIEW SWITCHING LOGIC -- */
 
-      /* DEFAULT (DECK VIEW): Show Decks AND Bottom (Controls) */
+      /* DECK VIEW: Show Decks, Hide Bottom Row */
       :host([view="DECK"]) .deck-row {
         display: flex;
       }
       :host([view="DECK"]) .bottom-row {
-        display: block;
-        padding-bottom: 20px;
+        display: none; /* Hide controls-row on mobile DECK view — deck has own overlay */
       }
 
       /* PANEL VIEWS (RACK, VISUAL, SUPER): Hide Decks, Show Bottom */
@@ -385,11 +402,21 @@ export class AppShell extends LitElement {
         display: none;
       }
       :host(:not([view="DECK"])) .bottom-row {
-        display: block;
-        height: 100%;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
         width: 100%;
         overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 8px;
         padding-bottom: 20px;
+        box-sizing: border-box;
+      }
+
+      /* SUPER (AI Mix): make panels scrollable and visible */
+      :host([view="SUPER"]) .bottom-row {
+        overflow-y: auto;
       }
       
       /* Ensure main is always visible */
@@ -399,17 +426,17 @@ export class AppShell extends LitElement {
          display: flex;
       }
       
-      /* Mobile Controls Styling */
+      /* Mobile Controls Styling (hidden on DECK view, shown on panel views) */
       .controls-row {
         display: flex;
         flex-direction: column;
         gap: 16px;
-        padding: 8px;
+        padding: 0;
       }
       
       .controls-panel {
         display: flex;
-        flex-direction: column; /* Stack controls vertically on mobile if needed, or keep row for scroll */
+        flex-direction: column;
         overflow-x: auto;
         padding: 16px;
         background: rgba(0,0,0,0.5);
@@ -424,13 +451,21 @@ export class AppShell extends LitElement {
         justify-content: center;
         flex-wrap: wrap;
       }
+
+      /* Rack panel fill */
+      .rack-panel {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
       
-      /* Hide native desktop controls */
+      /* Hide desktop-only elements */
       .nav-trigger { display: none; }
       footer { display: none; }
       
       /* Adjusted labels */
-      .deck-label { top: 6px; left: 8px; font-size: 10px; }
+      .deck-label { top: 6px; left: 8px; font-size: 12px; }
     }
 
     /* Tablet and Mobile share the same vertical layout now (handled by 1024px breakpoint above) */
@@ -520,6 +555,8 @@ export class AppShell extends LitElement {
   
   @state() private _mixerExpanded = false;
   
+  @state() private _activeDeck: 'A' | 'B' = 'A'; // Mobile: which deck is visible
+  
   connectedCallback() {
       super.connectedCallback();
       window.addEventListener('mousemove', this._handleGlobalMouseMove);
@@ -543,6 +580,10 @@ export class AppShell extends LitElement {
           bubbles: true,
           composed: true
       }));
+  }
+  
+  private _switchDeck(deck: 'A' | 'B') {
+      this._activeDeck = deck;
   }
 
   // Navigation Logic
@@ -611,8 +652,16 @@ export class AppShell extends LitElement {
           
           <!-- UPPER ROW: Dual Decks & Mixer -->
           <div class="deck-row">
+             <!-- MOBILE: Deck A/B Switcher -->
+             <div class="mobile-deck-switcher">
+                 <button class="mobile-deck-tab ${this._activeDeck === 'A' ? 'active-a' : ''}"
+                         @click="${() => this._switchDeck('A')}">DECK A</button>
+                 <button class="mobile-deck-tab ${this._activeDeck === 'B' ? 'active-b' : ''}"
+                         @click="${() => this._switchDeck('B')}">DECK B</button>
+             </div>
+
              <!-- DECK A -->
-              <div class="deck-container">
+              <div class="deck-container ${this._activeDeck !== 'A' ? 'mobile-hidden' : ''}">
                   <div class="deck-label label-left">DECK_A // 001</div>
                   <slot name="deck-a"></slot>
               </div>
@@ -645,7 +694,7 @@ export class AppShell extends LitElement {
               </div>
 
               <!-- DECK B -->
-              <div class="deck-container">
+              <div class="deck-container ${this._activeDeck !== 'B' ? 'mobile-hidden' : ''}">
                   <div class="deck-label label-right">DECK_B // 002</div>
                   <slot name="deck-b"></slot>
               </div>

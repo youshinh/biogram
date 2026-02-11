@@ -1,59 +1,22 @@
-import { GoogleGenAI } from '@google/genai';
+import { postBackendJson } from '../api/backend-client';
 
 export type TexturePromptOptions = {
   requestEquirectangular?: boolean;
   detailLevel?: 'standard' | 'high' | 'ultra';
 };
 
-const SYSTEM_PROMPT = `
-You are an expert Technical Artist specializing in 3D Texturing and VR Environment generation.
-Convert short user material ideas into one production-ready English prompt for texture image generation.
-
-Output rules:
-- Return exactly one line. No markdown, no explanation, no quotes.
-- Default: strictly seamless 1:1 square texture map.
-- Include these constraints when relevant:
-  seamless texture, tileable in all directions, repeating pattern, 1:1 aspect ratio (square),
-  offset filter ready, no directional shadows, flat lighting, highly detailed, full frame.
-- Use neutral or soft diffused light and avoid cast shadows.
-- Describe material details (roughness, reflectivity, micro-structure, subsurface scattering when relevant).
-- End with technical suffix: --tile --ar 1:1
-- If the user explicitly asks equirectangular environment map, switch to 2:1 and suffix: --ar 2:1
-`;
-
 export class TexturePromptGenerator {
-  private ai: GoogleGenAI;
-  private model = 'gemini-flash-lite-latest';
-
-  constructor(apiKey: string) {
-    this.ai = new GoogleGenAI({ apiKey });
-  }
+  constructor() {}
 
   async generatePrompt(subject: string, options: TexturePromptOptions = {}): Promise<string> {
     const safeSubject = subject.trim() || 'organic futuristic surface';
-    const requestShape = options.requestEquirectangular
-      ? 'Use equirectangular environment map constraints (2:1).'
-      : 'Use seamless square texture constraints (1:1).';
-    const detailLevel = options.detailLevel ?? 'high';
-
-    const userPrompt = `
-Input concept: ${safeSubject}
-Detail level: ${detailLevel}
-${requestShape}
-Generate a single English prompt for image generation.
-`;
 
     try {
-      const response = await this.ai.models.generateContent({
-        model: this.model,
-        config: {
-          systemInstruction: {
-            parts: [{ text: SYSTEM_PROMPT }]
-          }
-        },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }]
+      const response = await postBackendJson<{ prompt: string }>('/api/ai/texture-prompt', {
+        subject: safeSubject,
+        options
       });
-      const text = response.text?.trim();
+      const text = response.prompt?.trim();
       if (!text) throw new Error('Empty response');
       return this.normalizePrompt(text, !!options.requestEquirectangular);
     } catch (error) {

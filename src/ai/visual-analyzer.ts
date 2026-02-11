@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { postBackendJson } from '../api/backend-client';
 
 export interface VisualEvent {
     time: number;
@@ -15,14 +15,10 @@ export interface VisualChunk {
 }
 
 export class VisualAnalyzer {
-    private ai: GoogleGenAI;
-    private model = "gemini-flash-lite-latest";
     private static lastGlobalAnalysisTime = 0;
     private static MIN_INTERVAL_MS = 30000; // Throttle to 30s (User Request)
 
-    constructor(apiKey: string) {
-        this.ai = new GoogleGenAI({ apiKey });
-    }
+    constructor() {}
 
     /**
      * Encodes Float32 PCM to WAV (Int16) for Gemini
@@ -114,30 +110,16 @@ export class VisualAnalyzer {
             // Reserve slot
             VisualAnalyzer.lastGlobalAnalysisTime = Date.now();
 
-            const response = await this.ai.models.generateContent({
-                model: this.model,
-                contents: [{
-                    parts: [
-                        { inlineData: { mimeType: 'audio/wav', data: wavBase64 } },
-                        { text: prompt }
-                    ]
-                }],
-                config: {
-                    responseMimeType: 'application/json'
-                }
+            const response = await postBackendJson<{
+                analysis: VisualChunk | null;
+            }>('/api/ai/visual-analyze', {
+                wavBase64,
+                prompt
             });
 
             // const end = performance.now();
             // console.log(`[VisualAnalyzer] Analysis complete in ${(end - start).toFixed(0)}ms`);
-
-            // Access text directly as per MixGenerator pattern and SDK types
-            const text = response.text; 
-            
-            if (text) {
-                const json = JSON.parse(text) as VisualChunk;
-                return json;
-            }
-            return null;
+            return response.analysis ?? null;
 
         } catch (e) {
             console.warn("[VisualAnalyzer] Analysis Failed", e);

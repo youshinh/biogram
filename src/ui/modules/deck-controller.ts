@@ -99,7 +99,7 @@ export class DeckController extends LitElement {
               </div>
 
               <!-- MOBILE: Floating mini controls overlay (visible only on mobile) -->
-              <div class="md:hidden absolute bottom-0 left-0 right-0 px-4 pb-4 pt-3 bg-gradient-to-t from-black/80 via-black/45 to-transparent">
+              <div class="md:hidden absolute bottom-0 left-0 right-0 px-4 pb-24 pt-4 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
                   <div class="flex items-end justify-between gap-3">
                       <!-- Play button - Large touch target -->
                       <button class="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-95

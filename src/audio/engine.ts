@@ -60,13 +60,8 @@ export class AudioEngine {
         }));
     }, (startPosition: number) => {
         this.deckTrackStartFrame.A = Math.floor(startPosition);
-        this.loopAutoStopByDeck.A = {
-            armed: true,
-            armedWritePtr: Math.floor(startPosition),
-            loopLengthFrames: this.getDeckRingFrames(),
-            overlapFrames: 0,
-            autoStopped: false
-        };
+        // Reset any stale auto-stop state (but do NOT arm — arming is only for explicit loops via setLoop)
+        this.resetLoopAutoStop('A');
         this.skipToPosition('A', startPosition);
         setTimeout(() => this.unmute('A'), 150); // Delay unmute to ensure silence
     });
@@ -78,13 +73,8 @@ export class AudioEngine {
         }));
     }, (startPosition: number) => {
         this.deckTrackStartFrame.B = Math.floor(startPosition);
-        this.loopAutoStopByDeck.B = {
-            armed: true,
-            armedWritePtr: Math.floor(startPosition),
-            loopLengthFrames: this.getDeckRingFrames(),
-            overlapFrames: 0,
-            autoStopped: false
-        };
+        // Reset any stale auto-stop state (but do NOT arm — arming is only for explicit loops via setLoop)
+        this.resetLoopAutoStop('B');
         this.skipToPosition('B', startPosition);
         setTimeout(() => this.unmute('B'), 150); // Delay unmute to ensure silence
     });

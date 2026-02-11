@@ -77,28 +77,36 @@ export class MixerControls extends LitElement {
 
   render() {
     return html`
-      <div class="w-full flex flex-col items-center gap-2 p-2" style="background: transparent;">
+      <div class="w-full flex flex-col items-center gap-2 p-2 md:p-2" style="background: transparent;">
            
-           <!-- MASTER BPM SECTION -->
-           <div class="flex-shrink-0 flex items-center gap-4 p-3 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 w-full justify-center shadow-lg">
-                <div class="w-4 h-4 md:w-3 md:h-3 rounded-full transition-all duration-75 ${this.beatActive ? 'bg-signal-emerald shadow-[0_0_12px_#10b981] scale-125' : 'bg-zinc-700'}"></div>
-                <div class="slider-value text-4xl md:text-3xl text-white">
-                    ${Math.round(this.bpm)} <span class="text-base md:text-sm text-zinc-400 font-sans font-normal">BPM</span>
+           <!-- MASTER BPM SECTION (hidden on mobile — each deck shows BPM) -->
+           <div class="hidden md:flex flex-shrink-0 items-center gap-4 p-3 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 w-full justify-center shadow-lg">
+                <div class="w-3 h-3 rounded-full transition-all duration-75 ${this.beatActive ? 'bg-signal-emerald shadow-[0_0_12px_#10b981] scale-125' : 'bg-zinc-700'}"></div>
+                <div class="slider-value text-3xl text-white">
+                    ${Math.round(this.bpm)} <span class="text-sm text-zinc-400 font-sans font-normal">BPM</span>
                 </div>
                 <div class="flex flex-col gap-1">
-                    <button class="w-8 h-8 md:w-6 md:h-6 rounded-full border border-zinc-600 flex items-center justify-center text-base md:text-sm text-zinc-400 hover:text-white hover:border-white hover:bg-white/10 transition-all active:scale-95"
+                    <button class="w-6 h-6 rounded-full border border-zinc-600 flex items-center justify-center text-sm text-zinc-400 hover:text-white hover:border-white hover:bg-white/10 transition-all active:scale-95"
                             @click="${() => this.changeBpm(1)}">+</button>
-                    <button class="w-8 h-8 md:w-6 md:h-6 rounded-full border border-zinc-600 flex items-center justify-center text-base md:text-sm text-zinc-400 hover:text-white hover:border-white hover:bg-white/10 transition-all active:scale-95"
+                    <button class="w-6 h-6 rounded-full border border-zinc-600 flex items-center justify-center text-sm text-zinc-400 hover:text-white hover:border-white hover:bg-white/10 transition-all active:scale-95"
                             @click="${() => this.changeBpm(-1)}">-</button>
                 </div>
            </div>
 
+           <!-- MOBILE BPM BADGE (compact, inline with crossfader) -->
+           <div class="md:hidden flex items-center gap-3 w-full px-1">
+                <div class="w-3 h-3 rounded-full transition-all duration-75 flex-shrink-0 ${this.beatActive ? 'bg-signal-emerald shadow-[0_0_8px_#10b981] scale-125' : 'bg-zinc-700'}"></div>
+                <div class="slider-value text-lg text-white font-bold">
+                    ${Math.round(this.bpm)} <span class="text-xs text-zinc-500 font-sans font-normal">BPM</span>
+                </div>
+           </div>
+
            <!-- CROSSFADER -->
-           <div class="flex-shrink-0 w-full p-3 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 shadow-lg flex flex-col items-center">
-               <div class="text-[10px] tracking-[0.3em] text-zinc-400 mb-2 uppercase font-semibold">XFADE</div>
+           <div class="flex-shrink-0 w-full p-3 md:p-3 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 shadow-lg flex flex-col items-center">
+               <div class="hidden md:block text-[10px] tracking-[0.3em] text-zinc-400 mb-2 uppercase font-semibold">XFADE</div>
                
                <input type="range" 
-                      class="w-full h-4 bg-zinc-800 rounded-full appearance-none outline-none cursor-ew-resize accent-zinc-300 [&::-webkit-slider-thumb]:w-8 [&::-webkit-slider-thumb]:h-8 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(255,255,255,0.6)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-ew-resize"
+                      class="w-full h-4 bg-zinc-800 rounded-full appearance-none outline-none cursor-ew-resize accent-zinc-300 [&::-webkit-slider-thumb]:w-10 [&::-webkit-slider-thumb]:h-10 md:[&::-webkit-slider-thumb]:w-8 md:[&::-webkit-slider-thumb]:h-8 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(255,255,255,0.6)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-ew-resize"
                       min="0" max="1" step="0.01"
                       .value="${this.crossfader}"
                       @input="${this.handleCrossfader}" 

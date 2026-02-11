@@ -1,6 +1,5 @@
-
-import { GoogleGenAI } from '@google/genai';
 import { AiGridParams } from '../ui/visuals/AiDynamicGrid';
+import { postBackendJson } from '../api/backend-client';
 
 const SYSTEM_PROMPT = `
 You are a Generative Visual Artist.
@@ -39,31 +38,16 @@ Output ONLY valid JSON.
 `;
 
 export class GridGenerator {
-    private ai: GoogleGenAI;
-    private model = "gemini-flash-lite-latest";
-
-    constructor(apiKey: string) {
-        this.ai = new GoogleGenAI({ apiKey });
-    }
+    constructor() {}
 
     public async generateParams(context: string): Promise<AiGridParams | null> {
         try {
-            const response = await this.ai.models.generateContent({
-                model: this.model,
-                config: {
-                    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-                    responseMimeType: 'application/json'
-                },
-                contents: [{
-                    parts: [{ text: `Current Context: ${context}` }]
-                }]
+            const response = await postBackendJson<{
+                params: AiGridParams | null;
+            }>('/api/ai/grid', {
+                context
             });
-
-            const text = response.text;
-            if (text) {
-                return JSON.parse(text) as AiGridParams;
-            }
-            return null;
+            return response.params;
         } catch (e) {
             console.error("Grid Param Gen Failed", e);
             return null;

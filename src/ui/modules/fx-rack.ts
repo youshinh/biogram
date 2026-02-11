@@ -174,8 +174,45 @@ export class FxRack extends LitElement {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        @media (max-width: 1024px) {
+          .fx-rack-container {
+            flex-direction: column !important;
+            flex-wrap: nowrap !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            -webkit-overflow-scrolling: touch;
+          }
+          .fx-rack-container > div {
+            min-height: 200px !important;
+            min-width: 0 !important;
+            width: 100% !important;
+          }
+          .fx-rack-container .font-mono.text-xs {
+            font-size: 14px !important;
+          }
+          .fx-rack-container .text-\\[10px\\],
+          .fx-rack-container .text-\\[11px\\] {
+            font-size: 13px !important;
+          }
+          .fx-rack-container .text-\\[9px\\] {
+            font-size: 12px !important;
+          }
+          .fx-rack-container input[type="checkbox"] {
+            width: 20px !important;
+            height: 20px !important;
+          }
+          .fx-rack-container select {
+            min-height: 44px;
+            font-size: 14px !important;
+            padding: 8px !important;
+          }
+          .fx-rack-container input[type="range"] {
+            height: 8px !important;
+          }
+        }
       </style>
-      <div class="flex flex-nowrap gap-2 p-2 h-full overflow-auto items-stretch">
+      <div class="fx-rack-container flex flex-nowrap gap-2 p-2 h-full overflow-auto items-stretch">
 
         <!-- MOD 01: FILTER XY -->
         <div class="border border-white/10 flex flex-col h-full min-h-[280px] min-w-[160px] flex-1 p-2 bg-black/40 backdrop-blur-md rounded-xl overflow-hidden shadow-lg group hover:border-tech-cyan/30 transition-colors">
