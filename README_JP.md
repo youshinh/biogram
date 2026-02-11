@@ -6,7 +6,7 @@
 
 ## 現在のプロダクト概要
 
-Bio:gram は、ブラウザ上で動作する AI DJ システムです。主な要素は以下です。
+Bio:gram は、ブラウザ上で動作する AI DJ/VJ システムです。主な要素は以下です。
 
 - Google Lyria (`lyria-realtime-exp`) によるデュアルデッキのリアルタイム音楽生成
 - Mix計画時のみ Gemini 3 Pro (`gemini-3-pro-preview`) による統合ミックスプラン生成

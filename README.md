@@ -6,7 +6,7 @@
 
 ## Current Product Summary
 
-Bio:gram is a browser-based AI DJ system with:
+Bio:gram is a browser-based AI DJ/VJ system with:
 
 - Dual-deck realtime music generation via Google Lyria (`lyria-realtime-exp`)
 - AI-generated integrated mix plan (JSON) via Gemini 3 Pro (`gemini-3-pro-preview`) for mix planning only
