@@ -66,12 +66,6 @@ export const showSystemInitializationOverlay = (options: SystemInitializerOption
     e.preventDefault();
     void runInitialization();
   });
-  startBtn.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'touch') return;
-    e.preventDefault();
-    void runInitialization();
-  });
-
   if (!options.hasApiKey()) {
     options.openApiSettingsModal(true);
   }

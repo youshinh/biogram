@@ -504,7 +504,7 @@ export class VisualControls extends LitElement {
             border: 1px solid rgba(82, 82, 91, 0.85);
             background: linear-gradient(180deg, rgba(31, 31, 38, 0.92) 0%, rgba(17, 17, 21, 0.95) 100%);
             color: #a1a1aa;
-            font-size: clamp(10px, 0.78vw, 14px);
+            font-size: clamp(12px, 0.9vw, 15px);
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -533,7 +533,7 @@ export class VisualControls extends LitElement {
             color: #a1a1aa;
             border-radius: 10px;
             cursor: pointer;
-            font-size: clamp(10px, 0.78vw, 14px);
+            font-size: clamp(12px, 0.9vw, 15px);
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -723,12 +723,16 @@ export class VisualControls extends LitElement {
                 gap: 6px;
             }
             .panel-header {
-                font-size: 9px;
+                font-size: 10px;
                 margin-bottom: 2px;
             }
             button, .file-btn {
                 padding: 7px;
-                font-size: 8.5px;
+                font-size: 10px;
+            }
+            .viz-grid button,
+            .gnosis-wrapper {
+                font-size: 12px;
             }
             .status-text {
                 font-size: 8px;

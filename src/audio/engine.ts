@@ -109,15 +109,29 @@ export class AudioEngine {
   async init() {
     try {
       if (this.context.state === 'suspended') {
-        await this.withTimeout('AudioContext.resume', this.context.resume(), 8000);
+        try {
+          await this.withTimeout('AudioContext.resume', this.context.resume(), 8000);
+        } catch (resumeError) {
+          console.warn('[AudioEngine] Resume retry after first failure:', resumeError);
+          await this.withTimeout('AudioContext.resume(retry)', this.context.resume(), 12000);
+        }
       }
 
       if (import.meta.env.DEV) console.log('Loading AudioWorklet from:', processorUrl);
-      await this.withTimeout(
-          'AudioWorklet.addModule',
-          this.context.audioWorklet.addModule(processorUrl),
-          20000
-      );
+      try {
+        await this.withTimeout(
+            'AudioWorklet.addModule',
+            this.context.audioWorklet.addModule(processorUrl),
+            20000
+        );
+      } catch (workletError) {
+        console.warn('[AudioEngine] Worklet load retry after first failure:', workletError);
+        await this.withTimeout(
+            'AudioWorklet.addModule(retry)',
+            this.context.audioWorklet.addModule(processorUrl),
+            45000
+        );
+      }
 
       this.workletNode = new AudioWorkletNode(this.context, 'ghost-processor', {
         numberOfInputs: 1,

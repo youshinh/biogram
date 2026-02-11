@@ -1,4 +1,5 @@
 import { postBackendJson } from '../api/backend-client';
+import { getBrowserGenAI, withTimeout } from './client-genai';
 
 export type TexturePromptOptions = {
   requestEquirectangular?: boolean;
@@ -20,9 +21,56 @@ export class TexturePromptGenerator {
       if (!text) throw new Error('Empty response');
       return this.normalizePrompt(text, !!options.requestEquirectangular);
     } catch (error) {
-      console.warn('[TexturePromptGenerator] Fallback prompt used.', error);
-      return this.buildFallbackPrompt(safeSubject, !!options.requestEquirectangular);
+      console.warn('[TexturePromptGenerator] Backend route failed. Trying browser API key.', error);
     }
+
+    try {
+      const text = await this.generatePromptDirect(safeSubject, options);
+      if (text) {
+        return this.normalizePrompt(text, !!options.requestEquirectangular);
+      }
+    } catch (error) {
+      console.warn('[TexturePromptGenerator] Browser generation failed. Fallback prompt used.', error);
+    }
+
+    return this.buildFallbackPrompt(safeSubject, !!options.requestEquirectangular);
+  }
+
+  private async generatePromptDirect(subject: string, options: TexturePromptOptions): Promise<string> {
+    const ai = getBrowserGenAI();
+    if (!ai) throw new Error('No API key available for browser generation');
+
+    const requestEquirectangular = !!options.requestEquirectangular;
+    const detailLevel = options.detailLevel || 'high';
+    const requestShape = requestEquirectangular
+      ? 'Use equirectangular environment map constraints (2:1).'
+      : 'Use seamless square texture constraints (1:1).';
+    const userPrompt = `
+Input concept: ${subject}
+Detail level: ${detailLevel}
+${requestShape}
+Generate a single English prompt for image generation.
+`;
+
+    const response = await withTimeout(
+      'texture-prompt',
+      ai.models.generateContent({
+        model: 'gemini-flash-lite-latest',
+        config: {
+          systemInstruction: {
+            parts: [{
+              text: `You are an expert Technical Artist specializing in 3D Texturing and VR Environment generation.
+Return only one English prompt line, no markdown.
+Default to seamless square texture constraints with --tile --ar 1:1.
+If equirectangular is explicitly requested, use --ar 2:1.`
+            }]
+          }
+        },
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }]
+      }),
+      25_000
+    );
+    return response.text?.trim() || '';
   }
 
   private normalizePrompt(prompt: string, equirectangular: boolean): string {

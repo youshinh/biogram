@@ -26,6 +26,10 @@ export class HydraVisualizer extends LitElement {
   private lastX = 0;
   private clickStartX = 0;
   private hasDragged = false;
+  private activeTouchPointers = new Map<number, { x: number; y: number }>();
+  private isPinching = false;
+  private pinchStartDistance = 0;
+  private pinchStartZoom = 100;
   
   // Zoom State
   private zoomScale = 100; 
@@ -95,6 +99,7 @@ export class HydraVisualizer extends LitElement {
         this.canvas.addEventListener('pointermove', this.onPointerMove);
         this.canvas.addEventListener('pointerup', this.onPointerUp);
         this.canvas.addEventListener('pointerleave', this.onPointerUp);
+        this.canvas.addEventListener('pointercancel', this.onPointerUp);
         this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
         
         this.resizeObserver = new ResizeObserver((entries) => {
@@ -122,8 +127,17 @@ export class HydraVisualizer extends LitElement {
           this.canvas.removeEventListener('pointermove', this.onPointerMove);
           this.canvas.removeEventListener('pointerup', this.onPointerUp);
           this.canvas.removeEventListener('pointerleave', this.onPointerUp);
+          this.canvas.removeEventListener('pointercancel', this.onPointerUp);
           this.canvas.removeEventListener('wheel', this.onWheel);
       }
+  }
+
+  private getTouchDistance(): number {
+      const pts = Array.from(this.activeTouchPointers.values());
+      if (pts.length < 2) return 0;
+      const dx = pts[0].x - pts[1].x;
+      const dy = pts[0].y - pts[1].y;
+      return Math.hypot(dx, dy);
   }
 
   private applyCanvasSize(width: number, height: number, force = false) {
@@ -239,7 +253,18 @@ export class HydraVisualizer extends LitElement {
 
   private onPointerDown = (e: PointerEvent) => {
       if (!this.canvas) return;
-      this.canvas.setPointerCapture(e.pointerId);
+      if (e.pointerType === 'touch') {
+          this.activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (this.activeTouchPointers.size >= 2) {
+              this.isPinching = true;
+              this.pinchStartDistance = this.getTouchDistance();
+              this.pinchStartZoom = this.zoomScale;
+              this.isScratching = false;
+              return;
+          }
+      } else {
+          this.canvas.setPointerCapture(e.pointerId);
+      }
       
       if (this.isLoopMode) {
            const rect = this.canvas.getBoundingClientRect();
@@ -272,6 +297,22 @@ export class HydraVisualizer extends LitElement {
   }
 
   private onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch' && this.activeTouchPointers.has(e.pointerId)) {
+          this.activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
+      if (this.isPinching) {
+          const distance = this.getTouchDistance();
+          if (distance > 0 && this.pinchStartDistance > 0) {
+              const ratio = distance / this.pinchStartDistance;
+              this.zoomScale = Math.max(1, Math.min(this.pinchStartZoom / ratio, 5000));
+              this.lastStableZoom = this.zoomScale;
+              HydraVisualizer.zoomByDeck[this.deckId] = this.zoomScale;
+          }
+          e.preventDefault();
+          return;
+      }
+
       if (!this.isScratching) return;
       
       if (Math.abs(e.clientX - this.clickStartX) > 5) {
@@ -286,8 +327,19 @@ export class HydraVisualizer extends LitElement {
   }
 
   private onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+          this.activeTouchPointers.delete(e.pointerId);
+          if (this.isPinching && this.activeTouchPointers.size < 2) {
+              this.isPinching = false;
+              this.pinchStartDistance = 0;
+              return;
+          }
+      }
+
       if (!this.isScratching) return;
-      this.canvas?.releasePointerCapture(e.pointerId);
+      if (e.pointerType !== 'touch') {
+          this.canvas?.releasePointerCapture(e.pointerId);
+      }
       this.isScratching = false;
       const engine = this.getEngine();
       if(engine) {

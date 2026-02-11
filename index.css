@@ -8,6 +8,7 @@
   background-color: #0a0a0c;
   color: #d4d4d8;
   font-family: "Comfortaa", sans-serif;
+  font-size: 16px;
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -19,6 +20,8 @@ body {
   height: 100%;
   width: 100%;
   background: #0a0a0c;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* App Container */
@@ -197,6 +200,10 @@ body {
 }
 
 @media (max-width: 1024px) {
+  :root {
+    font-size: 17px;
+  }
+
   .controls-grid {
     display: flex;
     flex-wrap: nowrap;

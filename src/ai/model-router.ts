@@ -1,4 +1,6 @@
 import { postBackendJson } from '../api/backend-client';
+import { ThinkingLevel } from '@google/genai';
+import { getBrowserGenAI } from './client-genai';
 
 export type PlannerModel =
   | 'gemini-flash-lite-latest'
@@ -104,24 +106,57 @@ export class ModelRouter {
     timeoutMs: number,
     proProfile: ProProfile = 'low'
   ): Promise<string> {
-    const mode = model === 'gemini-3-pro-preview'
-      ? 'mix-pro'
-      : model === 'gemini-3-flash-preview'
-        ? 'flash-preview'
-        : 'lite';
-    const response = await this.withTimeout(postBackendJson<{
-      text: string;
-      modelUsed: string;
-    }>('/api/ai/route', {
-      mode,
-      proProfile,
-      timeoutMs,
-      systemPrompt: req.systemPrompt,
-      userPrompt: req.userPrompt
-    }), timeoutMs + 1_000);
-    const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim();
-    if (!text) throw new Error(`Empty response from ${model}`);
-    return text;
+    try {
+      const mode = model === 'gemini-3-pro-preview'
+        ? 'mix-pro'
+        : model === 'gemini-3-flash-preview'
+          ? 'flash-preview'
+          : 'lite';
+      const response = await this.withTimeout(postBackendJson<{
+        text: string;
+        modelUsed: string;
+      }>('/api/ai/route', {
+        mode,
+        proProfile,
+        timeoutMs,
+        systemPrompt: req.systemPrompt,
+        userPrompt: req.userPrompt
+      }), timeoutMs + 1_000);
+      const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim();
+      if (!text) throw new Error(`Empty response from ${model}`);
+      return text;
+    } catch (backendError) {
+      const ai = getBrowserGenAI();
+      if (!ai) throw backendError;
+
+      console.warn(`[ModelRouter] Backend route failed. Retrying ${model} via browser API key.`, backendError);
+      const config: Record<string, any> = {
+        responseMimeType: 'application/json',
+        systemInstruction: { parts: [{ text: req.systemPrompt || '' }] }
+      };
+
+      if (model === 'gemini-3-pro-preview') {
+        if (proProfile === 'low') {
+          config.temperature = 1.1;
+          config.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+        } else {
+          config.temperature = 0.8;
+          config.thinkingConfig = { thinkingLevel: ThinkingLevel.MEDIUM };
+        }
+      }
+
+      const response = await this.withTimeout(
+        ai.models.generateContent({
+          model,
+          config,
+          contents: [{ role: 'user', parts: [{ text: req.userPrompt || '' }] }]
+        }),
+        timeoutMs + 1_000
+      );
+      const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim();
+      if (!text) throw new Error(`Empty browser response from ${model}`);
+      return text;
+    }
   }
 
   private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

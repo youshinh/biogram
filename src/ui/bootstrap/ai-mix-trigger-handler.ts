@@ -199,13 +199,10 @@ export const setupAiMixTriggerHandler = (options: AiMixTriggerHandlerOptions) =>
         if (integratedPlan.meta.plan_fallback_reason) {
           options.superCtrl.addLog(`FALLBACK REASON: ${integratedPlan.meta.plan_fallback_reason}`);
         }
-        const canRunTemplate = sessionMode === 'free' || options.allowTemplateMixPlan;
-        if (!canRunTemplate) {
-          options.superCtrl.mixState = 'IDLE';
-          options.superCtrl.addLog('MIX BLOCKED: Gemini planner unavailable.');
-          options.superCtrl.addLog('Add ?allowTemplatePlan=1 to URL only if you want forced template mix.');
-          options.setPendingIntegratedPlan(null);
-          return;
+        // Keep AutoMix usable even when cloud planner is unavailable.
+        // Safe subset policy is already enforced at generator/automation layers.
+        if (sessionMode === 'single') {
+          options.superCtrl.addLog('SINGLE MODE CONTINUE: using safe subset fallback plan.');
         }
         if (sessionMode === 'free') {
           options.superCtrl.addLog('FREE MODE CONTINUE: using safe subset fallback plan (autoplay maintained).');

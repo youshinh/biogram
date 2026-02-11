@@ -1,4 +1,5 @@
 import { postBackendJson } from '../api/backend-client';
+import { getBrowserGenAI, withTimeout } from './client-genai';
 
 export type TextureImageResult = {
   dataUrl: string;
@@ -39,7 +40,14 @@ export class TextureImageGenerator {
         }
       });
     } catch (error) {
-      console.warn('[TextureImageGenerator] API generation failed', error);
+      console.warn('[TextureImageGenerator] Backend route failed. Trying browser API key.', error);
+    }
+
+    try {
+      const direct = await this.generateTextureImageDirect(safePrompt, aspectRatio, imageSize);
+      if (direct) return direct;
+    } catch (error) {
+      console.warn('[TextureImageGenerator] Browser generation failed', error);
     }
 
     return {
@@ -47,6 +55,65 @@ export class TextureImageGenerator {
       mimeType: 'image/png',
       modelUsed: 'procedural-fallback'
     };
+  }
+
+  private async generateTextureImageDirect(
+    prompt: string,
+    aspectRatio: '1:1',
+    imageSize: '1K' | '2K'
+  ): Promise<TextureImageResult | null> {
+    const ai = getBrowserGenAI();
+    if (!ai) return null;
+
+    const models = [
+      'imagen-4.0-fast-generate-001',
+      'imagen-4.0-generate-001',
+      'imagen-3.0-generate-002'
+    ] as const;
+
+    for (const model of models) {
+      try {
+        const response = await withTimeout(
+          `texture-image-${model}`,
+          ai.models.generateImages({
+            model,
+            prompt,
+            config: {
+              numberOfImages: 1,
+              aspectRatio,
+              imageSize,
+              outputMimeType: 'image/png'
+            }
+          }),
+          45_000
+        );
+        const image = response.generatedImages?.[0]?.image;
+        const imageBytes = image?.imageBytes as string | Uint8Array | ArrayBuffer | undefined;
+        if (!imageBytes) continue;
+        const mimeType = image?.mimeType || 'image/png';
+        const base64 = this.toBase64(imageBytes);
+        return {
+          dataUrl: `data:${mimeType};base64,${base64}`,
+          mimeType,
+          modelUsed: model
+        };
+      } catch {
+        // Try next model.
+      }
+    }
+    return null;
+  }
+
+  private toBase64(imageBytes: string | Uint8Array | ArrayBuffer): string {
+    if (typeof imageBytes === 'string') return imageBytes;
+    const bytes = imageBytes instanceof Uint8Array ? imageBytes : new Uint8Array(imageBytes);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
   }
 
   private generateFallbackTexture(seedText: string): string {

@@ -543,6 +543,13 @@ export class AppShell extends LitElement {
       transform: scale(0.95);
     }
 
+    /* Keep edge navigation strictly desktop-only (it blocks touch UI on phones). */
+    @media (max-width: 1024px) {
+      .nav-trigger {
+        display: none !important;
+      }
+    }
+
   `;
 
   @property({ type: String }) status = "OFFLINE";
