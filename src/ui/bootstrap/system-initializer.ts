@@ -57,7 +57,7 @@ export const showSystemInitializationOverlay = (options: SystemInitializerOption
     } catch (error) {
       initRequested = false;
       startBtn.disabled = false;
-      startBtn.textContent = options.hasApiKey() ? 'INITIALIZE SYSTEM' : 'SET API KEY';
+      startBtn.textContent = options.hasApiKey() ? 'RETRY INITIALIZE' : 'SET API KEY';
       console.error('[Boot] Failed to initialize system:', error);
     }
   };

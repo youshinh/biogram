@@ -80,14 +80,44 @@ export class AudioEngine {
     });
   }
 
+  private withTimeout<T>(label: string, task: Promise<T>, timeoutMs: number): Promise<T> {
+      return new Promise<T>((resolve, reject) => {
+          const timeoutId = window.setTimeout(() => {
+              reject(new Error(`${label} timeout (${timeoutMs}ms)`));
+          }, timeoutMs);
+          task.then((value) => {
+              window.clearTimeout(timeoutId);
+              resolve(value);
+          }).catch((error) => {
+              window.clearTimeout(timeoutId);
+              reject(error);
+          });
+      });
+  }
+
+  private async connectMusicClientWithTimeout(
+      client: MusicClient,
+      deck: 'A' | 'B',
+      timeoutMs: number = 8000
+  ): Promise<void> {
+      const timeoutPromise = new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error(`MusicClient[${deck}] connect timeout (${timeoutMs}ms)`)), timeoutMs);
+      });
+      await Promise.race([client.connect(), timeoutPromise]);
+  }
+
   async init() {
     try {
       if (this.context.state === 'suspended') {
-        await this.context.resume();
+        await this.withTimeout('AudioContext.resume', this.context.resume(), 8000);
       }
 
       if (import.meta.env.DEV) console.log('Loading AudioWorklet from:', processorUrl);
-      await this.context.audioWorklet.addModule(processorUrl);
+      await this.withTimeout(
+          'AudioWorklet.addModule',
+          this.context.audioWorklet.addModule(processorUrl),
+          20000
+      );
 
       this.workletNode = new AudioWorkletNode(this.context, 'ghost-processor', {
         numberOfInputs: 1,
@@ -149,14 +179,23 @@ export class AudioEngine {
 
       if (import.meta.env.DEV) console.log('AudioEngine Initialized');
       
-      // Start AI Connection
-      // Note: Concurrent connections might be rate-limited, but let's try.
-      await this.musicClientA.connect();
-      await this.musicClientB.connect();
+      // Start AI connections in a non-blocking/safe way.
+      // Mobile environments can stall on live socket setup; boot must still finish.
+      const connectionResults = await Promise.allSettled([
+          this.connectMusicClientWithTimeout(this.musicClientA, 'A'),
+          this.connectMusicClientWithTimeout(this.musicClientB, 'B')
+      ]);
+      connectionResults.forEach((result, index) => {
+          if (result.status === 'rejected') {
+              const deck = index === 0 ? 'A' : 'B';
+              console.warn(`[AudioEngine] Deferred live connection for Deck ${deck}:`, result.reason);
+          }
+      });
       this.startLoopAutoStopMonitor();
 
     } catch (e) {
       console.error('Failed to initialize AudioEngine:', e);
+      throw e;
     }
   }
 
