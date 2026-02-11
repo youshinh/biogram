@@ -386,12 +386,20 @@ if (isVizMode) {
 
     let isSlamming = false;
     type PromptAutoCurve = 'BALANCED' | 'AGGRESSIVE' | 'CINEMATIC';
+    type PromptAutoTargets = {
+        ambient: number;
+        minimal: number;
+        dub: number;
+        impact: number;
+        color: number;
+    };
     let promptAutoControlActive = false;
-    let promptAutoEnabledSetting = true;
+    let promptAutoEnabledSetting = false;
     let promptAutoCurveMode: PromptAutoCurve = 'BALANCED';
     let promptAutoLastUiPushMs = 0;
     let promptAutoLastPromptPushMs = 0;
-    let promptAutoLastPhase = '';
+    let promptAutoSeedTargets: PromptAutoTargets | null = null;
+    let promptAutoLastPromptSnapshot: PromptAutoTargets | null = null;
     let applyAutoPromptFromMix: ((bar: number, phase: string, totalBars: number, mood: string) => void) | null = null;
 
     // Listen for Deck Prompt Updates
@@ -1075,7 +1083,7 @@ if (isVizMode) {
             sessionMode = 'single',
             pattern = 'PINGPONG',
             maxRuntimeMin = 60,
-            promptAutoEnabled = true,
+            promptAutoEnabled = false,
             promptAutoCurve = 'BALANCED'
         } = e.detail;
         const preferredMode = normalizePreferredVisualMode(preferredVisual);
@@ -1401,7 +1409,8 @@ if (isVizMode) {
         promptAutoControlActive = promptAutoEnabledSetting;
         promptAutoLastUiPushMs = 0;
         promptAutoLastPromptPushMs = 0;
-        promptAutoLastPhase = '';
+        promptAutoSeedTargets = null;
+        promptAutoLastPromptSnapshot = null;
         superCtrl.addLog(`AUTO PROMPT CONTROL: ${promptAutoControlActive ? `ON (${promptAutoCurveMode})` : 'OFF'}`);
 
         // --- SAFETY NET: Force Play if Stopped ---
@@ -1759,57 +1768,53 @@ if (isVizMode) {
         }));
     };
 
-    const setComboSelection = (name: 'TEXTURE' | 'PULSE', selectedValue: string) => {
-        const ref = comboRefs.find((c) => c.name === name);
-        if (!ref) return;
-        if (ref.select.value === selectedValue) return;
-        const exists = Array.from(ref.select.options).some((o) => o.value === selectedValue);
-        if (!exists) return;
-        ref.select.value = selectedValue;
-        ref.select.dispatchEvent(new Event('change', { bubbles: true }));
-    };
-
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
     const clamp100 = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
-    const computeAutoPromptTargets = (progress: number, mood: string, curve: PromptAutoCurve) => {
-        let ambient = 78 - (38 * progress);
-        let minimal = 28 + (50 * progress);
-        let dub = 24 + (52 * Math.sin(Math.PI * progress));
-        let impact = 32 + (58 * progress);
-        let color = 35 + (48 * progress);
+    const computeAutoPromptTargets = (
+        progress: number,
+        mood: string,
+        curve: PromptAutoCurve,
+        seed: PromptAutoTargets
+    ): PromptAutoTargets => {
+        // Keep modulation around the user's current setup, not hard jumps to global presets.
+        let ambient = seed.ambient + (6 * (0.5 - progress));
+        let minimal = seed.minimal + (8 * (progress - 0.35));
+        let dub = seed.dub + (10 * Math.sin(Math.PI * progress));
+        let impact = seed.impact + (9 * progress);
+        let color = seed.color + (8 * (progress - 0.25));
         const m = mood.toLowerCase();
         if (m.includes('cinema')) {
-            ambient += 10;
-            minimal -= 8;
-            impact -= 10;
-            color -= 6;
+            ambient += 4;
+            minimal -= 3;
+            impact -= 5;
+            color -= 2;
         } else if (m.includes('chaos')) {
-            ambient -= 12;
-            minimal += 18;
-            dub += 12;
-            impact += 14;
-            color += 8;
-        } else if (m.includes('organic')) {
-            ambient += 8;
-            minimal -= 10;
+            ambient -= 5;
+            minimal += 7;
             dub += 6;
+            impact += 7;
+            color += 4;
+        } else if (m.includes('organic')) {
+            ambient += 4;
+            minimal -= 4;
+            dub += 3;
         } else if (m.includes('rhythmic')) {
-            ambient -= 6;
-            minimal += 10;
-            impact += 12;
+            ambient -= 3;
+            minimal += 5;
+            impact += 6;
         }
         if (curve === 'AGGRESSIVE') {
-            ambient -= 8;
-            minimal += 10;
-            dub += 10;
-            impact += 14;
-            color += 8;
+            ambient -= 4;
+            minimal += 5;
+            dub += 5;
+            impact += 7;
+            color += 4;
         } else if (curve === 'CINEMATIC') {
-            ambient += 12;
-            minimal -= 10;
-            dub += 4;
-            impact -= 10;
-            color -= 8;
+            ambient += 5;
+            minimal -= 4;
+            dub += 2;
+            impact -= 5;
+            color -= 3;
         }
         return {
             ambient: clamp100(ambient),
@@ -1820,14 +1825,58 @@ if (isVizMode) {
         };
     };
 
-    applyAutoPromptFromMix = (bar, phase, totalBars, mood) => {
+    const readPromptAutoSeed = (): PromptAutoTargets => ({
+        ambient: clamp100(uiState.valAmbient),
+        minimal: clamp100(uiState.valMinimal),
+        dub: clamp100(uiState.valDub),
+        impact: clamp100(uiState.valImpact),
+        color: clamp100(uiState.valColor)
+    });
+
+    const smoothPromptAutoTargets = (
+        current: PromptAutoTargets,
+        target: PromptAutoTargets,
+        curve: PromptAutoCurve
+    ): PromptAutoTargets => {
+        const maxStep = curve === 'AGGRESSIVE' ? 3.0 : curve === 'CINEMATIC' ? 1.8 : 2.2;
+        const glide = (from: number, to: number) => {
+            const delta = to - from;
+            if (Math.abs(delta) <= maxStep) return clamp100(to);
+            return clamp100(from + Math.sign(delta) * maxStep);
+        };
+        return {
+            ambient: glide(current.ambient, target.ambient),
+            minimal: glide(current.minimal, target.minimal),
+            dub: glide(current.dub, target.dub),
+            impact: glide(current.impact, target.impact),
+            color: glide(current.color, target.color)
+        };
+    };
+
+    const promptAutoSnapshotDelta = (a: PromptAutoTargets, b: PromptAutoTargets) => {
+        return Math.max(
+            Math.abs(a.ambient - b.ambient),
+            Math.abs(a.minimal - b.minimal),
+            Math.abs(a.dub - b.dub),
+            Math.abs(a.impact - b.impact),
+            Math.abs(a.color - b.color)
+        );
+    };
+
+    applyAutoPromptFromMix = (bar, _phase, totalBars, mood) => {
         if (!promptAutoControlActive) return;
         const now = performance.now();
-        if (now - promptAutoLastUiPushMs < 240) return;
+        if (now - promptAutoLastUiPushMs < 420) return;
         promptAutoLastUiPushMs = now;
 
+        if (!promptAutoSeedTargets) {
+            promptAutoSeedTargets = readPromptAutoSeed();
+        }
+
         const progress = clamp01(totalBars > 0 ? bar / totalBars : 0);
-        const targets = computeAutoPromptTargets(progress, mood, promptAutoCurveMode);
+        const rawTargets = computeAutoPromptTargets(progress, mood, promptAutoCurveMode, promptAutoSeedTargets);
+        const currentTargets = readPromptAutoSeed();
+        const targets = smoothPromptAutoTargets(currentTargets, rawTargets, promptAutoCurveMode);
         const sliderByName = (name: string) => sliderRefs.find((s) => s.name === name)?.slider;
 
         const ambientSlider = sliderByName('AMBIENT');
@@ -1841,23 +1890,11 @@ if (isVizMode) {
         if (impactSlider) setBioSliderValue(impactSlider, targets.impact);
         if (colorSlider) setBioSliderValue(colorSlider, targets.color);
 
-        const normalizedPhase = phase.toUpperCase();
-        if (normalizedPhase !== promptAutoLastPhase) {
-            promptAutoLastPhase = normalizedPhase;
-            if (normalizedPhase.includes('PRESENCE')) {
-                setComboSelection('TEXTURE', 'Field Recordings Nature');
-                setComboSelection('PULSE', 'Sub-bass Pulse');
-            } else if (normalizedPhase.includes('HANDOFF')) {
-                setComboSelection('TEXTURE', 'Industrial Factory Drone');
-                setComboSelection('PULSE', 'Deep Dub Tech Rhythm');
-            } else if (normalizedPhase.includes('WASH')) {
-                setComboSelection('TEXTURE', 'Tape Hiss Lo-Fi');
-                setComboSelection('PULSE', 'Granular Clicks');
+        if (now - promptAutoLastPromptPushMs >= 6000) {
+            if (!promptAutoLastPromptSnapshot || promptAutoSnapshotDelta(promptAutoLastPromptSnapshot, targets) >= 3) {
+                updatePrompts();
+                promptAutoLastPromptSnapshot = { ...targets };
             }
-        }
-
-        if (now - promptAutoLastPromptPushMs >= 1800) {
-            updatePrompts();
             promptAutoLastPromptPushMs = now;
         }
     };

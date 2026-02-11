@@ -527,7 +527,7 @@ export class SuperControls extends LitElement {
   @state() sessionMode: 'single' | 'free' = 'single';
   @state() maxRuntimeMin = 60;
   @state() aiVisualsEnabled = true;
-  @state() promptAutoEnabled = true;
+  @state() promptAutoEnabled = false;
   @state() promptAutoCurve: 'BALANCED' | 'AGGRESSIVE' | 'CINEMATIC' = 'BALANCED';
   @state() logs: string[] = [];
 
@@ -628,8 +628,8 @@ export class SuperControls extends LitElement {
                    <label>AUTO PROMPT</label>
                    <select .value="${this.promptAutoEnabled ? 'ON' : 'OFF'}"
                            @change="${(e: any) => this.promptAutoEnabled = e.target.value === 'ON'}">
-                       <option value="ON">ON</option>
                        <option value="OFF">OFF</option>
+                       <option value="ON">ON</option>
                    </select>
                </div>
                <div class="control-group">

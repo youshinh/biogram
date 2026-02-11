@@ -483,8 +483,8 @@ export class LoopLibraryPanel extends LitElement {
           ? html`
             <div class="empty">
               <div class="empty-icon">💾</div>
-              <div>ライブラリが空です</div>
-              <div style="font-size: 9px; margin-top: 4px;">SAVEボタンでループを保存</div>
+              <div>Library is empty</div>
+              <div style="font-size: 9px; margin-top: 4px;">Save a loop with the SAVE button</div>
             </div>
           `
           : this.filteredSamples.map(sample => html`
