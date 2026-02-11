@@ -29,6 +29,7 @@ supercontroll/
 updateDEV/
 py_bridge/
 AGENTS.md
+.gcloud/
 
 # Python
 __pycache__/
