@@ -386,7 +386,7 @@ export function createApiGatewayMiddleware(options: GatewayOptions) {
             config.thinkingConfig = { thinkingLevel: ThinkingLevel.MEDIUM };
           }
         }
-        const cacheKey = hash(`route:${model}:${profile}:${body.systemPrompt}:${body.userPrompt}`);
+        const cacheKey = hash(JSON.stringify(['route', model, profile, body.systemPrompt, body.userPrompt]));
         const result = await withCache(cacheKey, 90_000, async () => {
           const response = await Promise.race([
             ai.models.generateContent({
@@ -407,7 +407,7 @@ export function createApiGatewayMiddleware(options: GatewayOptions) {
       if (url === '/api/ai/grid') {
         const body = await readJsonBody<{ context: string }>(req);
         const context = (body.context || '').trim();
-        const cacheKey = hash(`grid:${context}`);
+        const cacheKey = hash(JSON.stringify(['grid', context]));
         const result = await withCache(cacheKey, 10 * 60_000, async () => {
           const response = await ai.models.generateContent({
             model: 'gemini-flash-lite-latest',
@@ -441,7 +441,7 @@ Detail level: ${detailLevel}
 ${requestShape}
 Generate a single English prompt for image generation.
 `;
-        const cacheKey = hash(`texture-prompt:${safeSubject}:${requestEquirectangular}:${detailLevel}`);
+        const cacheKey = hash(JSON.stringify(['texture-prompt', safeSubject, requestEquirectangular, detailLevel]));
         const result = await withCache(cacheKey, 60 * 60_000, async () => {
           const response = await ai.models.generateContent({
             model: 'gemini-flash-lite-latest',
@@ -470,7 +470,7 @@ Generate a single English prompt for image generation.
         }
         const aspectRatio = body.options?.aspectRatio || '1:1';
         const imageSize = body.options?.imageSize || '1K';
-        const cacheKey = hash(`texture-image:${prompt}:${aspectRatio}:${imageSize}`);
+        const cacheKey = hash(JSON.stringify(['texture-image', prompt, aspectRatio, imageSize]));
         const result = await withCache(cacheKey, 30 * 60_000, async () => {
           for (const model of IMAGE_MODELS) {
             try {
@@ -511,7 +511,7 @@ Generate a single English prompt for image generation.
           json(res, 400, { error: 'wavBase64 is required' });
           return;
         }
-        const cacheKey = hash(`visual:${wavBase64.slice(0, 2048)}:${wavBase64.length}`);
+        const cacheKey = hash(JSON.stringify(['visual', wavBase64.slice(0, 2048), wavBase64.length]));
         const result = await withCache(cacheKey, 60_000, async () => {
           const response = await ai.models.generateContent({
             model: 'gemini-flash-lite-latest',
