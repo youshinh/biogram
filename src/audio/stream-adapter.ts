@@ -1,4 +1,4 @@
-import { OFFSETS } from '../types/shared';
+import { OFFSETS } from '../types/shared.ts';
 
 type DeckId = 'A' | 'B';
 
