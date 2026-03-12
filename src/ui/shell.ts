@@ -638,7 +638,7 @@ export class AppShell extends LitElement {
       <div class="shell-container">
         <!-- Background Layer -->
         <div class="bg-layer">
-            <!-- Hydra Placeholder -->
+            <slot name="background"></slot>
         </div>
 
         <!-- NAVIGATION TRIGGERS (Hover Zones) -->
