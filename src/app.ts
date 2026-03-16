@@ -353,38 +353,20 @@ const allowTemplateMixPlan = urlParams.get('allowTemplatePlan') === '1';
     });
 
     // 5. Visual Engine (Background)
-    // We need to inject this into the shadow DOM of app-shell? 
-    // NO, app-shell uses slots for content, but .bg-layer is internal.
-    // However, app-shell renders children in Light DOM if we put them there?
-    // Actually, app-shell.ts has <div class="bg-layer">...</div> but it doesn't have a slot for it.
-    // Strategy: We can query the app-shell shadowRoot after it mounts, OR we can modify AppShell to accept a 'background' slot.
-    // Let's modify AppShell to have a 'background' slot for cleanliness in a separate step?
-    // User wants us to "Continue" and I already modified AppShell but didn't add a background slot.
-    // Let's do a quick hack: Insert ThreeViz Absolute Positioned *behind* everything in ViewContainer.
-    
     const threeViz = document.createElement('three-viz') as ThreeViz;
     (window as any).__threeViz = threeViz;
-    threeViz.style.position = 'absolute';
-    threeViz.style.top = '0';
-    threeViz.style.left = '0';
+    threeViz.slot = 'background';
     threeViz.style.width = '100%';
     threeViz.style.height = '100%';
-    threeViz.style.zIndex = '0'; // Behind Shell which has z-index 10 for main
-    threeViz.style.pointerEvents = 'none'; // Let clicks pass through
     threeViz.style.opacity = '0';
     threeViz.style.transition = 'opacity 480ms ease';
     
-    // Insert ThreeViz as the first child of viewContainer so it sits behind shell?
-    // Shell has a background color... we need to make Shell transparent?
-    // Shell CSS has `background-color: #0a0a0c`. We need to remove that or make it transparent.
-    // Let's append to body directly underneath viewContainer?
-    // viewContainer has `background: #000`.
     viewContainer.style.background = 'transparent'; // Allow viz to show
     // Defer DOM attach until system is ready to avoid heavy visual boot on first paint.
     let isThreeVizAttached = false;
     const attachThreeViz = () => {
         if (isThreeVizAttached) return;
-        document.body.insertBefore(threeViz, viewContainer);
+        shell.appendChild(threeViz);
         isThreeVizAttached = true;
     };
 
