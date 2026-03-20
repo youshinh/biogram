@@ -130,7 +130,10 @@ export class CloudGrain {
         g.active = true;
         g.age = 0;
         g.duration = duration;
-        g.speed = this.pitch; // TODO: Randomize pitch slightly?
+
+        // Slight pitch randomization based on Spray
+        const pitchJitter = 0.05 * this.spray;
+        g.speed = this.pitch * (1.0 + (Math.random() - 0.5) * pitchJitter);
         
         // Random Start Position
         // "Spray" controls how far back from writePtr we read.
